@@ -382,6 +382,17 @@ function TerrainsView({ terrains, setTerrains }) {
 }
 
 // ---------- Participants ----------
+function PrintOverlay({ html, onClose }) {
+  const ref = useRef(null);
+  const doPrint = () => { try { ref.current.contentWindow.focus(); ref.current.contentWindow.print(); } catch (e) { try { window.print(); } catch (e2) {} } };
+  return (<div className="fixed inset-0 z-50 bg-white flex flex-col">
+    <div className="flex items-center justify-between px-3 py-2 border-b border-stone-200 bg-stone-50 shrink-0">
+      <button onClick={onClose} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button>
+      <button onClick={doPrint} className="flex items-center gap-1.5 bg-emerald-800 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={15} /> Imprimer / PDF</button>
+    </div>
+    <iframe ref={ref} srcDoc={html} title="Aperçu" className="flex-1 w-full border-0" />
+  </div>);
+}
 function ParticipantsView({ participants, setParticipants }) {
   const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -389,7 +400,8 @@ function ParticipantsView({ participants, setParticipants }) {
   const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", participe: false, invitation: false, role: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
-  const printDiner = () => { const html = buildDinnerPrintHtml(participants); const w = window.open("", "_blank"); if (!w) { window.alert("Autorise les fenêtres pop-up pour imprimer."); return; } w.document.open(); w.document.write(html); w.document.close(); const go = () => { try { w.focus(); w.print(); } catch (e) {} }; w.onload = go; setTimeout(go, 700); };
+  const [dinerPrint, setDinerPrint] = useState(null);
+  const printDiner = () => { setDinerPrint(buildDinnerPrintHtml(participants)); };
   const exportDinerExcel = () => {
     try {
       const rows = participants.map((p) => ({ Nom: p.name || "Sans nom", Vient: p.diner?.vient ? "oui" : "non", Invités_sup: p.diner?.invitesSupplementaires || 0, Total: p.diner?.vient ? (1 + Number(p.diner.invitesSupplementaires || 0)) : 0 }));
@@ -417,7 +429,7 @@ function ParticipantsView({ participants, setParticipants }) {
     } catch (ex) { setImportErr(ex.message || "Import impossible."); } finally { setImporting(false); if (listFileRef.current) listFileRef.current.value = ""; }
   };
   return (<div className="space-y-6">
-    <div className="space-y-3">
+    {dinerPrint && <PrintOverlay html={dinerPrint} onClose={() => setDinerPrint(null)} />}    <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Participants & invités</h2>
         <div className="flex gap-2"><input ref={listFileRef} type="file" accept=".docx,.pdf,.txt,.csv" onChange={onImportList} className="hidden" />
           <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer liste (Word/PDF)"}</button>
@@ -622,6 +634,10 @@ main{padding:16px}
 .consigne b{white-space:nowrap}
 .postphoto{width:100%;border-radius:10px;border:1px solid var(--stone-200);margin-top:12px;display:block}
 .feedback{margin-top:14px;border-top:1px dashed var(--stone-200);padding-top:12px}
+.fbintro{font-size:13px;color:var(--stone-500);margin:0 0 10px}
+.fbblock{border:1px solid var(--stone-200);border-radius:10px;padding:12px;margin-bottom:12px;background:#fff}
+.fbblock:last-child{margin-bottom:0}
+.fbpost{font-weight:700;font-size:14px;margin:0 0 8px;color:var(--emerald-d)}
 .fbh{font-weight:600;font-size:14px;margin:0 0 8px;color:var(--stone-900)}
 .fbrow{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
 .fbrow label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--stone-400)}
@@ -668,9 +684,9 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 <div id="appview" class="wrap" style="display:none">
 <header><div class="k"><span class="emo">🦌</span><div><h1 id="myName">—</h1><p id="subapp"></p></div></div><button id="back" class="back" onclick="backToPick()">Changer de nom</button></header>
 <main>
-<div class="card hero"><div class="pad"><p class="eyebrow">Ton poste</p><h2 id="myTraque">—</h2><div class="post" id="myPost">—</div><div id="extra" class="extra"></div><div class="consigne" id="myConsigne" style="display:none"><b>⚠️ Consignes :</b><span></span></div><img class="postphoto" id="myPhoto" alt="Photo du poste" style="display:none"/>
-<div class="feedback" id="feedback" style="display:none"><p class="fbh">📋 Ton retour (facultatif)</p><div class="fbrow"><label>Balles tirées</label><input type="number" id="fbBalles" min="0" inputmode="numeric" placeholder="0"/></div><div class="fbrow"><label>État du mirador</label><select id="fbState"><option value="">—</option><option>Bon</option><option>À réparer</option><option>Dangereux</option></select></div><div class="fbrow"><label>Commentaire</label><input type="text" id="fbComment" placeholder="ex : échelle abîmée…"/></div><button id="fbSend" class="fbbtn">Envoyer à l'organisateur</button><p id="fbMsg" class="fbmsg"></p></div></div></div>
+<div class="card hero"><div class="pad"><p class="eyebrow">Ton poste</p><h2 id="myTraque">—</h2><div class="post" id="myPost">—</div><div id="extra" class="extra"></div><div class="consigne" id="myConsigne" style="display:none"><b>⚠️ Consignes :</b><span></span></div><img class="postphoto" id="myPhoto" alt="Photo du poste" style="display:none"/></div></div>
 <div class="card"><div class="pad"><h3 class="sec">🗺️ Les traques</h3><p class="maphint">Ton poste est surligné en orange · lecture seule</p><div class="tabs" id="tabs"></div><div class="map" id="map"></div></div></div>
+<div class="card" id="feedbackCard" style="display:none"><div class="pad"><h3 class="sec">📋 Ton retour</h3><p class="fbintro">Indique tes balles tirées et l'état du mirador, poste par poste.</p><div id="fbList"></div></div></div>
 <div class="card"><div class="pad"><h3 class="sec">🔔 Annonces &amp; sonneries</h3><ul class="list son" id="sonneries"></ul></div></div>
 <div class="card"><div class="pad"><h3 class="sec">🛡️ Consignes de sécurité</h3><ul class="list" id="consignes"></ul></div></div>
 <footer>Document en lecture seule — transmis par l'organisateur.</footer>
@@ -686,8 +702,8 @@ function fmtDate(d){try{return cap(new Date(d).toLocaleDateString("fr-FR",{weekd
 function myMir(ti){if(!me)return null;for(var k=0;k<me.posts.length;k++){if(me.posts[k].traqueIndex===ti)return me.posts[k].miradorId;}return null;}
 function renderMap(index){var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);var myId=myMir(index);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});}
 function buildTabs(def){var tabs=$("tabs");tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){var ks=tabs.children;for(var k=0;k<ks.length;k++)ks[k].classList.remove("active");b.classList.add("active");renderMap(i);};tabs.appendChild(b);});renderMap(def);}
-function renderHero(){var p=me.posts[0];$("myTraque").textContent=p?p.traqueName:"—";$("myPost").textContent=p?p.label:"—";$("myName").textContent="🦌 "+me.name;$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var c=$("myConsigne");if(p&&p.consignes){c.style.display="flex";c.querySelector("span").textContent=p.consignes;}else c.style.display="none";var ph=$("myPhoto");if(p&&p.photos&&p.photos.length){ph.style.display="block";ph.src=p.photos[0];}else{ph.style.display="block";ph.src=DEF_IMG;}var ex=$("extra");ex.innerHTML="";if(me.posts.length>1){me.posts.forEach(function(pp){var d=document.createElement("div");d.textContent="• "+pp.traqueName+" → "+pp.label;ex.appendChild(d);});}setupFeedback(p);}
-function setupFeedback(p){var box=$("feedback");if(!box)return;if(!p||!DATA.fnUrl||!DATA.journeeId){box.style.display="none";return;}box.style.display="block";var msg=$("fbMsg");msg.textContent="";var btn=$("fbSend");btn.disabled=false;btn.textContent="Envoyer à l'organisateur";$("fbBalles").value="";$("fbState").value="";$("fbComment").value="";btn.onclick=function(){btn.disabled=true;btn.textContent="Envoi…";msg.textContent="";var payload={journeeId:DATA.journeeId,trackId:p.trackId,miradorId:p.miradorId,hunter:me.name,bullets:$("fbBalles").value,state:$("fbState").value,comment:$("fbComment").value};fetch(DATA.fnUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(r){if(r.ok){msg.style.color="#166534";msg.textContent="✓ Merci, ton retour est envoyé !";btn.textContent="Envoyé ✓";}else{r.text().then(function(t){msg.style.color="#b91c1c";msg.textContent="Échec : "+t;});btn.disabled=false;btn.textContent="Réessayer";}}).catch(function(){msg.style.color="#b91c1c";msg.textContent="Pas de réseau. Réessaie.";btn.disabled=false;btn.textContent="Réessayer";});};}
+function renderHero(){var p=me.posts[0];$("myTraque").textContent=p?p.traqueName:"—";$("myPost").textContent=p?p.label:"—";$("myName").textContent="🦌 "+me.name;$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var c=$("myConsigne");if(p&&p.consignes){c.style.display="flex";c.querySelector("span").textContent=p.consignes;}else c.style.display="none";var ph=$("myPhoto");if(p&&p.photos&&p.photos.length){ph.style.display="block";ph.src=p.photos[0];}else{ph.style.display="none";}var ex=$("extra");ex.innerHTML="";if(me.posts.length>1){me.posts.forEach(function(pp){var d=document.createElement("div");d.textContent="• "+pp.traqueName+" → "+pp.label;ex.appendChild(d);});}setupFeedback();}
+function setupFeedback(){var card=$("feedbackCard");var list=$("fbList");if(!card||!list)return;if(!me||!DATA.fnUrl||!DATA.journeeId||!me.posts.length){card.style.display="none";return;}card.style.display="block";list.innerHTML="";me.posts.forEach(function(p,idx){var w=document.createElement("div");w.className="fbblock";var title=me.posts.length>1?("<p class='fbpost'>"+p.traqueName+" — "+p.label+"</p>"):"";w.innerHTML=title+"<div class='fbrow'><label>Balles tirées</label><input type='number' min='0' inputmode='numeric' placeholder='0' id='fbB"+idx+"'/></div><div class='fbrow'><label>État du mirador</label><select id='fbS"+idx+"'><option value=''>—</option><option>Bon</option><option>À réparer</option><option>Dangereux</option></select></div><div class='fbrow'><label>Commentaire</label><input type='text' id='fbC"+idx+"' placeholder='ex : échelle abîmée…'/></div><button class='fbbtn' id='fbBtn"+idx+"'>Envoyer</button><p class='fbmsg' id='fbM"+idx+"'></p>";list.appendChild(w);(function(p,idx){var btn=$("fbBtn"+idx);btn.onclick=function(){btn.disabled=true;btn.textContent="Envoi…";var msg=$("fbM"+idx);msg.textContent="";var payload={journeeId:DATA.journeeId,trackId:p.trackId,miradorId:p.miradorId,hunter:me.name,bullets:$("fbB"+idx).value,state:$("fbS"+idx).value,comment:$("fbC"+idx).value};fetch(DATA.fnUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(r){if(r.ok){msg.style.color="#166534";msg.textContent="✓ Merci, envoyé !";btn.textContent="Envoyé ✓";}else{r.text().then(function(t){msg.style.color="#b91c1c";msg.textContent="Échec : "+t;});btn.disabled=false;btn.textContent="Réessayer";}}).catch(function(){msg.style.color="#b91c1c";msg.textContent="Pas de réseau.";btn.disabled=false;btn.textContent="Réessayer";});};})(p,idx);});}
 function selectHunter(i){me=DATA.chasseurs[i];renderHero();var def=(me.posts[0]?me.posts[0].traqueIndex:0);buildTabs(def);$("pick").style.display="none";$("appview").style.display="block";window.scrollTo(0,0);}
 function backToPick(){$("appview").style.display="none";$("pick").style.display="flex";window.scrollTo(0,0);}
 function renderPicker(){var box=$("names");box.innerHTML="";if(!DATA.chasseurs.length){box.innerHTML="<p class='empty'>Aucun poste attribué pour le moment.</p>";}DATA.chasseurs.forEach(function(cc,i){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🦌 "+cc.name;b.onclick=function(){selectHunter(i);};box.appendChild(b);});$("subpick").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;}
@@ -792,7 +808,7 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
 
 // ---------- Journées ----------
 function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings }) {
-  const [openJournee, setOpenJournee] = useState(journees[0]?.id ?? null);
+  const [openJournee, setOpenJournee] = useState(null);
   const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
   const pubUrl = "https://" + (github.owner || "hiplou").toLowerCase() + ".github.io/" + (github.repo || "battue") + "/";
@@ -808,15 +824,11 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
   };
   const shareLinkWhatsApp = () => { const d = "Battue"; const msg = "🦌 " + d + " — vos postes\nChacun choisit son nom sur le lien (lecture seule) :\n" + pubUrl + "\n\nLe lien reste le même à chaque battue."; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
+  const [postesPrint, setPostesPrint] = useState(null);
   const printPostes = (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
-    const html = buildPrintHtml(journee, terrain, participants, safety);
-    const w = window.open("", "_blank");
-    if (!w) { window.alert("Autorise les fenêtres pop-up pour imprimer."); return; }
-    w.document.open(); w.document.write(html); w.document.close();
-    const go = () => { try { w.focus(); w.print(); } catch (e) {} };
-    w.onload = go; setTimeout(go, 700);
+    setPostesPrint(buildPrintHtml(journee, terrain, participants, safety));
   };
   const addJournee = () => { const id = `j-${Date.now()}`; setJournees((prev) => [...prev, { id, date: new Date().toISOString().slice(0, 10), terrainId: terrains[0]?.id || null, placements: {} }]); setOpenJournee(id); };
   const removeJournee = (id) => { if (window.confirm("Supprimer cette journée ?")) setJournees((prev) => prev.filter((j) => j.id !== id)); };
@@ -824,7 +836,8 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const setJourneeTerrain = (id, terrainId) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, terrainId, placements: {} } : j)));
   const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: { ...(j.placements[trackId] || {}), [hid]: mid } } })));
   const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...(j.placements[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...j.placements, [trackId]: t } }; }));
-  const autoFill = (jid, track, pending, sortedFree) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const cur = { ...(j.placements[track.id] || {}) }; const n = Math.min(pending.length, sortedFree.length); for (let i = 0; i < n; i++) cur[pending[i].id] = sortedFree[i].id; return { ...j, placements: { ...j.placements, [track.id]: cur } }; }));
+  const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
+  const autoFill = (jid, track, pending, sortedFree) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const byPrio = {}; sortedFree.forEach((m) => { const p = m.priority || 1; (byPrio[p] = byPrio[p] || []).push(m); }); const prios = Object.keys(byPrio).map(Number).sort((a, b) => a - b); let posts = []; prios.forEach((p) => { posts = posts.concat(shuffle(byPrio[p])); }); const hunters = shuffle(pending); const cur = { ...(j.placements[track.id] || {}) }; const n = Math.min(hunters.length, posts.length); for (let i = 0; i < n; i++) cur[hunters[i].id] = posts[i].id; return { ...j, placements: { ...j.placements, [track.id]: cur } }; }));
   const clearAll = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: {} } })));
   const addKill = (jid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const terrain = terrains.find((t) => t.id === j.terrainId); const firstTrack = terrain?.tracks?.[0]?.id || ""; return { ...j, tableau: [...(j.tableau || []), { id: "k-" + Date.now(), espece: "chevreuil", especeLabel: "", quantite: 1, tireurId: "", trackId: firstTrack }] }; }));
   const updateKill = (jid, kid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).map((k) => (k.id === kid ? { ...k, ...patch } : k)) })));
@@ -837,6 +850,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     return <EnvoiChasseurs journee={journee} terrain={terrain} participants={participants} safety={safety} onBack={() => setShareView(null)} />; }
 
   return (<div className="space-y-3">
+    {postesPrint && <PrintOverlay html={postesPrint} onClose={() => setPostesPrint(null)} />}
     <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Journées de chasse</h2><button onClick={addJournee} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouvelle journée</button></div>
     {journees.map((j) => { const isOpen = openJournee === j.id; const terrain = terrains.find((t) => t.id === j.terrainId);
       return (<SectionCard key={j.id}>
@@ -898,10 +912,14 @@ function CarnetView({ journees, terrains, participants }) {
   const seasons = [...new Set(journees.map((j) => seasonOf(j.date)))].sort().reverse();
   const [season, setSeason] = useState(seasons[0] || seasonOf(new Date().toISOString()));
   const [openId, setOpenId] = useState(null);
-  const inSeason = journees.filter((j) => seasonOf(j.date) === season).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const [terrFilter, setTerrFilter] = useState("all");
+  const [statsPrint, setStatsPrint] = useState(null);
+  const seasonJournees = journees.filter((j) => seasonOf(j.date) === season);
+  const territoriesInSeason = [...new Map(seasonJournees.filter((j) => j.terrainId).map((j) => { const t = terrains.find((x) => x.id === j.terrainId); return [j.terrainId, t ? t.name : "—"]; })).entries()];
+  const inSeason = seasonJournees.filter((j) => terrFilter === "all" || j.terrainId === terrFilter).sort((a, b) => (a.date < b.date ? 1 : -1));
   const stats = computeStats(inSeason, terrains, participants);
   const nameOf = (hid) => participants.find((p) => p.id === hid)?.name || "?";
-  const printStats = () => { const html = buildStatsPrintHtml(stats, season); const w = window.open("", "_blank"); if (!w) { window.alert("Autorise les fenêtres pop-up."); return; } w.document.open(); w.document.write(html); w.document.close(); const go = () => { try { w.focus(); w.print(); } catch (e) {} }; w.onload = go; setTimeout(go, 700); };
+  const printStats = () => { setStatsPrint(buildStatsPrintHtml(stats, season)); };
   const exportStatsExcel = () => {
     try {
       const wb = XLSX.utils.book_new();
@@ -915,9 +933,10 @@ function CarnetView({ journees, terrains, participants }) {
     } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
   };
   return (<div className="space-y-4">
+    {statsPrint && <PrintOverlay html={statsPrint} onClose={() => setStatsPrint(null)} />}
     <div className="flex items-center justify-between gap-2 flex-wrap"><h2 className="font-serif text-xl text-stone-800 flex items-center gap-2"><BookOpen size={20} className="text-emerald-800" /> Carnet de chasse</h2>
-      {seasons.length > 0 && <select value={season} onChange={(e) => setSeason(e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white text-sm">{seasons.map((s) => <option key={s} value={s}>Saison {s}</option>)}</select>}</div>
-    {inSeason.length === 0 ? <SectionCard className="p-4"><p className="text-sm text-stone-500 italic">Aucune journée pour cette saison.</p></SectionCard> : (<>
+      <div className="flex gap-2">{territoriesInSeason.length > 1 && <select value={terrFilter} onChange={(e) => setTerrFilter(e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white text-sm"><option value="all">Tous les territoires</option>{territoriesInSeason.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>}{seasons.length > 0 && <select value={season} onChange={(e) => { setSeason(e.target.value); setTerrFilter("all"); }} className="border border-stone-300 rounded px-2 py-1 bg-white text-sm">{seasons.map((s) => <option key={s} value={s}>Saison {s}</option>)}</select>}</div></div>
+    {inSeason.length === 0 ? <SectionCard className="p-4"><p className="text-sm text-stone-500 italic">Aucune journée pour cette sélection.</p></SectionCard> : (<>
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-white border border-stone-200 rounded-md p-3 text-center"><p className="text-2xl font-bold text-emerald-800">{stats.totalAnimals}</p><p className="text-xs text-stone-600">animaux</p></div>
         <div className="bg-white border border-stone-200 rounded-md p-3 text-center"><p className="text-2xl font-bold text-amber-800">{stats.totalBullets}</p><p className="text-xs text-stone-600">balles</p></div>
@@ -1188,6 +1207,38 @@ function CarnetDeBattue() {
     });
     if (changed) setJournees(next);
   }, [participants, journees, loaded]);
+
+  // Récupère automatiquement les retours des chasseurs (fond, sans écraser tes modifs en cours)
+  const pullCloud = async () => {
+    if (!github.token) return;
+    try {
+      const localAt = Number(await get(K.localAt, 0)) || 0;
+      const cloudAt = Number(await get(K.cloudAt, 0)) || 0;
+      if (localAt > cloudAt) return; // modifs locales non encore envoyées : on ne touche pas
+      const repo = github.dataRepo || "battue-data";
+      const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(ghBase(repo) + "?ref=main&t=" + Date.now(), { headers: ghHeaders(), cache: "no-store", signal: ctrl.signal });
+      clearTimeout(to);
+      if (!res.ok) return;
+      const j = await res.json();
+      const cloud = JSON.parse(fromBase64Utf8(j.content || ""));
+      if (!cloud || !cloud.savedAt || cloud.savedAt <= cloudAt) return; // rien de plus récent
+      if (cloud.participants) setParticipants(cloud.participants.map(normParticipant));
+      if (cloud.terrains) setTerrains(cloud.terrains.map(normTerrain));
+      if (cloud.journees) setJournees(cloud.journees);
+      if (cloud.safety) setSafety(normSafety(cloud.safety));
+      const st = cloud.savedAt; localAtRef.current = st; skipAuto.current = true; skipDirty.current = true;
+      await window.storage.set(K.localAt, JSON.stringify(st)); await window.storage.set(K.cloudAt, JSON.stringify(st));
+    } catch (e) {}
+  };
+  const pullRef = useRef(null); pullRef.current = pullCloud;
+  useEffect(() => {
+    if (!loaded) return;
+    const iv = setInterval(() => { if (pullRef.current) pullRef.current(); }, 60000);
+    const onFocus = () => { if (pullRef.current) pullRef.current(); };
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(iv); window.removeEventListener("focus", onFocus); };
+  }, [loaded]);
 
   const resetAll = () => { if (!window.confirm("Tout réinitialiser ?")) return; setParticipants(initialParticipants); setTerrains(initialTerrains); setJournees(initialJournees); setSafety(DEFAULT_SAFETY); };
 
