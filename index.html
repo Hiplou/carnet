@@ -695,11 +695,11 @@ function fillLists(){var so=$("sonneries");DATA.sonneries.forEach(function(s){va
 renderPicker();fillLists();var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight)AR=im.naturalWidth/im.naturalHeight;};im.src=DATA.image;
 </scr` + `ipt></body></html>`;
 
-function generateSharedHtml(journee, terrain, participants, safety) {
+function generateSharedHtml(journee, terrain, participants, safety, fnUrl) {
   const posted = {};
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, consignes: m.consignes || "", photos: m.photos || [] }); }); });
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => a.name.localeCompare(b.name));
-  const DATA = { date: journee.date, journeeId: journee.id, fnUrl: "https://machasse.netlify.app/.netlify/functions/feedback", territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })) })), chasseurs, sonneries: safety.sonneries, consignes: safety.consignes };
+  const DATA = { date: journee.date, journeeId: journee.id, fnUrl: fnUrl || "", territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })) })), chasseurs, sonneries: safety.sonneries, consignes: safety.consignes };
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
 }
 
@@ -708,6 +708,7 @@ function PublishModal({ github, setGithub, onClose, onLoad }) {
   const [owner, setOwner] = useState(github.owner || "Hiplou");
   const [repo, setRepo] = useState(github.repo || "battue");
   const [dataRepo, setDataRepo] = useState(github.dataRepo || "battue-data");
+  const [fnUrl, setFnUrl] = useState(github.fnUrl || "");
   const url = "https://" + (owner || "hiplou").toLowerCase() + ".github.io/" + (repo || "battue") + "/";
   return (<div className="fixed inset-0 z-50 bg-stone-900/70 flex items-end sm:items-center justify-center p-3 overflow-auto">
     <div className="bg-stone-50 rounded-xl max-w-md w-full my-4 shadow-2xl">
@@ -717,10 +718,11 @@ function PublishModal({ github, setGithub, onClose, onLoad }) {
         <div><label className="text-xs uppercase tracking-wide text-stone-400">Clé GitHub (jeton)</label><input value={token} onChange={(e) => setToken(e.target.value)} placeholder="github_pat_…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /></div>
         <div className="flex gap-2"><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Compte</label><input value={owner} onChange={(e) => setOwner(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Dossier public (page)</label><input value={repo} onChange={(e) => setRepo(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div></div>
         <div><label className="text-xs uppercase tracking-wide text-stone-400">Dossier privé (sauvegarde des données)</label><input value={dataRepo} onChange={(e) => setDataRepo(e.target.value)} placeholder="battue-data" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
+        <div><label className="text-xs uppercase tracking-wide text-stone-400">Adresse du facteur (retours chasseurs)</label><input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder="https://…netlify.app/.netlify/functions/feedback" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /><p className="text-[10px] text-stone-400 mt-1">Laisse vide si tu n'utilises pas les retours automatiques.</p></div>
         <p className="text-xs text-stone-500">Lien des chasseurs : <span className="text-emerald-800 break-all">{url}</span></p>
         {onLoad && <div className="border-t border-stone-200 pt-3"><button onClick={() => { onClose(); onLoad(); }} className="w-full flex items-center justify-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md">⬇ Charger la sauvegarde depuis GitHub</button><p className="text-[11px] text-stone-400 mt-1">Sur un nouvel appareil : colle ta clé, Enregistre, puis Charge.</p></div>}
       </div>
-      <div className="px-4 py-3 border-t border-stone-200 flex justify-end gap-2"><button onClick={onClose} className="text-sm text-stone-500 px-3 py-1.5">Annuler</button><button onClick={() => { setGithub({ ...github, token: token.trim(), owner: (owner.trim() || "Hiplou"), repo: (repo.trim() || "battue"), path: github.path || "index.html", dataRepo: (dataRepo.trim() || "battue-data") }); onClose(); }} className="bg-emerald-800 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Enregistrer</button></div>
+      <div className="px-4 py-3 border-t border-stone-200 flex justify-end gap-2"><button onClick={onClose} className="text-sm text-stone-500 px-3 py-1.5">Annuler</button><button onClick={() => { setGithub({ ...github, token: token.trim(), owner: (owner.trim() || "Hiplou"), repo: (repo.trim() || "battue"), path: github.path || "index.html", dataRepo: (dataRepo.trim() || "battue-data"), fnUrl: fnUrl.trim() }); onClose(); }} className="bg-emerald-800 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Enregistrer</button></div>
     </div>
   </div>);
 }
@@ -800,7 +802,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     if (!github.token) { openSettings(); return; }
     setPub({ status: "publishing" });
     try {
-      const html = generateSharedHtml(journee, terrain, participants, safety);
+      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl);
       await githubPutFile({ token: github.token, owner: github.owner, repo: github.repo, path: (github.path || "index.html"), content: toBase64Utf8(html), message: "Publication battue " + new Date().toISOString() });
       setPub({ status: "ok", url: pubUrl });
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
@@ -957,7 +959,7 @@ function buildDinnerPrintHtml(participants) {
 
 // ---------- Application ----------
 const K = { participants: "cdb2:participants", journees: "cdb2:journees", terrainIndex: "cdb2:terrain-index", terrainPrefix: "cdb2:terrain:", imgPrefix: "cdb2:img:", mimgPrefix: "cdb2:mimg:", safety: "cdb2:safety", github: "cdb2:github", localAt: "cdb2:localAt", cloudAt: "cdb2:cloudAt" };
-const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", dataRepo: "battue-data" };
+const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", dataRepo: "battue-data", fnUrl: "" };
 const STORAGE_OK = typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
 
 function CarnetDeBattue() {
