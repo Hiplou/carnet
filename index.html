@@ -30,70 +30,59 @@ const { useState, useEffect, useRef } = React;
 /* Stockage local durable (IndexedDB) — même API que window.storage */
 window.storage = (function () {
   var DB = "carnet-battue", ST = "kv", dbp = null;
-  function open() { if (dbp) return dbp; dbp = new Promise(function (res, rej) { var r = indexedDB.open(DB, 1); r.onupgradeneeded = function () { r.result.createObjectStore(ST); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); return dbp; }
-  function st(mode) { return open().then(function (db) { return db.transaction(ST, mode).objectStore(ST); }); }
+  function open() {
+    if (dbp) return dbp;
+    dbp = new Promise(function (res, rej) {
+      var r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = function () { var db = r.result; if (!db.objectStoreNames.contains(ST)) db.createObjectStore(ST); };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+    });
+    return dbp;
+  }
+  function tx(mode) { return open().then(function (db) { return db.transaction(ST, mode).objectStore(ST); }); }
   return {
-    get: function (k) { return st("readonly").then(function (s) { return new Promise(function (res, rej) { var r = s.get(k); r.onsuccess = function () { res(r.result != null ? { value: r.result } : null); }; r.onerror = function () { rej(r.error); }; }); }); },
-    set: function (k, v) { return st("readwrite").then(function (s) { return new Promise(function (res, rej) { var r = s.put(v, k); r.onsuccess = function () { res(); }; r.onerror = function () { rej(r.error); }; }); }); },
-    delete: function (k) { return st("readwrite").then(function (s) { return new Promise(function (res, rej) { var r = s.delete(k); r.onsuccess = function () { res(); }; r.onerror = function () { rej(r.error); }; }); }); },
-    list: function () { return st("readonly").then(function (s) { return new Promise(function (res, rej) { var r = s.getAllKeys(); r.onsuccess = function () { res({ keys: r.result }); }; r.onerror = function () { rej(r.error); }; }); }); }
+    get: function (key) { return tx("readonly").then(function (s) { return new Promise(function (res, rej) { var r = s.get(key); r.onsuccess = function () { res(r.result === undefined ? null : { key: key, value: r.result }); }; r.onerror = function () { rej(r.error); }; }); }); },
+    set: function (key, value) { return tx("readwrite").then(function (s) { return new Promise(function (res, rej) { var r = s.put(value, key); r.onsuccess = function () { res({ key: key, value: value }); }; r.onerror = function () { rej(r.error); }; }); }); },
+    delete: function (key) { return tx("readwrite").then(function (s) { return new Promise(function (res, rej) { var r = s.delete(key); r.onsuccess = function () { res({ key: key, deleted: true }); }; r.onerror = function () { rej(r.error); }; }); }); }
   };
 })();
 
-/* Icônes (SVG inline) */
-var PATHS = {
-  users: '<circle cx="9" cy="7" r="3"/><path d="M2 20a7 7 0 0 1 14 0"/><path d="M16 3.6a3 3 0 0 1 0 6.8"/><path d="M21 20a7 7 0 0 0-5-6"/>',
-  mappin: '<path d="M12 21s-6-5.5-6-10a6 6 0 0 1 12 0c0 4.5-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>',
-  calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
-  chevrondown: '<path d="M6 9l6 6 6-6"/>',
-  chevronright: '<path d="M9 6l6 6-6 6"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  check: '<path d="M20 6L9 17l-5-5"/>',
-  x: '<path d="M18 6L6 18M6 6l12 12"/>',
-  crosshair: '<circle cx="12" cy="12" r="9"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
-  arrowleft: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
-  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
-  trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
-  upload: '<path d="M12 15V3M7 8l5-5 5 5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
-  download: '<path d="M12 3v12M7 10l5 5 5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
-  folder: '<path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2"/><path d="M2 11h20l-2 9H4z"/>',
-  alert: '<path d="M12 3l10 18H2z"/><path d="M12 9v5M12 18h.01"/>',
-  crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/>',
-  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/>',
-  shield: '<path d="M12 2l8 3v6c0 5-3.5 8-8 11-4.5-3-8-6-8-11V5z"/>',
-  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
-  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.5-1.3a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z"/>',
-  send: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
-  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>',
-  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/>',
-  bookopen: '<path d="M12 7v14M3 5a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H5a2 2 0 0 1-2-2z"/><path d="M21 5a2 2 0 0 0-2-2h-5a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h5a2 2 0 0 0 2-2z"/>'
+/* Icônes (SVG inline, style lucide) */
+var __ICONS = {
+  Users: "<path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/>",
+  MapPin: "<path d='M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z'/><circle cx='12' cy='10' r='3'/>",
+  CalendarDays: "<path d='M8 2v4'/><path d='M16 2v4'/><rect width='18' height='18' x='3' y='4' rx='2'/><path d='M3 10h18'/><path d='M8 14h.01'/><path d='M12 14h.01'/><path d='M16 14h.01'/><path d='M8 18h.01'/><path d='M12 18h.01'/><path d='M16 18h.01'/>",
+  ChevronDown: "<path d='m6 9 6 6 6-6'/>",
+  ChevronRight: "<path d='m9 18 6-6-6-6'/>",
+  Plus: "<path d='M5 12h14'/><path d='M12 5v14'/>",
+  Check: "<path d='M20 6 9 17l-5-5'/>",
+  X: "<path d='M18 6 6 18'/><path d='m6 6 12 12'/>",
+  Crosshair: "<circle cx='12' cy='12' r='10'/><line x1='22' x2='18' y1='12' y2='12'/><line x1='6' x2='2' y1='12' y2='12'/><line x1='12' x2='12' y1='6' y2='2'/><line x1='12' x2='12' y1='22' y2='18'/>",
+  ArrowLeft: "<path d='m12 19-7-7 7-7'/><path d='M19 12H5'/>",
+  Target: "<circle cx='12' cy='12' r='10'/><circle cx='12' cy='12' r='6'/><circle cx='12' cy='12' r='2'/>",
+  Trash2: "<path d='M3 6h18'/><path d='M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6'/><path d='M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2'/><line x1='10' x2='10' y1='11' y2='17'/><line x1='14' x2='14' y1='11' y2='17'/>",
+  Upload: "<path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='17 8 12 3 7 8'/><line x1='12' x2='12' y1='3' y2='15'/>",
+  Download: "<path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/><polyline points='7 10 12 15 17 10'/><line x1='12' x2='12' y1='15' y2='3'/>",
+  FolderOpen: "<path d='m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2'/>",
+  AlertTriangle: "<path d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z'/><path d='M12 9v4'/><path d='M12 17h.01'/>",
+  Crop: "<path d='M6 2v14a2 2 0 0 0 2 2h14'/><path d='M18 22V8a2 2 0 0 0-2-2H2'/>",
+  FileText: "<path d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/><path d='M14 2v4a2 2 0 0 0 2 2h4'/><path d='M16 13H8'/><path d='M16 17H8'/><path d='M10 9H8'/>",
+  Shield: "<path d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z'/>",
+  Bell: "<path d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/><path d='M10.3 21a1.94 1.94 0 0 0 3.4 0'/>",
+  Phone: "<path d='M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92Z'/>",
+  Send: "<path d='m22 2-7 20-4-9-9-4Z'/><path d='M22 2 11 13'/>",
+  Share2: "<circle cx='18' cy='5' r='3'/><circle cx='6' cy='12' r='3'/><circle cx='18' cy='19' r='3'/><line x1='8.59' x2='15.42' y1='13.51' y2='17.49'/><line x1='15.41' x2='8.59' y1='6.51' y2='10.49'/>",
+  ImageIcon: "<rect width='18' height='18' x='3' y='3' rx='2' ry='2'/><circle cx='9' cy='9' r='2'/><path d='m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21'/>",
+  BookOpen: "<path d='M12 7v14'/><path d='M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z'/>"
 };
-function Icon(props) { var size = props.size || 16; return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={props.className} dangerouslySetInnerHTML={{ __html: props.d }} />; }
-var Users = function (p) { return <Icon {...p} d={PATHS.users} />; };
-var MapPin = function (p) { return <Icon {...p} d={PATHS.mappin} />; };
-var CalendarDays = function (p) { return <Icon {...p} d={PATHS.calendar} />; };
-var ChevronDown = function (p) { return <Icon {...p} d={PATHS.chevrondown} />; };
-var ChevronRight = function (p) { return <Icon {...p} d={PATHS.chevronright} />; };
-var Plus = function (p) { return <Icon {...p} d={PATHS.plus} />; };
-var Check = function (p) { return <Icon {...p} d={PATHS.check} />; };
-var X = function (p) { return <Icon {...p} d={PATHS.x} />; };
-var Crosshair = function (p) { return <Icon {...p} d={PATHS.crosshair} />; };
-var ArrowLeft = function (p) { return <Icon {...p} d={PATHS.arrowleft} />; };
-var Target = function (p) { return <Icon {...p} d={PATHS.target} />; };
-var Trash2 = function (p) { return <Icon {...p} d={PATHS.trash} />; };
-var Upload = function (p) { return <Icon {...p} d={PATHS.upload} />; };
-var Download = function (p) { return <Icon {...p} d={PATHS.download} />; };
-var FolderOpen = function (p) { return <Icon {...p} d={PATHS.folder} />; };
-var AlertTriangle = function (p) { return <Icon {...p} d={PATHS.alert} />; };
-var Crop = function (p) { return <Icon {...p} d={PATHS.crop} />; };
-var FileText = function (p) { return <Icon {...p} d={PATHS.file} />; };
-var Shield = function (p) { return <Icon {...p} d={PATHS.shield} />; };
-var Bell = function (p) { return <Icon {...p} d={PATHS.bell} />; };
-var Phone = function (p) { return <Icon {...p} d={PATHS.phone} />; };
-var Send = function (p) { return <Icon {...p} d={PATHS.send} />; };
-var Share2 = function (p) { return <Icon {...p} d={PATHS.share} />; };
-var ImageIcon = function (p) { return <Icon {...p} d={PATHS.image} />; };
-var BookOpen = function (p) { return <Icon {...p} d={PATHS.bookopen} />; };
+function __mkIcon(name) {
+  return function (props) {
+    props = props || {};
+    return React.createElement("svg", { width: props.size || 18, height: props.size || 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: props.strokeWidth || 2, strokeLinecap: "round", strokeLinejoin: "round", className: props.className, style: props.style, dangerouslySetInnerHTML: { __html: __ICONS[name] } });
+  };
+}
+const Users = __mkIcon("Users"), MapPin = __mkIcon("MapPin"), CalendarDays = __mkIcon("CalendarDays"), ChevronDown = __mkIcon("ChevronDown"), ChevronRight = __mkIcon("ChevronRight"), Plus = __mkIcon("Plus"), Check = __mkIcon("Check"), X = __mkIcon("X"), Crosshair = __mkIcon("Crosshair"), ArrowLeft = __mkIcon("ArrowLeft"), Target = __mkIcon("Target"), Trash2 = __mkIcon("Trash2"), Upload = __mkIcon("Upload"), Download = __mkIcon("Download"), FolderOpen = __mkIcon("FolderOpen"), AlertTriangle = __mkIcon("AlertTriangle"), Crop = __mkIcon("Crop"), FileText = __mkIcon("FileText"), Shield = __mkIcon("Shield"), Bell = __mkIcon("Bell"), Phone = __mkIcon("Phone"), Send = __mkIcon("Send"), Share2 = __mkIcon("Share2"), ImageIcon = __mkIcon("ImageIcon"), BookOpen = __mkIcon("BookOpen");
 
 // ============================================================
 //  CARNET DE BATTUE — v4
@@ -773,7 +762,7 @@ function fbPick(idx,val){var map={"Bon":"_bon","À réparer":"_rep","Dangereux":
 function setupFeedback(){var card=$("feedbackCard");var list=$("fbList");if(!card||!list)return;if(!me||!DATA.fnUrl||!DATA.journeeId||!me.posts.length){card.style.display="none";return;}card.style.display="block";FB_SENT=true;FB_B=[];FB_S=[];list.innerHTML="";me.posts.forEach(function(p,idx){FB_B[idx]=0;FB_S[idx]="";var w=document.createElement("div");w.className="fbblock";w.innerHTML="<div class='fbhd'><span class='fbdot' style='background:"+(p.color||"#166534")+"'></span><span class='fbtt'>"+p.traqueName+"<small>Poste "+p.label+"</small></span></div><p class='fblab'>Balles tirées</p><div class='counter'><button type='button' class='cbtn' id='fbMinus"+idx+"'>−</button><span class='cval' id='fbV"+idx+"'>0</span><button type='button' class='cbtn' id='fbPlus"+idx+"'>+</button></div><p class='fblab'>État du mirador</p><div class='pills'><button type='button' class='pill' id='fbP"+idx+"_bon'>Bon</button><button type='button' class='pill' id='fbP"+idx+"_rep'>À réparer</button><button type='button' class='pill' id='fbP"+idx+"_dng'>Dangereux</button></div><p class='fblab'>Commentaire (facultatif)</p><input class='fbcom' id='fbC"+idx+"' placeholder='ex : échelle abîmée…'/>";list.appendChild(w);$("fbMinus"+idx).onclick=function(){fbDelta(idx,-1);};$("fbPlus"+idx).onclick=function(){fbDelta(idx,1);};$("fbP"+idx+"_bon").onclick=function(){fbPick(idx,"Bon");};$("fbP"+idx+"_rep").onclick=function(){fbPick(idx,"À réparer");};$("fbP"+idx+"_dng").onclick=function(){fbPick(idx,"Dangereux");};});var btn=document.createElement("button");btn.className="fbsend";btn.textContent="Envoyer mon retour";btn.onclick=openConfirm;list.appendChild(btn);var msg=document.createElement("p");msg.className="fbmsg";msg.id="fbMsgMain";list.appendChild(msg);}
 function openConfirm(){var recaps=me.posts.map(function(p,idx){var b=FB_B[idx]||0;var s=FB_S[idx]||"non précisé";var c=$("fbC"+idx).value;return "<div class='recap'><b>"+p.traqueName+" — "+p.label+"</b><span>"+b+" balle(s) · mirador "+s+(c?(" · « "+c+" »"):"")+"</span></div>";}).join("");var ov=document.createElement("div");ov.className="fbov";ov.id="fbov";ov.innerHTML="<div class='fbsheet'><h3>Vérifie ton retour</h3><p class='sub'>Tu confirmes ces informations ?</p>"+recaps+"<div class='row'><button class='bmod' id='fbModBtn'>Modifier</button><button class='bcon' id='fbConfirmBtn'>Confirmer l'envoi</button></div></div>";document.body.appendChild(ov);$("fbModBtn").onclick=closeConfirm;$("fbConfirmBtn").onclick=doSend;}
 function closeConfirm(){var ov=$("fbov");if(ov)ov.remove();}
-function doSend(){var cb=$("fbConfirmBtn");if(cb){cb.disabled=true;cb.textContent="Envoi…";}var i=0,allOk=true;function next(){if(i>=me.posts.length){closeConfirm();var msg=$("fbMsgMain");var btn=document.querySelector(".fbsend");if(allOk){FB_SENT=true;if(btn){btn.disabled=true;btn.textContent="Retour envoyé ✓";btn.style.background="#166534";}if(msg){msg.style.color="#166534";msg.textContent="✓ Merci, ton retour est bien enregistré !";}}else{if(msg){msg.style.color="#b91c1c";msg.textContent="Un envoi a échoué. Réessaie.";}}return;}var idx=i;var p=me.posts[idx];var payload={journeeId:DATA.journeeId,trackId:p.trackId,miradorId:p.miradorId,hunter:me.name,bullets:FB_B[idx]||0,state:FB_S[idx]||"",comment:$("fbC"+idx).value};fetch(DATA.fnUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(r){if(!r.ok)allOk=false;i++;next();}).catch(function(){allOk=false;i++;next();});}next();}
+function doSend(){var cb=$("fbConfirmBtn");if(cb){cb.disabled=true;cb.textContent="Envoi…";}var i=0,allOk=true,errTxt="";function next(){if(i>=me.posts.length){closeConfirm();var msg=$("fbMsgMain");var btn=document.querySelector(".fbsend");if(allOk){FB_SENT=true;if(btn){btn.disabled=true;btn.textContent="Retour envoyé ✓";btn.style.background="#166534";}if(msg){msg.style.color="#166534";msg.textContent="✓ Merci, ton retour est bien enregistré !";}}else{if(msg){msg.style.color="#b91c1c";msg.textContent="Échec — détail : "+(errTxt||"réseau");}}return;}var idx=i;var p=me.posts[idx];var payload={userId:DATA.userId,journeeId:DATA.journeeId,trackId:p.trackId,miradorId:p.miradorId,hunter:me.name,bullets:FB_B[idx]||0,state:FB_S[idx]||"",comment:$("fbC"+idx).value};fetch(DATA.fnUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(r){if(!r.ok){allOk=false;return r.text().then(function(t){errTxt="["+r.status+"] "+(t||"").slice(0,180);}).catch(function(){errTxt="["+r.status+"]";});}}).then(function(){i++;next();}).catch(function(e){allOk=false;errTxt="réseau: "+String((e&&e.message)||e).slice(0,120);i++;next();});}next();}
 function selectHunter(i){me=DATA.chasseurs[i];renderHero();var def=(me.posts[0]?me.posts[0].traqueIndex:0);buildTabs(def);$("pick").style.display="none";$("appview").style.display="block";window.scrollTo(0,0);}
 function backToPick(){if(!FB_SENT&&fbHasData()&&!window.confirm("Tu n'as pas envoyé ton retour (balles / mirador). Changer de nom quand même ?"))return;FB_SENT=true;$("appview").style.display="none";$("pick").style.display="flex";window.scrollTo(0,0);}
 function renderPicker(){var box=$("names");box.innerHTML="";if(!DATA.chasseurs.length){box.innerHTML="<p class='empty'>Aucun poste attribué pour le moment.</p>";}DATA.chasseurs.forEach(function(cc,i){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🦌 "+cc.name;b.onclick=function(){selectHunter(i);};box.appendChild(b);});var rb=$("rabnames");if(rb){rb.innerHTML="";(DATA.rabatteurs||[]).forEach(function(nm){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🥁 "+nm;b.onclick=function(){enterRabatteurs();};rb.appendChild(b);});}$("subpick").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;}
@@ -785,11 +774,11 @@ renderPicker();fillLists();
 var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR=im.naturalWidth/im.naturalHeight;var mp=$("map");if(mp&&mp.innerHTML!=="")renderMap(MAP_I);}};im.src=DATA.image;
 </scr` + `ipt></body></html>`;
 
-function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName) {
+function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId) {
   const posted = {};
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: m.consignes || "", photos: m.photos || [] }); }); });
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => a.name.localeCompare(b.name));
-  const DATA = { date: journee.date, journeeId: journee.id, fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.participe && p.role === "rabatteur").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes };
+  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.participe && p.role === "rabatteur").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes };
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
 }
 
@@ -812,7 +801,7 @@ function PublishModal({ github, setGithub, onClose, onLoad }) {
         <div><label className="text-xs uppercase tracking-wide text-stone-400">Dossier privé (sauvegarde des données)</label><input value={dataRepo} onChange={(e) => setDataRepo(e.target.value)} placeholder="battue-data" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
         <div><label className="text-xs uppercase tracking-wide text-stone-400">Adresse du facteur (retours chasseurs)</label><input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder="https://…netlify.app/.netlify/functions/feedback" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /><p className="text-[10px] text-stone-400 mt-1">Laisse vide si tu n'utilises pas les retours automatiques.</p></div>
         <p className="text-xs text-stone-500">Lien des chasseurs : <span className="text-emerald-800 break-all">{url}</span></p>
-        {onLoad && <div className="border-t border-stone-200 pt-3"><button onClick={() => { onClose(); onLoad(); }} className="w-full flex items-center justify-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md">⬇ Charger la sauvegarde depuis GitHub</button><p className="text-[11px] text-stone-400 mt-1">Sur un nouvel appareil : colle ta clé, Enregistre, puis Charge.</p></div>}
+        {onLoad && <div className="border-t border-stone-200 pt-3"><button onClick={() => { onClose(); onLoad(); }} className="w-full flex items-center justify-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md">⬇ Importer mes anciennes données (GitHub)</button><p className="text-[11px] text-stone-400 mt-1">À faire UNE fois pour rapatrier ta sauvegarde GitHub dans ce compte.</p></div>}
       </div>
       <div className="px-4 py-3 border-t border-stone-200 flex justify-end gap-2"><button onClick={onClose} className="text-sm text-stone-500 px-3 py-1.5">Annuler</button><button onClick={() => { setGithub({ ...github, token: token.trim(), owner: (owner.trim() || "Hiplou"), repo: (repo.trim() || "battue"), path: github.path || "index.html", dataRepo: (dataRepo.trim() || "battue-data"), fnUrl: fnUrl.trim(), orgName: orgName.trim() }); onClose(); }} className="bg-emerald-800 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Enregistrer</button></div>
     </div>
@@ -886,7 +875,7 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
 }
 
 // ---------- Journées ----------
-function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings }) {
+function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings, userId }) {
   const [openJournee, setOpenJournee] = useState(null);
   const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
@@ -897,7 +886,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     if (!github.token) { openSettings(); return; }
     setPub({ status: "publishing" });
     try {
-      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl, github.orgName);
+      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl, github.orgName, userId);
       await githubPutFile({ token: github.token, owner: github.owner, repo: github.repo, path: (github.path || "index.html"), content: toBase64Utf8(html), message: "Publication battue " + new Date().toISOString() });
       setPub({ status: "ok", url: pubUrl });
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
@@ -1079,7 +1068,12 @@ function AuthScreen() {
     if (!SB) { setMsg("⚠ Connexion à la base impossible (internet ?)."); return; }
     setBusy(true); setMsg("");
     try {
-      if (mode === "up") {
+      if (mode === "forgot") {
+        if (!email.trim()) { setMsg("⚠ Entre ton email d'abord."); setBusy(false); return; }
+        const { error } = await SB.auth.resetPasswordForEmail(email.trim(), { redirectTo: "https://hiplou.github.io/carnet/" });
+        if (error) throw error;
+        setMsg("✓ Si un compte existe pour cet email, un lien de réinitialisation vient d'être envoyé. Regarde ta boîte mail (et les spams).");
+      } else if (mode === "up") {
         const { error } = await SB.auth.signUp({ email: email.trim(), password: pass });
         if (error) throw error;
         setMsg("✓ Compte créé ! Va confirmer ton adresse dans l'email reçu, puis connecte-toi.");
@@ -1091,17 +1085,21 @@ function AuthScreen() {
     } catch (e) { setMsg("⚠ " + ((e && e.message) || e)); }
     setBusy(false);
   };
+  const title = mode === "up" ? "Crée ton compte" : mode === "forgot" ? "Réinitialiser le mot de passe" : "Connecte-toi à ton carnet";
+  const cta = busy ? "…" : mode === "up" ? "Créer mon compte" : mode === "forgot" ? "Envoyer le lien" : "Se connecter";
   return (<div className="min-h-screen bg-stone-100 flex items-center justify-center px-4 py-8">
     <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
       <div className="flex items-center gap-2 mb-1"><span className="text-3xl">🦌</span><h1 className="font-serif text-2xl text-stone-800">Carnet de Battue</h1></div>
-      <p className="text-sm text-stone-500 mb-5">{mode === "up" ? "Crée ton compte" : "Connecte-toi à ton carnet"}</p>
+      <p className="text-sm text-stone-500 mb-5">{title}</p>
       <label className="text-xs uppercase tracking-wide text-stone-400">Email</label>
       <input type="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-3 mt-1 bg-white" placeholder="ton@email.fr" />
-      <label className="text-xs uppercase tracking-wide text-stone-400">Mot de passe</label>
-      <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-4 mt-1 bg-white" placeholder="••••••••" />
-      <button onClick={submit} disabled={busy || !email || !pass} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg py-2.5 font-medium disabled:bg-stone-300">{busy ? "…" : mode === "up" ? "Créer mon compte" : "Se connecter"}</button>
+      {mode !== "forgot" && (<><label className="text-xs uppercase tracking-wide text-stone-400">Mot de passe</label>
+      <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-1 mt-1 bg-white" placeholder="••••••••" /></>)}
+      {mode === "in" && <button onClick={() => { setMode("forgot"); setMsg(""); }} className="text-xs text-stone-500 hover:text-stone-700 underline mb-3 block">Mot de passe oublié ?</button>}
+      <button onClick={submit} disabled={busy || !email || (mode !== "forgot" && !pass)} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg py-2.5 font-medium disabled:bg-stone-300 mt-2">{cta}</button>
       {msg && <p className="text-sm mt-3 text-stone-700 whitespace-pre-wrap">{msg}</p>}
-      <button onClick={() => { setMode(mode === "up" ? "in" : "up"); setMsg(""); }} className="w-full text-sm text-emerald-800 mt-4 underline">{mode === "up" ? "J'ai déjà un compte" : "Pas encore de compte ? En créer un"}</button>
+      {mode === "forgot" ? <button onClick={() => { setMode("in"); setMsg(""); }} className="w-full text-sm text-emerald-800 mt-4 underline">← Retour à la connexion</button>
+        : <button onClick={() => { setMode(mode === "up" ? "in" : "up"); setMsg(""); }} className="w-full text-sm text-emerald-800 mt-4 underline">{mode === "up" ? "J'ai déjà un compte" : "Pas encore de compte ? En créer un"}</button>}
     </div>
   </div>);
 }
@@ -1167,6 +1165,40 @@ function CarnetApp({ session, onSignOut }) {
     saveTimeout.current = setTimeout(() => { saveNow(); }, 1500);
     return () => clearTimeout(saveTimeout.current);
   }, [participants, terrains, journees, safety, loaded]);
+
+  // Récupère les retours des chasseurs (table feedbacks) et les fusionne, puis les efface
+  const pullFeedback = async () => {
+    if (!SB || !session) return;
+    try {
+      const { data, error } = await SB.from("feedbacks").select("*").eq("user_id", session.user.id).order("ts", { ascending: true });
+      if (error || !data || !data.length) return;
+      const js = stateRef.current.journees.map((j) => ({ ...j, shots: { ...(j.shots || {}) }, miradorStates: { ...(j.miradorStates || {}) } }));
+      let changed = false;
+      data.forEach((f) => {
+        const j = js.find((x) => x.id === f.journee_id);
+        if (!j) return;
+        j.shots[f.track_id] = { ...(j.shots[f.track_id] || {}), [f.mirador_id]: f.bullets };
+        j.miradorStates[f.track_id] = { ...(j.miradorStates[f.track_id] || {}), [f.mirador_id]: { state: f.state || "", comment: f.comment || "", hunter: f.hunter || "", ts: f.ts } };
+        changed = true;
+      });
+      if (!changed) return;
+      setJournees(js);
+      const s = stateRef.current;
+      const payload = { version: 3, savedAt: Date.now(), participants: s.participants, terrains: s.terrains, journees: js, safety: s.safety };
+      await SB.from("carnets").upsert({ user_id: session.user.id, data: payload, updated_at: new Date().toISOString() });
+      try { await window.storage.set("cb_supa_" + session.user.id, JSON.stringify(payload)); } catch (e) {}
+      await SB.from("feedbacks").delete().in("id", data.map((f) => f.id));
+    } catch (e) {}
+  };
+  const pullRef = useRef(null); pullRef.current = pullFeedback;
+  useEffect(() => {
+    if (!loaded) return;
+    const iv = setInterval(() => { if (pullRef.current) pullRef.current(); }, 45000);
+    const onFocus = () => { if (pullRef.current) pullRef.current(); };
+    window.addEventListener("focus", onFocus);
+    if (pullRef.current) pullRef.current();
+    return () => { clearInterval(iv); window.removeEventListener("focus", onFocus); };
+  }, [loaded]);
 
   // Reglages GitHub (publication) gardes par appareil, en local
   useEffect(() => { if (!loaded) return; try { window.storage.set(K.github, JSON.stringify(github)); } catch (e) {} }, [github, loaded]);
@@ -1257,7 +1289,25 @@ function CarnetApp({ session, onSignOut }) {
       setGhStatus("saved"); setGhMsg("✓ Enregistré à " + new Date().toLocaleTimeString("fr-FR")); setDirty(false);
     } catch (e) { setGhStatus("error"); setGhMsg("⚠ Non enregistré : " + ((e && e.message) || e)); }
   };
-  const loadFromGitHub = async () => { window.alert("Tes données sont maintenant dans ton compte (Supabase). Le bouton « Charger » n'est plus nécessaire."); };
+  const loadFromGitHub = async () => {
+    if (!github.token) { setShowPub(true); window.alert("Ajoute d'abord ta clé GitHub dans les Réglages, puis reclique sur Importer."); return; }
+    if (!window.confirm("Importer tes données depuis GitHub (battue-data) dans CE compte ? Elles remplaceront le carnet actuel de ce compte.")) return;
+    setGhStatus("saving"); setGhMsg("Import en cours…");
+    try {
+      const repo = github.dataRepo || "battue-data";
+      const res = await fetch("https://api.github.com/repos/" + github.owner + "/" + repo + "/contents/data.json?ref=main&t=" + Date.now(), { headers: { Authorization: "Bearer " + github.token, Accept: "application/vnd.github+json" }, cache: "no-store" });
+      if (res.status === 404) { setGhStatus("idle"); window.alert("Aucune sauvegarde trouvée dans " + repo + "."); return; }
+      if (!res.ok) { const t = await res.text(); throw new Error("Code " + res.status + " — " + t.slice(0, 150)); }
+      const j = await res.json();
+      const data = JSON.parse(fromBase64Utf8(j.content || ""));
+      if (data.participants) setParticipants(data.participants.map(normParticipant));
+      if (data.terrains) setTerrains(data.terrains.map(normTerrain));
+      if (data.journees) setJournees(data.journees);
+      if (data.safety) setSafety(normSafety(data.safety));
+      setGhStatus("saved"); setGhMsg("✓ Importé");
+      window.alert("✓ Données importées ! Elles s'enregistrent maintenant dans ton compte (attends « ✓ Enregistré » en haut).");
+    } catch (e) { setGhStatus("error"); window.alert("Échec de l'import : " + ((e && e.message) || e)); }
+  };
 
   // Retire automatiquement des postes tout participant devenu absent ou supprimé
   useEffect(() => {
@@ -1305,24 +1355,43 @@ function CarnetApp({ session, onSignOut }) {
     <main className="max-w-3xl mx-auto px-4 py-5">
       {tab === "participants" && <ParticipantsView participants={participants} setParticipants={setParticipants} />}
       {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} />}
-      {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} />}
+      {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} userId={session?.user?.id} />}
       {tab === "securite" && <SecurityView safety={safety} setSafety={setSafety} />}
       {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} />}
     </main>
   </div>);
 }
 
+function UpdatePasswordScreen({ onDone }) {
+  const [pass, setPass] = useState(""); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if ((pass || "").length < 6) { setMsg("⚠ Au moins 6 caractères."); return; }
+    setBusy(true); setMsg("");
+    try { const { error } = await SB.auth.updateUser({ password: pass }); if (error) throw error; setMsg("✓ Mot de passe mis à jour !"); setTimeout(onDone, 900); }
+    catch (e) { setMsg("⚠ " + ((e && e.message) || e)); setBusy(false); }
+  };
+  return (<div className="min-h-screen bg-stone-100 flex items-center justify-center px-4 py-8"><div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
+    <div className="flex items-center gap-2 mb-1"><span className="text-3xl">🦌</span><h1 className="font-serif text-xl text-stone-800">Nouveau mot de passe</h1></div>
+    <p className="text-sm text-stone-500 mb-4">Choisis ton nouveau mot de passe.</p>
+    <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-3 bg-white" placeholder="••••••••" />
+    <button onClick={submit} disabled={busy || !pass} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg py-2.5 font-medium disabled:bg-stone-300">{busy ? "…" : "Valider"}</button>
+    {msg && <p className="text-sm mt-3 text-stone-700">{msg}</p>}
+  </div></div>);
+}
+
 function CarnetDeBattue() {
   const [session, setSession] = useState(null);
   const [ready, setReady] = useState(false);
+  const [recovery, setRecovery] = useState(false);
   useEffect(() => {
     if (!SB) { setReady(true); return; }
     SB.auth.getSession().then(({ data }) => { setSession(data.session); setReady(true); }).catch(() => setReady(true));
-    const { data: sub } = SB.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: sub } = SB.auth.onAuthStateChange((event, s) => { setSession(s); if (event === "PASSWORD_RECOVERY") setRecovery(true); });
     return () => { try { sub.subscription.unsubscribe(); } catch (e) {} };
   }, []);
   if (!ready) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement…</div>;
   if (!SB) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-red-700 text-sm px-6 text-center">Impossible de charger Supabase (connexion internet ?). Recharge la page.</div>;
+  if (recovery && session) return <UpdatePasswordScreen onDone={() => setRecovery(false)} />;
   if (!session) return <AuthScreen />;
   return <CarnetApp key={session.user.id} session={session} onSignOut={() => SB.auth.signOut()} />;
 }
