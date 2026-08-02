@@ -130,10 +130,10 @@ const initialTerrains = [
 const initialJournees = [{ id: "j1", date: "2026-11-08", terrainId: "t1", placements: {} }];
 
 // ---------- Normalisation ----------
-function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1 }; }
+function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack) }; }
-function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
@@ -280,10 +280,11 @@ function MiradorRow({ m, updateTrack, track }) {
   const del = () => updateTrack({ miradors: track.miradors.filter((x) => x.id !== m.id) });
   const addPhoto = async (e) => { const f = e.target.files?.[0]; if (!f) return; setBusy(true); try { const d = await downscaleImage(f, 1100, 0.55); patch({ photos: [...(m.photos || []), d] }); } catch {} finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } };
   const rmPhoto = (i) => patch({ photos: (m.photos || []).filter((_, k) => k !== i) });
-  return (<div className="bg-white border border-stone-200 rounded">
+  return (<div className={`border rounded ${(m.accFauteuil || m.accCanne) ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
     <div className="flex items-center gap-2 px-2 py-1">
       <Target size={12} className="text-amber-800 shrink-0" />
       <input value={m.label} onChange={(e) => patch({ label: e.target.value })} className="flex-1 text-sm bg-transparent outline-none" />
+      {(m.accFauteuil || m.accCanne) ? <span className="text-[11px]" title="Accessible mobilité réduite">{m.accFauteuil ? "♿" : "🦯"}</span> : null}
       {(m.photos && m.photos.length) ? <span className="text-[10px] text-stone-400">📷{m.photos.length}</span> : null}
       <button onClick={() => setOpen((o) => !o)} className="text-stone-400 hover:text-stone-700">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
       <button onClick={del} className="text-stone-400 hover:text-red-700"><X size={14} /></button>
@@ -292,6 +293,12 @@ function MiradorRow({ m, updateTrack, track }) {
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Priorité d'attribution</label>
         <div className="flex gap-1.5 mt-1">{[1, 2, 3, 4].map((n) => (<button key={n} onClick={() => patch({ priority: n })} className={`w-9 h-8 rounded text-sm font-bold border ${(m.priority || 1) === n ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-white text-stone-600 border-stone-300"}`}>{n}</button>))}</div>
         <p className="text-[10px] text-stone-400 mt-1">1 = poste rempli en priorité quand il y a peu de chasseurs.</p></div>
+      <div><label className="text-[10px] uppercase tracking-wide text-stone-400">♿ Accessibilité (mobilité réduite)</label>
+        <div className="flex gap-2 mt-1">
+          <button onClick={() => patch({ accFauteuil: !m.accFauteuil })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${m.accFauteuil ? "bg-emerald-100 text-emerald-800 border-emerald-500" : "bg-white text-stone-500 border-stone-300"}`}>{m.accFauteuil ? "✓ " : ""}♿ Fauteuil</button>
+          <button onClick={() => patch({ accCanne: !m.accCanne })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${m.accCanne ? "bg-emerald-100 text-emerald-800 border-emerald-500" : "bg-white text-stone-500 border-stone-300"}`}>{m.accCanne ? "✓ " : ""}🦯 Canne</button>
+        </div>
+        <p className="text-[10px] text-stone-400 mt-1">Un poste fauteuil accepte aussi une canne. Visible par toi seulement (jamais côté chasseur).</p></div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Consignes du poste (envoyées au chasseur)</label>
         <textarea value={m.consignes || ""} onChange={(e) => patch({ consignes: e.target.value })} rows={2} placeholder="Ex. Ne pas tirer vers le chemin à droite. Voisin à 40 m." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mt-1" /></div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Photos du poste</label>
@@ -387,7 +394,7 @@ function ParticipantsView({ participants, setParticipants }) {
   const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
-  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", participe: false, invitation: false, role: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", participe: false, invitation: false, role: null, mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
   const [dinerPrint, setDinerPrint] = useState(null);
@@ -437,6 +444,9 @@ function ParticipantsView({ participants, setParticipants }) {
             <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
             <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label><input value={p.phone || ""} onChange={(e) => update(p.id, { phone: e.target.value })} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Rôle (seuls les chasseurs sont placés sur les miradors)</p><RoleSelector value={p.role} onChange={(v) => update(p.id, { role: v })} /></div>
+            <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">♿ Mobilité réduite (placement adapté)</p><div className="flex gap-2">
+              {[{ v: null, l: "Aucune" }, { v: "canne", l: "🦯 Canne" }, { v: "fauteuil", l: "♿ Fauteuil" }].map((o) => (<button key={o.l} onClick={() => update(p.id, { mobility: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.mobility || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.l}</button>))}
+            </div><p className="text-[11px] text-stone-400 mt-1">Fauteuil = accès aux postes fauteuil. Canne = postes canne ou fauteuil.</p></div>
             <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
           </div>)}
         </SectionCard>); })}
@@ -536,8 +546,8 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
       const reco = recommendedIds && recommendedIds.has(m.id) && !hunter;
       const dim = recommendedIds && !recommendedIds.has(m.id) && !hunter;
       return (<button key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, opacity: dim ? 0.4 : 1, pointerEvents: draw ? "none" : "auto" }} onClick={() => clickPost(m)} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
-        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border-2 shadow ${reco ? "border-emerald-400 ring-2 ring-emerald-400" : "border-white"}`} style={{ backgroundColor: hunter ? "#b45309" : track.color }}>{hunter ? "🦌" : (m.priority || 1)}</span>
-        <span className="text-[9px] bg-stone-900/70 text-stone-50 px-1 rounded whitespace-nowrap leading-tight">{hunter ? hunter.name.split(" ")[0] : m.label}</span></button>); })}
+        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border-2 shadow ${reco ? "border-emerald-400 ring-2 ring-emerald-400" : (m.accFauteuil || m.accCanne) ? "border-emerald-500" : "border-white"}`} style={{ backgroundColor: hunter ? "#b45309" : track.color }}>{hunter ? "🦌" : (m.priority || 1)}</span>
+        <span className="text-[9px] bg-stone-900/70 text-stone-50 px-1 rounded whitespace-nowrap leading-tight">{(m.accFauteuil || m.accCanne) ? (m.accFauteuil ? "♿ " : "🦯 ") : ""}{hunter ? hunter.name.split(" ")[0] : m.label}</span></button>); })}
     {dims.w > 0 && allArrows.length > 0 && <svg viewBox={`0 0 ${dims.w} ${dims.h}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}><defs>{ARROW_COLORS.map((c) => <marker key={c} id={mid(c)} markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="13" refY="9" orient="auto"><path d="M1,1 L17,9 L1,17 Z" fill={c} stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" /></marker>)}</defs>{allArrows.map((a, i) => { const p1 = gl(a.x1, a.y1), p2 = gl(a.x2, a.y2); const col = a.color || "#2563eb"; const isSel = draw && i === selArrow; return (<g key={i}><line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#fff" strokeWidth={isSel ? 12 : 9} strokeLinecap="round" /><line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={col} strokeWidth={isSel ? 6.5 : 5} strokeLinecap="round" markerEnd={`url(#${mid(col)})`} />{draw && i < arr.length && <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth="24" style={{ pointerEvents: "stroke", cursor: "pointer" }} onPointerDown={selectArrow(i)} />}</g>); })}{selA && (() => { const p1 = gl(selA.x1, selA.y1), p2 = gl(selA.x2, selA.y2); return (<g><circle cx={p1.x} cy={p1.y} r="10" fill="#fff" stroke={selA.color || "#2563eb"} strokeWidth="3" style={{ pointerEvents: "auto", cursor: "move" }} onPointerDown={startHandle(selArrow, 1)} /><circle cx={p2.x} cy={p2.y} r="10" fill="#fff" stroke={selA.color || "#2563eb"} strokeWidth="3" style={{ pointerEvents: "auto", cursor: "move" }} onPointerDown={startHandle(selArrow, 2)} /></g>); })()}</svg>}
     </div>
   </div>);
@@ -905,7 +915,28 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: { ...(j.placements[trackId] || {}), [hid]: mid } } })));
   const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...(j.placements[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...j.placements, [trackId]: t } }; }));
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
-  const autoFill = (jid, track, pending, sortedFree) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const byPrio = {}; sortedFree.forEach((m) => { const p = m.priority || 1; (byPrio[p] = byPrio[p] || []).push(m); }); const prios = Object.keys(byPrio).map(Number).sort((a, b) => a - b); let posts = []; prios.forEach((p) => { posts = posts.concat(shuffle(byPrio[p])); }); const hunters = shuffle(pending); const cur = { ...(j.placements[track.id] || {}) }; const n = Math.min(hunters.length, posts.length); for (let i = 0; i < n; i++) cur[hunters[i].id] = posts[i].id; return { ...j, placements: { ...j.placements, [track.id]: cur } }; }));
+  const autoFill = (jid, track, pending, sortedFree) => setJournees((prev) => prev.map((j) => {
+    if (j.id !== jid) return j;
+    const tierOrder = (arr) => { const byP = {}; arr.forEach((m) => { const p = m.priority || 1; (byP[p] = byP[p] || []).push(m); }); return Object.keys(byP).map(Number).sort((a, b) => a - b).reduce((acc, p) => acc.concat(shuffle(byP[p])), []); };
+    let free = sortedFree.slice();
+    const cur = { ...(j.placements[track.id] || {}) };
+    const place = (hunters, ok) => {
+      shuffle(hunters.slice()).forEach((h) => {
+        const ordered = tierOrder(free.filter(ok));
+        if (!ordered.length) return;
+        const post = ordered[0];
+        cur[h.id] = post.id;
+        free = free.filter((m) => m.id !== post.id);
+      });
+    };
+    const okFauteuil = (m) => !!m.accFauteuil;
+    const okCanne = (m) => !!m.accCanne || !!m.accFauteuil;
+    // 1) Fauteuils -> postes fauteuil, 2) Cannes -> postes canne/fauteuil, 3) Valides -> tout ce qui reste
+    place(pending.filter((h) => h.mobility === "fauteuil"), okFauteuil);
+    place(pending.filter((h) => h.mobility === "canne"), okCanne);
+    place(pending.filter((h) => !h.mobility), () => true);
+    return { ...j, placements: { ...j.placements, [track.id]: cur } };
+  }));
   const clearAll = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: {} } })));
   const addArrow = (jid, trackId, a) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [...((j.arrows || {})[trackId] || []), a] } })));
   const clearArrows = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [] } })));
