@@ -132,12 +132,14 @@ const initialJournees = [{ id: "j1", date: "2026-11-08", terrainId: "t1", placem
 // ---------- Normalisation ----------
 function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
-function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack) }; }
+function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack), planChasse: normPlan(t.planChasse) }; }
 function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
-const ESPECES = [{ key: "chevreuil", label: "Chevreuil", emoji: "🦌" }, { key: "sanglier", label: "Sanglier", emoji: "🐗" }, { key: "renard", label: "Renard", emoji: "🦊" }, { key: "autre", label: "Autre", emoji: "🐾" }];
+const ESPECES = [{ key: "chevreuil", label: "Chevreuil", emoji: "🦌" }, { key: "sanglier", label: "Sanglier", emoji: "🐗" }, { key: "renard", label: "Renard", emoji: "🦊" }, { key: "lievre", label: "Lièvre", emoji: "🐇" }, { key: "cerf", label: "Cerf indifférencié", emoji: "🦌" }, { key: "cerf_c1", label: "Cerf C1", emoji: "🦌" }, { key: "cerf_c2", label: "Cerf C2", emoji: "🦌" }, { key: "biche", label: "Biche", emoji: "🦌" }, { key: "faon", label: "Faon", emoji: "🦌" }, { key: "autre", label: "Autre", emoji: "🐾" }];
+const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
+function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
 function especeEmoji(esp) { const f = ESPECES.find((x) => x.key === esp); return f ? f.emoji : "🐾"; }
 
@@ -335,15 +337,43 @@ function PlanImagePicker({ image, onChange }) {
     {image ? <img src={image} alt="" className="w-full rounded-md border border-stone-300" /> : <MapNotice>Importe une seule photo (capture satellite d'ensemble). Chaque traque en sera un recadrage.</MapNotice>}</div>);
 }
 
-function TerritoryEditor({ initialTerrain, onSave, onCancel, onDelete, onLiveCommit }) {
+function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
+  const curSeason = seasonOf(new Date().toISOString());
+  const kills = {};
+  (journees || []).filter((j) => j.terrainId === tid && seasonOf(j.date) === curSeason).forEach((j) => (j.tableau || []).forEach((k) => { kills[k.espece] = (kills[k.espece] || 0) + (Number(k.quantite) || 0); }));
+  const chevCap = (planChasse.chevreuil && planChasse.chevreuil.enabled && planChasse.chevreuil.target) || 0;
+  const setCfg = (key, patch) => setPlanChasse({ ...planChasse, [key]: { ...planChasse[key], ...patch } });
+  const capOf = (cfg) => (cfg.mode === "proportionnel") ? chevCap : (cfg.target || 0);
+  return (<div className="space-y-2">
+    <p className="text-xs text-stone-500">Active les espèces présentes sur ce territoire : elles apparaîtront dans le tableau, les prélèvements des chasseurs et les stats. Les jauges cumulent la saison {curSeason}.</p>
+    {ESPECES.filter((e) => e.key !== "autre").map((e) => {
+      const cfg = planChasse[e.key] || { enabled: false, mode: "proportionnel", target: 0 };
+      const tue = kills[e.key] || 0;
+      const cap = capOf(cfg);
+      const pct = cap > 0 ? Math.min(100, Math.round((tue / cap) * 100)) : (tue > 0 ? 100 : 0);
+      const over = cap > 0 && tue >= cap;
+      return (<div key={e.key} className={`border rounded-lg p-2.5 ${cfg.enabled ? "bg-white border-stone-300" : "bg-stone-50 border-stone-200"}`}>
+        <button onClick={() => setCfg(e.key, { enabled: !cfg.enabled })} className="flex items-center gap-2 text-sm font-medium text-stone-800"><span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${cfg.enabled ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{cfg.enabled ? "✓" : ""}</span>{e.emoji} {e.label}</button>
+        {cfg.enabled && (<div className="mt-2 space-y-2">
+          <div className="flex gap-1.5">{[["bracelets", "Bracelets"], ["objectif", "Objectif"], ["proportionnel", "Proportionnel"]].map(([m, lbl]) => (<button key={m} onClick={() => setCfg(e.key, { mode: m })} className={`flex-1 px-2 py-1 rounded text-[11px] font-medium border ${cfg.mode === m ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{lbl}</button>))}</div>
+          {cfg.mode !== "proportionnel" ? (<div className="flex items-center gap-2 text-sm"><label className="text-xs text-stone-500">{cfg.mode === "bracelets" ? "Bracelets attribués" : "Objectif"} :</label><input type="number" inputMode="numeric" value={cfg.target || 0} onChange={(ev) => setCfg(e.key, { target: Math.max(0, parseInt(ev.target.value || "0", 10) || 0) })} onFocus={(ev) => ev.target.select()} className="w-20 border border-stone-300 rounded px-2 py-1 bg-white" /></div>)
+            : <p className="text-[11px] text-stone-400">Mesuré sur l'échelle du chevreuil (plafond {chevCap || "à définir"}).</p>}
+          <div><div className="flex justify-between text-[11px] mb-0.5"><span className="text-stone-500">Prélevés cette saison</span><span className={over ? "text-red-700 font-semibold" : "text-stone-700 font-semibold"}>{tue}{cap > 0 ? " / " + cap : ""}</span></div><div className="h-2.5 rounded-full bg-stone-200 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: pct + "%", background: over ? "#b91c1c" : "#166534" }} /></div></div>
+        </div>)}
+      </div>);
+    })}
+  </div>);
+}
+function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete, onLiveCommit }) {
   const [tid] = useState(initialTerrain?.id || `t-${Date.now()}`);
   const [name, setName] = useState(initialTerrain?.name || "");
   const [planImage, setPlanImage] = useState(initialTerrain?.planImage || null);
+  const [planChasse, setPlanChasse] = useState(normPlan(initialTerrain?.planChasse));
   const [tracks, setTracks] = useState(initialTerrain?.tracks?.length ? initialTerrain.tracks.map(normTrack) : [{ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }]);
   const [tab, setTab] = useState("plan");
   const firstRun = useRef(true);
   // Auto-enregistrement en direct : dès qu'on change photo / traque / mirador, on l'enregistre sans attendre le bouton
-  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", planImage, tracks }); }, [name, planImage, tracks]);
+  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse }); }, [name, planImage, tracks, planChasse]);
   const updateTrack = (id, patch) => setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   const addTrack = () => { const id = `trk-${Date.now()}`; setTracks((prev) => [...prev, { id, name: `Traque ${prev.length + 1}`, color: PALETTE[prev.length % PALETTE.length], crop: { ...DEFAULT_CROP }, miradors: [] }]); setTab(id); };
   const deleteTrack = (id) => { if (tracks.length === 1) { alert("Il faut au moins une traque."); return; } if (!window.confirm("Supprimer cette traque ?")) return; setTracks((prev) => { const next = prev.filter((t) => t.id !== id); if (tab === id) setTab("plan"); return next; }); };
@@ -353,23 +383,25 @@ function TerritoryEditor({ initialTerrain, onSave, onCancel, onDelete, onLiveCom
     <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom du territoire</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Bois de l'Île" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
     <div className="flex flex-wrap gap-1 border-b border-stone-200 pb-2">
       <button onClick={() => setTab("plan")} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === "plan" ? "bg-amber-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>🗺️ Plan global</button>
+      <button onClick={() => setTab("chasse")} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === "chasse" ? "bg-amber-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>🎯 Plan de chasse</button>
       {tracks.map((t) => (<button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === t.id ? "bg-emerald-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>{t.name}</button>))}
       <button onClick={addTrack} className="px-2.5 py-1.5 text-sm font-medium rounded-md bg-stone-100 text-amber-800 flex items-center gap-1"><Plus size={14} /> Traque</button>
     </div>
     {tab === "plan" ? (<div className="space-y-2"><p className="text-xs uppercase tracking-wide text-stone-400">Photo du territoire (une seule pour tout)</p><PlanImagePicker image={planImage} onChange={setPlanImage} /></div>)
+      : tab === "chasse" ? (<PlanChasseEditor planChasse={planChasse} setPlanChasse={setPlanChasse} journees={journees} tid={tid} />)
       : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} /></div>) : null}
-    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
+    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
   </SectionCard>);
 }
 
-function TerrainsView({ terrains, setTerrains }) {
+function TerrainsView({ terrains, setTerrains, journees }) {
   const [editorState, setEditorState] = useState(null);
   const commitTerrain = (terrain) => setTerrains((prev) => { const exists = prev.some((t) => t.id === terrain.id); return exists ? prev.map((t) => (t.id === terrain.id ? terrain : t)) : [...prev, terrain]; });
   const saveTerrain = (terrain) => { commitTerrain(terrain); setEditorState(null); };
   const deleteTerrain = (id) => { if (window.confirm("Supprimer ce territoire ?")) { setTerrains((prev) => prev.filter((t) => t.id !== id)); setEditorState(null); } };
   return (<div className="space-y-3">
     <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Territoires</h2>{!editorState && <button onClick={() => setEditorState("new")} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouveau territoire</button>}</div>
-    {editorState ? (<TerritoryEditor initialTerrain={editorState === "new" ? null : editorState} onSave={saveTerrain} onCancel={() => setEditorState(null)} onDelete={() => deleteTerrain(editorState.id)} onLiveCommit={commitTerrain} />)
+    {editorState ? (<TerritoryEditor initialTerrain={editorState === "new" ? null : editorState} journees={journees} onSave={saveTerrain} onCancel={() => setEditorState(null)} onDelete={() => deleteTerrain(editorState.id)} onLiveCommit={commitTerrain} />)
       : (<div className="grid sm:grid-cols-2 gap-3">{terrains.length === 0 && <p className="text-sm text-stone-500 italic sm:col-span-2">Aucun territoire. Clique « Nouveau territoire ».</p>}
         {terrains.map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
           {t.planImage ? <img src={t.planImage} alt={t.name} className="h-28 w-full object-cover" /> : <div className="h-28 bg-gradient-to-br from-emerald-900 via-emerald-800 to-stone-700 flex items-center justify-center text-stone-300"><MapPin size={20} /></div>}
@@ -798,7 +830,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   const posted = {};
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: m.consignes || "", photos: m.photos || [] }); }); });
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => a.name.localeCompare(b.name));
-  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.participe && p.role === "rabatteur").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre").map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })) };
+  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.participe && p.role === "rabatteur").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })) };
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
 }
 
@@ -869,7 +901,7 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
       {(j.tableau || []).length === 0 && <p className="text-xs text-stone-400 italic">Aucun animal noté. Ajoute une prise.</p>}
       {(j.tableau || []).map((k) => (<div key={k.id} className={`border rounded-md p-2 space-y-2 ${k.source === "chasseur" ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
         {k.source === "chasseur" && <p className="text-[10px] font-medium text-emerald-700">🦌 Déclaré par le chasseur — modifiable</p>}
-        <div className="flex gap-1 flex-wrap">{ESPECES.map((e) => (<button key={e.key} onClick={() => onUpdateKill(k.id, { espece: e.key })} className={`px-2 py-1 rounded text-xs font-medium border ${k.espece === e.key ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{e.emoji} {e.label}</button>))}
+        <div className="flex gap-1 flex-wrap">{ESPECES.filter((e) => e.key === "autre" || e.key === k.espece || (terrain && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled)).map((e) => (<button key={e.key} onClick={() => onUpdateKill(k.id, { espece: e.key })} className={`px-2 py-1 rounded text-xs font-medium border ${k.espece === e.key ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{e.emoji} {e.label}</button>))}
           <button onClick={() => onRemoveKill(k.id)} className="ml-auto text-stone-400 hover:text-red-700"><X size={15} /></button></div>
         {k.espece === "autre" && <input value={k.especeLabel || ""} onChange={(e) => onUpdateKill(k.id, { especeLabel: e.target.value })} placeholder="Quelle espèce ?" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white" />}
         <div className="flex items-center gap-2 flex-wrap">
@@ -1410,7 +1442,7 @@ function CarnetApp({ session, onSignOut }) {
 
     <main className="max-w-3xl mx-auto px-4 py-5">
       {tab === "participants" && <ParticipantsView participants={participants} setParticipants={setParticipants} />}
-      {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} />}
+      {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} journees={journees} />}
       {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} userId={session?.user?.id} />}
       {tab === "securite" && <SecurityView safety={safety} setSafety={setSafety} />}
       {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} />}
