@@ -938,6 +938,7 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
 function InvitationsSection({ journee, terrain, participants, orgEmail, onToggleInvite, onSetPresence, onSetMsg }) {
   const [open, setOpen] = useState(false);
   const [showMailPick, setShowMailPick] = useState(false);
+  const [emarg, setEmarg] = useState(null);
   const invites = journee.invites || [];
   const invited = participants.filter((p) => invites.includes(p.id));
   const pres = journee.presence || {};
@@ -1010,7 +1011,11 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
       </div>
       <p className="text-[11px] text-stone-400">Destinataires en copie cachée (Cci). Choisis ta messagerie ci-dessus, ou utilise « Copier » si besoin.</p>
       {invited.length > 0 && (<div>
-        <p className="text-xs uppercase tracking-wide text-stone-400 mb-1">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""}</p>
+        {emarg && <PrintOverlay html={emarg} onClose={() => setEmarg(null)} />}
+        <div className="flex items-center justify-between mb-1 gap-2">
+          <p className="text-xs uppercase tracking-wide text-stone-400">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""}</p>
+          <button onClick={() => { if (!nbPres) { window.alert("Coche au moins un présent."); return; } setEmarg(buildEmargementHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Feuille d'émargement</button>
+        </div>
         <div className="space-y-1.5">
           {invited.map((p) => { const pr = pres[p.id] || {}; return (
             <div key={p.id} className="bg-white border border-stone-200 rounded-md p-2">
@@ -1149,6 +1154,35 @@ function computeStats(inSeason, terrains, participants) {
   return { totalAnimals, totalBullets, ratio: totalAnimals ? totalBullets / totalAnimals : 0, bySpecies, byShooter, byPost, perJournee };
 }
 const STATS_CSS = "@page{margin:14mm}body{font-family:Georgia,serif;color:#1c1917;margin:0}header{border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}h2{font-size:16px;margin:18px 0 6px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:12px;margin-bottom:8px}th{text-align:left;color:#78716c;font-size:10px;text-transform:uppercase;border-bottom:1px solid #e7e5e4;padding:4px}td{padding:4px;border-bottom:1px solid #f0efee}.c{text-align:center}.tot{display:flex;gap:20px;margin-bottom:6px}.tot b{font-size:22px;color:#166534}";
+function buildEmargementHtml(journee, terrain, participants) {
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const df = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return d; } };
+  const pres = journee.presence || {};
+  const list = participants.filter((p) => (pres[p.id] || {}).statut === "present").sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  let rows = list.map((p, i) => "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td>" + esc(p.permis || "") + "</td><td>" + esc(p.validation || "") + "</td><td>" + esc(p.assurance || "") + "</td><td class='sig'></td></tr>").join("");
+  const emptyRows = Math.max(0, 12 - list.length);
+  for (let i = 0; i < emptyRows; i++) rows += "<tr><td class='num'>" + (list.length + i + 1) + "</td><td></td><td></td><td></td><td></td><td class='sig'></td></tr>";
+  const css = "*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1c1917;margin:0;padding:28px 26px;background:#fff}"
+    + ".head{border:2px solid #166534;border-radius:12px;padding:16px 20px;margin-bottom:18px;background:#f0fdf4}"
+    + ".head h1{margin:0 0 4px;font-size:22px;color:#14532d}.head .sub{font-size:14px;color:#166534;font-weight:600;text-transform:capitalize}"
+    + ".meta{display:flex;gap:24px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:#44403c}.meta b{color:#1c1917}"
+    + ".note{font-size:11px;color:#78716c;margin:10px 2px 14px;line-height:1.4}"
+    + "table{border-collapse:collapse;width:100%;font-size:12.5px}"
+    + "th,td{border:1px solid #d6d3d1;padding:9px 8px;text-align:left;vertical-align:middle}"
+    + "th{background:#166534;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.03em}"
+    + "tbody tr:nth-child(even){background:#fafaf9}"
+    + ".num{width:26px;text-align:center;color:#78716c}.nom{font-weight:600}.sig{width:150px}"
+    + "tbody td{height:34px}"
+    + ".foot{margin-top:16px;font-size:11px;color:#78716c;display:flex;justify-content:space-between}"
+    + "@media print{body{padding:0}.head{border-color:#166534}}";
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Feuille d'émargement</title><style>" + css + "</style></head><body>"
+    + "<div class='head'><h1>🦌 Feuille d'émargement</h1><div class='sub'>" + esc(df(journee.date)) + "</div>"
+    + "<div class='meta'><span><b>Territoire :</b> " + esc(terrain ? terrain.name : "—") + "</span><span><b>Présents :</b> " + list.length + "</span></div></div>"
+    + "<p class='note'>Chaque participant doit être titulaire d'un permis de chasser validé pour la saison en cours et d'une assurance responsabilité civile. Signature obligatoire avant le début de la battue.</p>"
+    + "<table><thead><tr><th class='num'>#</th><th>Nom &amp; prénom</th><th>N° de permis</th><th>Validation saison</th><th>Assurance</th><th>Signature</th></tr></thead><tbody>" + rows + "</tbody></table>"
+    + "<div class='foot'><span>Organisateur : _______________________</span><span>Fait le " + esc(df(journee.date)) + "</span></div>"
+    + "</body></html>";
+}
 function buildStatsPrintHtml(stats, season) {
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
   const df = (d) => { try { return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }); } catch (e) { return d; } };
