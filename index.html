@@ -141,7 +141,7 @@ function Fauteuil({ size = 15, color = "#166534" }) {
 function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack), planChasse: normPlan(t.planChasse) }; }
-function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
@@ -434,7 +434,7 @@ function ParticipantsView({ participants, setParticipants }) {
   const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
-  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", participe: false, invitation: false, role: null, mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: null, mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
   const [dinerPrint, setDinerPrint] = useState(null);
@@ -467,7 +467,7 @@ function ParticipantsView({ participants, setParticipants }) {
   };
   return (<div className="space-y-6">
     {dinerPrint && <PrintOverlay html={dinerPrint} onClose={() => setDinerPrint(null)} />}    <div className="space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Participants & invités</h2>
+      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Membres</h2>
         <div className="flex gap-2"><input ref={listFileRef} type="file" accept=".docx,.pdf,.txt,.csv" onChange={onImportList} className="hidden" />
           <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer liste (Word/PDF)"}</button>
           <button onClick={addParticipant} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Ajouter</button></div></div>
@@ -483,6 +483,12 @@ function ParticipantsView({ participants, setParticipants }) {
           {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
             <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
             <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label><input value={p.phone || ""} onChange={(e) => update(p.id, { phone: e.target.value })} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div><label className="text-xs uppercase tracking-wide text-stone-400">Email (pour les invitations)</label><input value={p.email || ""} onChange={(e) => update(p.id, { email: e.target.value })} placeholder="prenom.nom@email.fr" inputMode="email" autoCapitalize="none" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="text-xs uppercase tracking-wide text-stone-400">N° de permis</label><input value={p.permis || ""} onChange={(e) => update(p.id, { permis: e.target.value })} placeholder="Permis de chasser" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+              <div><label className="text-xs uppercase tracking-wide text-stone-400">N° de validation (saison)</label><input value={p.validation || ""} onChange={(e) => update(p.id, { validation: e.target.value })} placeholder="Validation annuelle" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            </div>
+            <div><label className="text-xs uppercase tracking-wide text-stone-400">Assurance (compagnie + n° de police)</label><input value={p.assurance || ""} onChange={(e) => update(p.id, { assurance: e.target.value })} placeholder="ex : Groupama — n° 12345678" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Rôle (seuls les chasseurs sont placés sur les miradors)</p><RoleSelector value={p.role} onChange={(v) => update(p.id, { role: v })} /></div>
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Mobilité réduite (placement adapté)</p><div className="flex gap-2">
               {[{ v: null, l: "Aucune" }, { v: "canne", l: "🦯 Canne", ic: "c" }, { v: "fauteuil", l: "Fauteuil", ic: "f" }].map((o) => (<button key={o.l} onClick={() => update(p.id, { mobility: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.mobility || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.ic === "f" ? <Fauteuil size={13} color={(p.mobility || null) === o.v ? "#fff" : "#166534"} /> : null} {o.l}</button>))}
@@ -1424,7 +1430,7 @@ function CarnetApp({ session, onSignOut }) {
 
   const resetAll = () => { if (!window.confirm("Tout réinitialiser ?")) return; setParticipants(initialParticipants); setTerrains(initialTerrains); setJournees(initialJournees); setSafety(DEFAULT_SAFETY); };
 
-  const tabs = [{ id: "participants", label: "Participants", icon: Users }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "journees", label: "Journées", icon: CalendarDays }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "securite", label: "Sécurité", icon: Shield }];
+  const tabs = [{ id: "participants", label: "Membres", icon: Users }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "journees", label: "Journées", icon: CalendarDays }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "securite", label: "Sécurité", icon: Shield }];
   const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !t.planImage);
 
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
