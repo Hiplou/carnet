@@ -478,7 +478,6 @@ function ParticipantsView({ participants, setParticipants }) {
         return (<SectionCard key={p.id}>
           <div className="flex items-center justify-between px-4 py-3 gap-2">
             <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button>
-            <div className="flex gap-2 shrink-0"><Toggle value={p.participe} onChange={(v) => update(p.id, { participe: v })} labelOn="Participe" labelOff="Absent" /></div>
           </div>
           {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
             <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
@@ -496,15 +495,6 @@ function ParticipantsView({ participants, setParticipants }) {
             <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
           </div>)}
         </SectionCard>); })}
-    </div>
-    <div className="space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">🐗 Liste du dîner</h2><div className="flex items-center gap-2"><span className="text-sm text-stone-500">{totalConvives} convive(s)</span><button onClick={printDiner} className="flex items-center gap-1 text-xs bg-stone-200 text-stone-700 px-2 py-1 rounded"><FileText size={13} /> PDF</button><button onClick={exportDinerExcel} className="flex items-center gap-1 text-xs bg-stone-200 text-stone-700 px-2 py-1 rounded"><Download size={13} /> Excel</button></div></div>
-      <SectionCard>{participants.length === 0 && <p className="text-sm text-stone-500 italic px-4 py-3">Ajoute des participants pour composer le dîner.</p>}
-        {participants.map((p, i) => (<div key={p.id} className={`flex items-center justify-between px-4 py-2.5 gap-3 ${i !== participants.length - 1 ? "border-b border-stone-200" : ""}`}>
-          <span className="text-sm font-medium text-stone-800 flex-1 truncate">{p.name}</span>
-          <Toggle value={p.diner?.vient} onChange={(v) => updateDiner(p.id, { vient: v })} labelOn="Vient" labelOff="Absent" />
-          <div className="flex items-center gap-1.5 text-sm text-stone-600"><span className="hidden sm:inline">+ invités :</span><span className="sm:hidden">Invités :</span><button onClick={() => updateDiner(p.id, { invitesSupplementaires: Math.max(0, (Number(p.diner?.invitesSupplementaires) || 0) - 1) })} disabled={!p.diner?.vient} className="w-8 h-8 rounded-full border border-stone-300 bg-white disabled:opacity-30 text-lg leading-none flex items-center justify-center">−</button><span className="w-6 text-center font-medium">{p.diner?.invitesSupplementaires ?? 0}</span><button onClick={() => updateDiner(p.id, { invitesSupplementaires: (Number(p.diner?.invitesSupplementaires) || 0) + 1 })} disabled={!p.diner?.vient} className="w-8 h-8 rounded-full border border-stone-300 bg-white disabled:opacity-30 text-lg leading-none flex items-center justify-center">+</button></div>
-        </div>))}</SectionCard>
     </div>
   </div>);
 }
@@ -598,10 +588,10 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
     </div>
   </div>);
 }
-function PosterFusils({ terrain, track, placements, participants, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
+function PosterFusils({ terrain, track, placements, participants, presentIds, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const [selectedHunter, setSelectedHunter] = useState(null);
   const assignedIds = Object.keys(placements);
-  const pending = participants.filter((p) => p.participe && p.role === "chasseur" && !assignedIds.includes(p.id));
+  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role === "chasseur" && !assignedIds.includes(p.id));
   const freeMiradors = track.miradors.filter((m) => !Object.values(placements).includes(m.id));
   const sortedFree = [...freeMiradors].sort((a, b) => (a.priority || 1) - (b.priority || 1) || a.label.localeCompare(b.label));
   // Surbrillance par PALIER de priorité : toute la priorité 1, puis 2, etc. jusqu'à couvrir le nb de chasseurs
@@ -843,7 +833,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   const posted = {};
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: m.consignes || "", photos: m.photos || [] }); }); });
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => a.name.localeCompare(b.name));
-  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.participe && p.role === "rabatteur").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })) };
+  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })) };
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
 }
 
@@ -1105,7 +1095,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const setMiradorState = (jid, trackId, mid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, miradorStates: { ...(j.miradorStates || {}), [trackId]: { ...((j.miradorStates || {})[trackId] || {}), [mid]: { ...(((j.miradorStates || {})[trackId] || {})[mid] || {}), ...patch } } } })));
 
   if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
-    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
+    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
   if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
     return <EnvoiChasseurs journee={journee} terrain={terrain} participants={participants} safety={safety} onBack={() => setShareView(null)} />; }
 
@@ -1293,7 +1283,7 @@ function AuthScreen() {
 }
 
 function CarnetApp({ session, onSignOut }) {
-  const [tab, setTab] = useState("participants");
+  const [tab, setTab] = useState("journees");
   const [participants, setParticipants] = useState(initialParticipants);
   const [terrains, setTerrains] = useState(initialTerrains);
   const [journees, setJournees] = useState(initialJournees);
@@ -1531,7 +1521,7 @@ function CarnetApp({ session, onSignOut }) {
 
   const resetAll = () => { if (!window.confirm("Tout réinitialiser ?")) return; setParticipants(initialParticipants); setTerrains(initialTerrains); setJournees(initialJournees); setSafety(DEFAULT_SAFETY); };
 
-  const tabs = [{ id: "participants", label: "Membres", icon: Users }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "journees", label: "Journées", icon: CalendarDays }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "securite", label: "Sécurité", icon: Shield }];
+  const tabs = [{ id: "journees", label: "Journées", icon: CalendarDays }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "participants", label: "Membres", icon: Users }, { id: "securite", label: "Sécurité", icon: Shield }];
   const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !t.planImage);
 
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
