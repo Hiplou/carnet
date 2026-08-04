@@ -943,6 +943,7 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
 // ---------- Journées ----------
 function InvitationsSection({ journee, terrain, participants, orgEmail, onToggleInvite, onSetPresence, onSetMsg }) {
   const [open, setOpen] = useState(false);
+  const [showMailPick, setShowMailPick] = useState(false);
   const invites = journee.invites || [];
   const invited = participants.filter((p) => invites.includes(p.id));
   const pres = journee.presence || {};
@@ -952,24 +953,26 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   const defBody = "Bonjour,\n\nJe t'invite à la battue du " + dateFr + (terrName ? " sur " + terrName : "") + ".\nMerci de me confirmer ta présence.\n\nÀ bientôt !";
   const subject = journee.inviteSubject != null ? journee.inviteSubject : defSubject;
   const body = journee.inviteBody != null ? journee.inviteBody : defBody;
-  const openGmail = () => {
-    const emails = invited.map((p) => (p.email || "").trim()).filter(Boolean);
+  const invitedEmails = () => invited.map((p) => (p.email || "").trim()).filter(Boolean);
+  const openMail = (provider) => {
+    const emails = invitedEmails();
     if (!emails.length) { window.alert("Coche au moins un invité qui a une adresse email."); return; }
-    // App Gmail iPhone (schéma dédié) — pré-remplit destinataires + objet + message
-    const g = "googlegmail:///co?to=" + encodeURIComponent(orgEmail || "") + "&bcc=" + encodeURIComponent(emails.join(",")) + "&subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
-    const mt = "mailto:" + encodeURIComponent(orgEmail || "") + "?bcc=" + encodeURIComponent(emails.join(",")) + "&subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
-    const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
-    if (isiOS) {
-      // tente l'app Gmail, puis bascule sur mailto si absente
-      const t = Date.now();
-      window.location.href = g;
-      setTimeout(() => { if (Date.now() - t < 1600) window.location.href = mt; }, 700);
-    } else {
-      window.location.href = mt;
-    }
+    const to = encodeURIComponent(orgEmail || "");
+    const bcc = encodeURIComponent(emails.join(","));
+    const su = encodeURIComponent(subject);
+    const bd = encodeURIComponent(body);
+    let url = "";
+    if (provider === "gmail") url = "googlegmail:///co?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
+    else if (provider === "gmailweb") url = "https://mail.google.com/mail/?view=cm&fs=1&to=" + to + "&bcc=" + bcc + "&su=" + su + "&body=" + bd;
+    else if (provider === "outlook") url = "https://outlook.live.com/mail/0/deeplink/compose?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
+    else if (provider === "yahoo") url = "https://compose.mail.yahoo.com/?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
+    else url = "mailto:" + to + "?bcc=" + bcc + "&subject=" + su + "&body=" + bd; // défaut / Apple Mail / iCloud
+    if (provider === "gmailweb" || provider === "outlook" || provider === "yahoo") window.open(url, "_blank");
+    else window.location.href = url;
+    setShowMailPick(false);
   };
-  const copyEmails = () => { const emails = invited.map((p) => (p.email || "").trim()).filter(Boolean); if (!emails.length) { window.alert("Aucun invité avec email."); return; } const txt = emails.join(", "); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Emails copiés ✓ Colle-les dans le champ Cci de Gmail.")); else window.prompt("Copie les emails :", txt); };
-  const copyMsg = () => { const txt = subject + "\n\n" + body; if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Message copié ✓ Colle-le dans Gmail.")); else window.prompt("Copie le message :", txt); };
+  const copyEmails = () => { const emails = invitedEmails(); if (!emails.length) { window.alert("Aucun invité avec email."); return; } const txt = emails.join(", "); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Emails copiés ✓ Colle-les dans le champ Cci.")); else window.prompt("Copie les emails :", txt); };
+  const copyMsg = () => { const txt = subject + "\n\n" + body; if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Message copié ✓")); else window.prompt("Copie le message :", txt); };
   const nbPres = invited.filter((p) => (pres[p.id] || {}).statut === "present").length;
   const nbDiner = invited.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).diner).length;
   const nbSup = invited.reduce((s, p) => s + (((pres[p.id] || {}).statut === "present") ? (Number((pres[p.id] || {}).invitesSup) || 0) : 0), 0);
@@ -997,12 +1000,21 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
             </button>); })}
         </div>
       </div>
-      <button onClick={openGmail} className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium px-3 py-2 rounded-md">✉️ Écrire l'invitation (Gmail pré-rempli)</button>
+      <button onClick={() => { if (!invitedEmails().length) { window.alert("Coche au moins un invité qui a une adresse email."); return; } setShowMailPick(true); }} className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium px-3 py-2 rounded-md">✉️ Écrire l'invitation</button>
+      {showMailPick && (<div className="border border-stone-300 rounded-lg p-2 bg-stone-50 space-y-1">
+        <p className="text-xs text-stone-500 px-1 pb-1">Ouvrir avec :</p>
+        <button onClick={() => openMail("gmail")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">📧 Application Gmail</button>
+        <button onClick={() => openMail("gmailweb")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🌐 Gmail (navigateur)</button>
+        <button onClick={() => openMail("apple")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">✉️ Mail / iCloud (app par défaut)</button>
+        <button onClick={() => openMail("outlook")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🔵 Outlook (navigateur)</button>
+        <button onClick={() => openMail("yahoo")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🟣 Yahoo (navigateur)</button>
+        <button onClick={() => setShowMailPick(false)} className="w-full text-center text-xs text-stone-400 pt-1">Annuler</button>
+      </div>)}
       <div className="flex gap-2">
         <button onClick={copyEmails} className="flex-1 flex items-center justify-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium px-2 py-2 rounded-md">📋 Copier les emails</button>
         <button onClick={copyMsg} className="flex-1 flex items-center justify-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium px-2 py-2 rounded-md">📋 Copier le message</button>
       </div>
-      <p className="text-[11px] text-stone-400">Destinataires en copie cachée (Cci). Si Gmail ne se pré-remplit pas sur iPhone, utilise les boutons « Copier » puis colle dans Gmail (Cci + message).</p>
+      <p className="text-[11px] text-stone-400">Destinataires en copie cachée (Cci). Choisis ta messagerie ci-dessus, ou utilise « Copier » si besoin.</p>
       {invited.length > 0 && (<div>
         <p className="text-xs uppercase tracking-wide text-stone-400 mb-1">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""}</p>
         <div className="space-y-1.5">
