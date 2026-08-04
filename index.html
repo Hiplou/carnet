@@ -955,8 +955,8 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   const openGmail = () => {
     const emails = invited.map((p) => (p.email || "").trim()).filter(Boolean);
     if (!emails.length) { window.alert("Coche au moins un invité qui a une adresse email."); return; }
-    const u = "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(orgEmail || "") + "&bcc=" + encodeURIComponent(emails.join(",")) + "&su=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
-    window.open(u, "_blank");
+    const u = "mailto:" + encodeURIComponent(orgEmail || "") + "?bcc=" + encodeURIComponent(emails.join(",")) + "&subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+    window.location.href = u;
   };
   const nbPres = invited.filter((p) => (pres[p.id] || {}).statut === "present").length;
   const nbDiner = invited.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).diner).length;
@@ -985,8 +985,8 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
             </button>); })}
         </div>
       </div>
-      <button onClick={openGmail} className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium px-3 py-2 rounded-md">✉️ Ouvrir l'invitation dans Gmail</button>
-      <p className="text-[11px] text-stone-400">Destinataires en copie cachée (Cci) — chacun ne voit pas les autres. Tu cliques « Envoyer » dans Gmail.</p>
+      <button onClick={openGmail} className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium px-3 py-2 rounded-md">✉️ Écrire l'invitation (mail pré-rempli)</button>
+      <p className="text-[11px] text-stone-400">Ouvre ton app mail avec destinataires en copie cachée (Cci), objet et message déjà remplis — tu n'as qu'à cliquer « Envoyer ». Pour que ça s'ouvre dans Gmail : iPhone → Réglages → Gmail → « App e-mail par défaut ».</p>
       {invited.length > 0 && (<div>
         <p className="text-xs uppercase tracking-wide text-stone-400 mb-1">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""}</p>
         <div className="space-y-1.5">
