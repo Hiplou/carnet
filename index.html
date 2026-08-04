@@ -908,11 +908,15 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
           <button onClick={() => onRemoveKill(k.id)} className="ml-auto text-stone-400 hover:text-red-700"><X size={15} /></button></div>
         {k.espece === "autre" && <input value={k.especeLabel || ""} onChange={(e) => onUpdateKill(k.id, { especeLabel: e.target.value })} placeholder="Quelle espèce ?" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white" />}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Nombre :</span><input type="number" inputMode="numeric" min="1" onFocus={(e) => e.target.select()} value={k.quantite} onChange={(e) => onUpdateKill(k.id, { quantite: e.target.value === "" ? "" : Number(e.target.value) })} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /></div>
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Sexe :</span>
+            <button onClick={() => onUpdateKill(k.id, { sexe: k.sexe === "M" ? "" : "M" })} className={`px-2 py-1 rounded text-xs font-medium border ${k.sexe === "M" ? "bg-sky-700 text-white border-sky-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>♂ Mâle</button>
+            <button onClick={() => onUpdateKill(k.id, { sexe: k.sexe === "F" ? "" : "F" })} className={`px-2 py-1 rounded text-xs font-medium border ${k.sexe === "F" ? "bg-pink-700 text-white border-pink-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>♀ Femelle</button></div>
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Poids :</span><input type="number" inputMode="decimal" step="0.1" min="0" onFocus={(e) => e.target.select()} value={k.poids ?? ""} onChange={(e) => onUpdateKill(k.id, { poids: e.target.value })} placeholder="kg" className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /><span className="text-xs text-stone-400">kg</span></div>
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Bracelet :</span><input value={k.bracelet || ""} onChange={(e) => onUpdateKill(k.id, { bracelet: e.target.value })} placeholder="n°" className="w-24 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /></div>
           <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Traque :</span>
             <select value={k.trackId || ""} onChange={(e) => onUpdateKill(k.id, { trackId: e.target.value })} className="border border-stone-300 rounded px-2 py-1 text-sm bg-white max-w-[130px]"><option value="">—</option>{(terrain?.tracks || []).map((trk) => <option key={trk.id} value={trk.id}>{trk.name}</option>)}</select></div>
           <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Tireur :</span>
-            <select value={k.tireurId || ""} onChange={(e) => onUpdateKill(k.id, { tireurId: e.target.value })} className="border border-stone-300 rounded px-2 py-1 text-sm bg-white max-w-[150px]"><option value="">—</option>{participants.filter((p) => p.role === "chasseur" || p.participe).map((p) => <option key={p.id} value={p.id}>{p.name || "Sans nom"}</option>)}</select></div>
+            <select value={k.tireurId || ""} onChange={(e) => onUpdateKill(k.id, { tireurId: e.target.value })} className="border border-stone-300 rounded px-2 py-1 text-sm bg-white max-w-[150px]"><option value="">—</option>{participants.filter((p) => p.role === "chasseur").map((p) => <option key={p.id} value={p.id}>{p.name || "Sans nom"}</option>)}</select></div>
         </div>
       </div>))}
       <button onClick={onAddKill} className="w-full flex items-center justify-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Plus size={15} /> Ajouter une prise</button>
@@ -1088,7 +1092,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const clearArrows = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [] } })));
   const updateArrow = (jid, trackId, idx, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: ((j.arrows || {})[trackId] || []).map((a, i) => (i === idx ? { ...a, ...patch } : a)) } })));
   const deleteArrow = (jid, trackId, idx) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: ((j.arrows || {})[trackId] || []).filter((a, i) => i !== idx) } })));
-  const addKill = (jid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const terrain = terrains.find((t) => t.id === j.terrainId); const firstTrack = terrain?.tracks?.[0]?.id || ""; return { ...j, tableau: [...(j.tableau || []), { id: "k-" + Date.now(), espece: "chevreuil", especeLabel: "", quantite: 1, tireurId: "", trackId: firstTrack }] }; }));
+  const addKill = (jid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const terrain = terrains.find((t) => t.id === j.terrainId); const firstTrack = terrain?.tracks?.[0]?.id || ""; return { ...j, tableau: [...(j.tableau || []), { id: "k-" + Date.now(), espece: "chevreuil", especeLabel: "", quantite: 1, sexe: "", poids: "", bracelet: "", tireurId: "", trackId: firstTrack }] }; }));
   const updateKill = (jid, kid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).map((k) => (k.id === kid ? { ...k, ...patch } : k)) })));
   const removeKill = (jid, kid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).filter((k) => k.id !== kid) })));
   const setShot = (jid, trackId, mid, val) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, shots: { ...(j.shots || {}), [trackId]: { ...((j.shots || {})[trackId] || {}), [mid]: val } } })));
@@ -1159,17 +1163,38 @@ function buildStatsPrintHtml(stats, season) {
     + "<h2>Animaux &amp; balles par poste</h2><table><thead><tr><th>Territoire</th><th>Traque</th><th>Poste</th><th class='c'>Animaux</th><th class='c'>Balles</th></tr></thead><tbody>" + (po || "<tr><td colspan='5'>—</td></tr>") + "</tbody></table>"
     + "</body></html>";
 }
-function CarnetView({ journees, terrains, participants }) {
+function CarnetView({ journees, terrains, participants, setJournees }) {
   const seasons = [...new Set(journees.map((j) => seasonOf(j.date)))].sort().reverse();
   const [season, setSeason] = useState(seasons[0] || seasonOf(new Date().toISOString()));
   const [openId, setOpenId] = useState(null);
   const [terrFilter, setTerrFilter] = useState("all");
   const [statsPrint, setStatsPrint] = useState(null);
+  const [expSpecies, setExpSpecies] = useState(null);
   const seasonJournees = journees.filter((j) => seasonOf(j.date) === season);
   const territoriesInSeason = [...new Map(seasonJournees.filter((j) => j.terrainId).map((j) => { const t = terrains.find((x) => x.id === j.terrainId); return [j.terrainId, t ? t.name : "—"]; })).entries()];
   const inSeason = seasonJournees.filter((j) => terrFilter === "all" || j.terrainId === terrFilter).sort((a, b) => (a.date < b.date ? 1 : -1));
   const stats = computeStats(inSeason, terrains, participants);
   const nameOf = (hid) => participants.find((p) => p.id === hid)?.name || "?";
+  const updateKill = (jid, kid, patch) => setJournees && setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).map((k) => (k.id === kid ? { ...k, ...patch } : k)) })));
+  const animalRows = () => { const rows = []; inSeason.forEach((j) => { const terr = terrains.find((t) => t.id === j.terrainId); (j.tableau || []).forEach((k) => { rows.push({ jid: j.id, kid: k.id, date: j.date, terrain: terr ? terr.name : "", espece: especeLabel(k), sexe: k.sexe || "", poids: k.poids || "", bracelet: k.bracelet || "", tireur: k.tireurId ? nameOf(k.tireurId) : "" }); }); }); return rows; };
+  const dfr = (d) => { try { return new Date(d).toLocaleDateString("fr-FR"); } catch (e) { return d; } };
+  const sexLabel = (s) => (s === "M" ? "Mâle" : s === "F" ? "Femelle" : "");
+  const exportFedExcel = () => {
+    try {
+      const rows = animalRows().map((r) => ({ Date: dfr(r.date), Territoire: r.terrain, Espèce: r.espece, Sexe: sexLabel(r.sexe), "Poids (kg)": r.poids, "N° bracelet": r.bracelet, Tireur: r.tireur }));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Date: "" }]), "Fédération");
+      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }); const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const fn = "federation-" + season + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: fn }).catch(() => {}); } else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
+  };
+  const printFed = () => {
+    const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const rows = animalRows();
+    const trs = rows.map((r) => "<tr><td>" + esc(dfr(r.date)) + "</td><td>" + esc(r.terrain) + "</td><td>" + esc(r.espece) + "</td><td>" + esc(sexLabel(r.sexe)) + "</td><td>" + esc(r.poids) + "</td><td>" + esc(r.bracelet) + "</td><td>" + esc(r.tireur) + "</td></tr>").join("");
+    const html = "<!doctype html><html><head><meta charset='utf-8'><title>Fédération " + esc(season) + "</title><style>body{font-family:-apple-system,sans-serif;padding:20px;color:#1c1917}h1{font-size:18px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #d6d3d1;padding:5px 7px;text-align:left}th{background:#f5f5f4}</style></head><body><h1>Bilan fédération — Saison " + esc(season) + "</h1><table><thead><tr><th>Date</th><th>Territoire</th><th>Espèce</th><th>Sexe</th><th>Poids (kg)</th><th>N° bracelet</th><th>Tireur</th></tr></thead><tbody>" + trs + "</tbody></table></body></html>";
+    setStatsPrint(html);
+  };
   const printStats = () => { setStatsPrint(buildStatsPrintHtml(stats, season)); };
   const exportStatsExcel = () => {
     try {
@@ -1194,7 +1219,24 @@ function CarnetView({ journees, terrains, participants }) {
         <div className="bg-white border border-stone-200 rounded-md p-3 text-center"><p className="text-2xl font-bold text-stone-700">{stats.ratio ? stats.ratio.toFixed(1) : "—"}</p><p className="text-xs text-stone-600">balles / animal</p></div>
       </div>
       <div className="flex gap-2"><button onClick={printStats} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2 rounded-md"><FileText size={15} /> Export PDF</button><button onClick={exportStatsExcel} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2 rounded-md"><Download size={15} /> Export Excel</button></div>
-      {Object.keys(stats.bySpecies).length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par espèce</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(stats.bySpecies).sort((a, b) => b[1] - a[1]).map(([k, n]) => (<div key={k} className="bg-white border border-stone-200 rounded-md p-2 text-center"><p className="text-xl font-bold text-emerald-800">{n}</p><p className="text-xs text-stone-600">{k}</p></div>))}</div></SectionCard>}
+      <div className="flex gap-2"><button onClick={printFed} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2 rounded-md"><FileText size={15} /> Fédération PDF</button><button onClick={exportFedExcel} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2 rounded-md"><Download size={15} /> Fédération Excel</button></div>
+      {Object.keys(stats.bySpecies).length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par espèce (clique une espèce pour saisir sexe / poids / bracelet)</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(stats.bySpecies).sort((a, b) => b[1] - a[1]).map(([k, n]) => (<button key={k} onClick={() => setExpSpecies(expSpecies === k ? null : k)} className={`bg-white border rounded-md p-2 text-center ${expSpecies === k ? "border-emerald-500 ring-2 ring-emerald-200" : "border-stone-200"}`}><p className="text-xl font-bold text-emerald-800">{n}</p><p className="text-xs text-stone-600">{k}</p></button>))}</div>
+        {expSpecies && (<div className="mt-3 space-y-2">
+          <p className="text-xs font-medium text-stone-600">{expSpecies} — {animalRows().filter((r) => r.espece === expSpecies).length} animal(aux)</p>
+          {animalRows().filter((r) => r.espece === expSpecies).map((r) => (<div key={r.kid} className="border border-stone-200 rounded-md p-2 bg-stone-50">
+            <div className="flex justify-between items-center text-[11px] text-stone-500 mb-1.5"><span>{dfr(r.date)}{r.terrain ? " · " + r.terrain : ""}</span><span>{r.tireur}</span></div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex gap-1">
+                <button onClick={() => updateKill(r.jid, r.kid, { sexe: r.sexe === "M" ? "" : "M" })} className={`px-2 py-1 rounded text-xs font-medium border ${r.sexe === "M" ? "bg-sky-700 text-white border-sky-700" : "bg-white text-stone-600 border-stone-200"}`}>♂ M</button>
+                <button onClick={() => updateKill(r.jid, r.kid, { sexe: r.sexe === "F" ? "" : "F" })} className={`px-2 py-1 rounded text-xs font-medium border ${r.sexe === "F" ? "bg-pink-700 text-white border-pink-700" : "bg-white text-stone-600 border-stone-200"}`}>♀ F</button>
+              </div>
+              <div className="flex items-center gap-1"><input type="number" inputMode="decimal" step="0.1" min="0" onFocus={(e) => e.target.select()} value={r.poids} onChange={(e) => updateKill(r.jid, r.kid, { poids: e.target.value })} placeholder="kg" className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /><span className="text-xs text-stone-400">kg</span></div>
+              <input value={r.bracelet} onChange={(e) => updateKill(r.jid, r.kid, { bracelet: e.target.value })} placeholder="n° bracelet" className="w-28 border border-stone-300 rounded px-2 py-1 text-sm bg-white" />
+            </div>
+          </div>))}
+        </div>)}
+      </SectionCard>}
       {stats.byShooter.length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par personne (animaux · balles)</p><div className="space-y-1">{stats.byShooter.map((t, i) => (<div key={i} className="flex items-center justify-between text-sm border-b border-stone-100 py-1 last:border-0"><span className="text-stone-800">{i + 1}. {t.name}</span><span className="text-stone-500"><b className="text-emerald-800">{t.animals}</b> animal(aux) · <b className="text-amber-800">{t.bullets}</b> balle(s)</span></div>))}</div></SectionCard>}
       {stats.byPost.length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par poste (animaux · balles)</p><div className="space-y-1">{stats.byPost.map((p, i) => (<div key={i} className="flex items-center justify-between text-sm border-b border-stone-100 py-1 last:border-0"><span className="text-stone-700 truncate mr-2"><b>{p.track}</b> — {p.post}</span><span className="text-stone-500 shrink-0"><b className="text-emerald-800">{p.animals}</b> · <b className="text-amber-800">{p.bullets}</b></span></div>))}</div></SectionCard>}
       <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Historique des journées ({inSeason.length})</p><div className="space-y-2">
@@ -1365,10 +1407,10 @@ function CarnetApp({ session, onSignOut }) {
           const tireurId = hp ? hp.id : "";
           Object.keys(animals).forEach((esp) => {
             const qty = Math.max(0, Number(animals[esp]) || 0);
-            const ix = j.tableau.findIndex((k) => k.source === "chasseur" && k.tireurId === tireurId && k.trackId === f.track_id && k.espece === esp);
-            if (qty <= 0) { if (ix >= 0) j.tableau.splice(ix, 1); }
-            else if (ix >= 0) { j.tableau[ix] = { ...j.tableau[ix], quantite: qty }; }
-            else { j.tableau.push({ id: "k-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6), espece: esp, especeLabel: "", quantite: qty, tireurId: tireurId, trackId: f.track_id, source: "chasseur" }); }
+            // On retire les lignes "chasseur" existantes de ce tireur/traque/espèce (dernier envoi fait foi)
+            for (let k = j.tableau.length - 1; k >= 0; k--) { const kk = j.tableau[k]; if (kk.source === "chasseur" && kk.tireurId === tireurId && kk.trackId === f.track_id && kk.espece === esp) j.tableau.splice(k, 1); }
+            // Puis on ajoute une ligne par animal (à compléter : sexe/poids/bracelet)
+            for (let n = 0; n < qty; n++) { j.tableau.push({ id: "k-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6) + "-" + n, espece: esp, especeLabel: "", quantite: 1, sexe: "", poids: "", bracelet: "", tireurId: tireurId, trackId: f.track_id, source: "chasseur" }); }
           });
         }
         changed = true;
@@ -1549,7 +1591,7 @@ function CarnetApp({ session, onSignOut }) {
       {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} journees={journees} />}
       {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} userId={session?.user?.id} orgEmail={session?.user?.email} />}
       {tab === "securite" && <SecurityView safety={safety} setSafety={setSafety} />}
-      {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} />}
+      {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} setJournees={setJournees} />}
     </main>
   </div>);
 }
