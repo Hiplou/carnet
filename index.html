@@ -141,7 +141,7 @@ function Fauteuil({ size = 15, color = "#166534" }) {
 function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack), planChasse: normPlan(t.planChasse) }; }
-function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
@@ -390,8 +390,8 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
     <div className="flex items-center justify-between"><button onClick={onCancel} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={15} /> Retour</button>{initialTerrain && <button onClick={onDelete} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer le territoire</button>}</div>
     <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom du territoire</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Bois de l'Île" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
     <div className="flex flex-wrap gap-1 border-b border-stone-200 pb-2">
-      <button onClick={() => setTab("chasse")} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === "chasse" ? "bg-amber-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>🎯 Plan de chasse</button>
       <button onClick={() => setTab("plan")} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === "plan" ? "bg-amber-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>🗺️ Cartes</button>
+      <button onClick={() => setTab("chasse")} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === "chasse" ? "bg-amber-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>🎯 Plan de chasse</button>
       {tracks.map((t) => (<button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === t.id ? "bg-emerald-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>{t.name}</button>))}
       <button onClick={addTrack} className="px-2.5 py-1.5 text-sm font-medium rounded-md bg-stone-100 text-amber-800 flex items-center gap-1"><Plus size={14} /> Traque</button>
     </div>
@@ -434,7 +434,7 @@ function ParticipantsView({ participants, setParticipants }) {
   const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
-  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", participe: false, invitation: false, role: null, mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
   const [dinerPrint, setDinerPrint] = useState(null);
@@ -467,7 +467,7 @@ function ParticipantsView({ participants, setParticipants }) {
   };
   return (<div className="space-y-6">
     {dinerPrint && <PrintOverlay html={dinerPrint} onClose={() => setDinerPrint(null)} />}    <div className="space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Membres</h2>
+      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Participants & invités</h2>
         <div className="flex gap-2"><input ref={listFileRef} type="file" accept=".docx,.pdf,.txt,.csv" onChange={onImportList} className="hidden" />
           <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer liste (Word/PDF)"}</button>
           <button onClick={addParticipant} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Ajouter</button></div></div>
@@ -478,16 +478,11 @@ function ParticipantsView({ participants, setParticipants }) {
         return (<SectionCard key={p.id}>
           <div className="flex items-center justify-between px-4 py-3 gap-2">
             <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button>
+            <div className="flex gap-2 shrink-0"><Toggle value={p.participe} onChange={(v) => update(p.id, { participe: v })} labelOn="Participe" labelOff="Absent" /></div>
           </div>
           {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
-            <div><label className="text-xs uppercase tracking-wide text-stone-400">Prénom et nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
             <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label><input value={p.phone || ""} onChange={(e) => update(p.id, { phone: e.target.value })} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
-            <div><label className="text-xs uppercase tracking-wide text-stone-400">Email (pour les invitations)</label><input value={p.email || ""} onChange={(e) => update(p.id, { email: e.target.value })} placeholder="prenom.nom@email.fr" inputMode="email" autoCapitalize="none" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><label className="text-xs uppercase tracking-wide text-stone-400">N° de permis</label><input value={p.permis || ""} onChange={(e) => update(p.id, { permis: e.target.value })} placeholder="Permis de chasser" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
-              <div><label className="text-xs uppercase tracking-wide text-stone-400">N° de validation (saison)</label><input value={p.validation || ""} onChange={(e) => update(p.id, { validation: e.target.value })} placeholder="Validation annuelle" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
-            </div>
-            <div><label className="text-xs uppercase tracking-wide text-stone-400">Assurance (compagnie + n° de police)</label><input value={p.assurance || ""} onChange={(e) => update(p.id, { assurance: e.target.value })} placeholder="ex : Groupama — n° 12345678" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Rôle (seuls les chasseurs sont placés sur les miradors)</p><RoleSelector value={p.role} onChange={(v) => update(p.id, { role: v })} /></div>
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Mobilité réduite (placement adapté)</p><div className="flex gap-2">
               {[{ v: null, l: "Aucune" }, { v: "canne", l: "🦯 Canne", ic: "c" }, { v: "fauteuil", l: "Fauteuil", ic: "f" }].map((o) => (<button key={o.l} onClick={() => update(p.id, { mobility: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.mobility || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.ic === "f" ? <Fauteuil size={13} color={(p.mobility || null) === o.v ? "#fff" : "#166534"} /> : null} {o.l}</button>))}
@@ -495,6 +490,15 @@ function ParticipantsView({ participants, setParticipants }) {
             <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
           </div>)}
         </SectionCard>); })}
+    </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">🐗 Liste du dîner</h2><div className="flex items-center gap-2"><span className="text-sm text-stone-500">{totalConvives} convive(s)</span><button onClick={printDiner} className="flex items-center gap-1 text-xs bg-stone-200 text-stone-700 px-2 py-1 rounded"><FileText size={13} /> PDF</button><button onClick={exportDinerExcel} className="flex items-center gap-1 text-xs bg-stone-200 text-stone-700 px-2 py-1 rounded"><Download size={13} /> Excel</button></div></div>
+      <SectionCard>{participants.length === 0 && <p className="text-sm text-stone-500 italic px-4 py-3">Ajoute des participants pour composer le dîner.</p>}
+        {participants.map((p, i) => (<div key={p.id} className={`flex items-center justify-between px-4 py-2.5 gap-3 ${i !== participants.length - 1 ? "border-b border-stone-200" : ""}`}>
+          <span className="text-sm font-medium text-stone-800 flex-1 truncate">{p.name}</span>
+          <Toggle value={p.diner?.vient} onChange={(v) => updateDiner(p.id, { vient: v })} labelOn="Vient" labelOff="Absent" />
+          <div className="flex items-center gap-1.5 text-sm text-stone-600"><span className="hidden sm:inline">+ invités :</span><span className="sm:hidden">Invités :</span><button onClick={() => updateDiner(p.id, { invitesSupplementaires: Math.max(0, (Number(p.diner?.invitesSupplementaires) || 0) - 1) })} disabled={!p.diner?.vient} className="w-8 h-8 rounded-full border border-stone-300 bg-white disabled:opacity-30 text-lg leading-none flex items-center justify-center">−</button><span className="w-6 text-center font-medium">{p.diner?.invitesSupplementaires ?? 0}</span><button onClick={() => updateDiner(p.id, { invitesSupplementaires: (Number(p.diner?.invitesSupplementaires) || 0) + 1 })} disabled={!p.diner?.vient} className="w-8 h-8 rounded-full border border-stone-300 bg-white disabled:opacity-30 text-lg leading-none flex items-center justify-center">+</button></div>
+        </div>))}</SectionCard>
     </div>
   </div>);
 }
@@ -588,10 +592,10 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
     </div>
   </div>);
 }
-function PosterFusils({ terrain, track, placements, participants, presentIds, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
+function PosterFusils({ terrain, track, placements, participants, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const [selectedHunter, setSelectedHunter] = useState(null);
   const assignedIds = Object.keys(placements);
-  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id));
+  const pending = participants.filter((p) => p.participe && p.role === "chasseur" && !assignedIds.includes(p.id));
   const freeMiradors = track.miradors.filter((m) => !Object.values(placements).includes(m.id));
   const sortedFree = [...freeMiradors].sort((a, b) => (a.priority || 1) - (b.priority || 1) || a.label.localeCompare(b.label));
   // Surbrillance par PALIER de priorité : toute la priorité 1, puis 2, etc. jusqu'à couvrir le nb de chasseurs
@@ -604,7 +608,7 @@ function PosterFusils({ terrain, track, placements, participants, presentIds, on
     <h3 className="font-serif text-lg text-stone-800">Poster les fusils — {track.name}</h3>
     <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} />
       <SectionCard className="p-3 sm:col-span-2">
-        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap"><p className="text-xs uppercase tracking-wide text-stone-400">Le chiffre = priorité · liseré vert = à utiliser</p><div className="flex gap-1.5">{pending.length > 0 && freeMiradors.length > 0 && <button onClick={() => { window.alert("Diagnostic — À placer : " + pending.length + " · Postes libres : " + sortedFree.length + " · Mobilités : " + pending.map((p) => (p.mobility || "aucune")).join(", ")); onAutoFill(track, pending, sortedFree); }} className="text-xs font-medium bg-emerald-700 text-stone-50 px-2.5 py-1 rounded">Remplir par priorité</button>}{hasPlacements && <button onClick={() => onClearAll(track)} className="text-xs font-medium bg-stone-200 hover:bg-stone-300 text-stone-700 px-2.5 py-1 rounded">Décocher tous</button>}</div></div>
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap"><p className="text-xs uppercase tracking-wide text-stone-400">Le chiffre = priorité · liseré vert = à utiliser</p><div className="flex gap-1.5">{pending.length > 0 && freeMiradors.length > 0 && <button onClick={() => onAutoFill(track, pending, sortedFree)} className="text-xs font-medium bg-emerald-700 text-stone-50 px-2.5 py-1 rounded">Remplir par priorité</button>}{hasPlacements && <button onClick={() => onClearAll(track)} className="text-xs font-medium bg-stone-200 hover:bg-stone-300 text-stone-700 px-2.5 py-1 rounded">Décocher tous</button>}</div></div>
         {!terrain.planImage ? <MapNotice>Photo manquante. Importe ta sauvegarde ou rajoute la photo (onglet Territoires).</MapNotice>
           : track.miradors.length === 0 ? <MapNotice>Cette traque n'a pas de miradors (onglet Territoires).</MapNotice>
           : <AssignSurface image={terrain.planImage} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={onAssign} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} />}</SectionCard></div>
@@ -833,7 +837,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   const posted = {};
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: m.consignes || "", photos: m.photos || [] }); }); });
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => a.name.localeCompare(b.name));
-  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })) };
+  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.participe && p.role === "rabatteur").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })) };
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
 }
 
@@ -908,15 +912,11 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
           <button onClick={() => onRemoveKill(k.id)} className="ml-auto text-stone-400 hover:text-red-700"><X size={15} /></button></div>
         {k.espece === "autre" && <input value={k.especeLabel || ""} onChange={(e) => onUpdateKill(k.id, { especeLabel: e.target.value })} placeholder="Quelle espèce ?" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white" />}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Sexe :</span>
-            <button onClick={() => onUpdateKill(k.id, { sexe: k.sexe === "M" ? "" : "M" })} className={`px-2 py-1 rounded text-xs font-medium border ${k.sexe === "M" ? "bg-sky-700 text-white border-sky-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>♂ Mâle</button>
-            <button onClick={() => onUpdateKill(k.id, { sexe: k.sexe === "F" ? "" : "F" })} className={`px-2 py-1 rounded text-xs font-medium border ${k.sexe === "F" ? "bg-pink-700 text-white border-pink-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>♀ Femelle</button></div>
-          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Poids :</span><input type="number" inputMode="decimal" step="0.1" min="0" onFocus={(e) => e.target.select()} value={k.poids ?? ""} onChange={(e) => onUpdateKill(k.id, { poids: e.target.value })} placeholder="kg" className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /><span className="text-xs text-stone-400">kg</span></div>
-          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Bracelet :</span><input value={k.bracelet || ""} onChange={(e) => onUpdateKill(k.id, { bracelet: e.target.value })} placeholder="n°" className="w-24 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /></div>
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Nombre :</span><input type="number" inputMode="numeric" min="1" onFocus={(e) => e.target.select()} value={k.quantite} onChange={(e) => onUpdateKill(k.id, { quantite: e.target.value === "" ? "" : Number(e.target.value) })} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /></div>
           <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Traque :</span>
             <select value={k.trackId || ""} onChange={(e) => onUpdateKill(k.id, { trackId: e.target.value })} className="border border-stone-300 rounded px-2 py-1 text-sm bg-white max-w-[130px]"><option value="">—</option>{(terrain?.tracks || []).map((trk) => <option key={trk.id} value={trk.id}>{trk.name}</option>)}</select></div>
           <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Tireur :</span>
-            <select value={k.tireurId || ""} onChange={(e) => onUpdateKill(k.id, { tireurId: e.target.value })} className="border border-stone-300 rounded px-2 py-1 text-sm bg-white max-w-[150px]"><option value="">—</option>{participants.filter((p) => p.role !== "rabatteur").map((p) => <option key={p.id} value={p.id}>{p.name || "Sans nom"}</option>)}</select></div>
+            <select value={k.tireurId || ""} onChange={(e) => onUpdateKill(k.id, { tireurId: e.target.value })} className="border border-stone-300 rounded px-2 py-1 text-sm bg-white max-w-[150px]"><option value="">—</option>{participants.filter((p) => p.role === "chasseur" || p.participe).map((p) => <option key={p.id} value={p.id}>{p.name || "Sans nom"}</option>)}</select></div>
         </div>
       </div>))}
       <button onClick={onAddKill} className="w-full flex items-center justify-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Plus size={15} /> Ajouter une prise</button>
@@ -935,125 +935,7 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
 }
 
 // ---------- Journées ----------
-function InvitationsSection({ journee, terrain, participants, orgEmail, onToggleInvite, onSetPresence, onSetMsg }) {
-  const [open, setOpen] = useState(false);
-  const [showMailPick, setShowMailPick] = useState(false);
-  const [emarg, setEmarg] = useState(null);
-  const invites = journee.invites || [];
-  const invited = participants.filter((p) => invites.includes(p.id));
-  const pres = journee.presence || {};
-  const dateFr = journee.date ? new Date(journee.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
-  const terrName = terrain ? terrain.name : "";
-  const defSubject = "Battue du " + dateFr + (terrName ? " — " + terrName : "");
-  const defBody = "Bonjour,\n\nJe t'invite à la battue du " + dateFr + (terrName ? " sur " + terrName : "") + ".\nMerci de me confirmer ta présence.\n\nÀ bientôt !";
-  const subject = journee.inviteSubject != null ? journee.inviteSubject : defSubject;
-  const body = journee.inviteBody != null ? journee.inviteBody : defBody;
-  const invitedEmails = () => invited.map((p) => (p.email || "").trim()).filter(Boolean);
-  const openMail = (provider) => {
-    const emails = invitedEmails();
-    if (!emails.length) { window.alert("Coche au moins un invité qui a une adresse email."); return; }
-    const to = encodeURIComponent(orgEmail || "");
-    const bcc = encodeURIComponent(emails.join(","));
-    const su = encodeURIComponent(subject);
-    const bd = encodeURIComponent(body);
-    let url = "";
-    if (provider === "gmail") url = "googlegmail:///co?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
-    else if (provider === "gmailweb") url = "https://mail.google.com/mail/?view=cm&fs=1&to=" + to + "&bcc=" + bcc + "&su=" + su + "&body=" + bd;
-    else if (provider === "outlook") url = "https://outlook.live.com/mail/0/deeplink/compose?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
-    else if (provider === "yahoo") url = "https://compose.mail.yahoo.com/?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
-    else url = "mailto:" + to + "?bcc=" + bcc + "&subject=" + su + "&body=" + bd; // défaut / Apple Mail / iCloud
-    if (provider === "gmailweb" || provider === "outlook" || provider === "yahoo") window.open(url, "_blank");
-    else window.location.href = url;
-    setShowMailPick(false);
-  };
-  const copyEmails = () => { const emails = invitedEmails(); if (!emails.length) { window.alert("Aucun invité avec email."); return; } const txt = emails.join(", "); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Emails copiés ✓ Colle-les dans le champ Cci.")); else window.prompt("Copie les emails :", txt); };
-  const copyMsg = () => { const txt = subject + "\n\n" + body; if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Message copié ✓")); else window.prompt("Copie le message :", txt); };
-  const exportDinerExcel = () => {
-    try {
-      const list = invited.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-      const rows = list.map((p) => { const sup = Number((pres[p.id] || {}).invitesSup) || 0; return { Nom: p.name || "", "Invités supplémentaires": sup, Convives: 1 + sup }; });
-      const total = rows.reduce((s, r) => s + r.Convives, 0);
-      rows.push({ Nom: "TOTAL", "Invités supplémentaires": "", Convives: total });
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Nom: "" }]), "Dîner");
-      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }); const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const fn = "diner-" + (journee.date || "") + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: fn }).catch(() => {}); } else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-    } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
-  };
-  const nbPres = invited.filter((p) => (pres[p.id] || {}).statut === "present").length;
-  const nbDiner = invited.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).diner).length;
-  const nbSup = invited.reduce((s, p) => s + (((pres[p.id] || {}).statut === "present") ? (Number((pres[p.id] || {}).invitesSup) || 0) : 0), 0);
-  return (<SectionCard className="p-3 space-y-2">
-    <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
-      <span className="font-medium text-stone-800 flex items-center gap-2">📧 Invitations</span>
-      <span className="text-xs text-stone-500">{invites.length} invités · {nbPres} présents {open ? "▲" : "▼"}</span>
-    </button>
-    {open && (<div className="space-y-3 pt-1">
-      <div className="space-y-1">
-        <label className="text-xs uppercase tracking-wide text-stone-400">Objet du mail</label>
-        <input value={subject} onChange={(e) => onSetMsg(journee.id, { inviteSubject: e.target.value })} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
-        <label className="text-xs uppercase tracking-wide text-stone-400">Message</label>
-        <textarea value={body} onChange={(e) => onSetMsg(journee.id, { inviteBody: e.target.value })} rows={4} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
-      </div>
-      <div>
-        <p className="text-xs uppercase tracking-wide text-stone-400 mb-1">Qui inviter</p>
-        {participants.length === 0 && <p className="text-xs text-stone-400 italic">Ajoute d'abord des membres dans l'onglet Membres.</p>}
-        <div className="space-y-1 max-h-56 overflow-auto">
-          {participants.map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
-            <button key={p.id} onClick={() => onToggleInvite(journee.id, p.id)} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded border text-left text-sm ${on ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
-              <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{on ? "✓" : ""}</span>
-              <span className="flex-1 text-stone-800 truncate">{p.name || "(sans nom)"}</span>
-              {noMail && <span className="text-[10px] text-amber-700 shrink-0">pas d'email</span>}
-            </button>); })}
-        </div>
-      </div>
-      <button onClick={() => { if (!invitedEmails().length) { window.alert("Coche au moins un invité qui a une adresse email."); return; } setShowMailPick(true); }} className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium px-3 py-2 rounded-md">✉️ Écrire l'invitation</button>
-      {showMailPick && (<div className="border border-stone-300 rounded-lg p-2 bg-stone-50 space-y-1">
-        <p className="text-xs text-stone-500 px-1 pb-1">Ouvrir avec :</p>
-        <button onClick={() => openMail("gmail")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">📧 Application Gmail</button>
-        <button onClick={() => openMail("gmailweb")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🌐 Gmail (navigateur)</button>
-        <button onClick={() => openMail("apple")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">✉️ Mail / iCloud (app par défaut)</button>
-        <button onClick={() => openMail("outlook")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🔵 Outlook (navigateur)</button>
-        <button onClick={() => openMail("yahoo")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🟣 Yahoo (navigateur)</button>
-        <button onClick={() => setShowMailPick(false)} className="w-full text-center text-xs text-stone-400 pt-1">Annuler</button>
-      </div>)}
-      <div className="flex gap-2">
-        <button onClick={copyEmails} className="flex-1 flex items-center justify-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium px-2 py-2 rounded-md">📋 Copier les emails</button>
-        <button onClick={copyMsg} className="flex-1 flex items-center justify-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium px-2 py-2 rounded-md">📋 Copier le message</button>
-      </div>
-      <p className="text-[11px] text-stone-400">Destinataires en copie cachée (Cci). Choisis ta messagerie ci-dessus, ou utilise « Copier » si besoin.</p>
-      {invited.length > 0 && (<div>
-        {emarg && <PrintOverlay html={emarg} onClose={() => setEmarg(null)} />}
-        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
-          <p className="text-xs uppercase tracking-wide text-stone-400">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""}</p>
-          <div className="flex gap-1.5 flex-wrap">
-            <button onClick={() => { if (!nbPres) { window.alert("Coche au moins un présent."); return; } setEmarg(buildEmargementHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Émargement</button>
-            <button onClick={() => { if (!nbDiner) { window.alert("Personne n'est inscrit au dîner."); return; } setEmarg(buildDinerHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Dîner PDF</button>
-            <button onClick={exportDinerExcel} className="flex items-center gap-1 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white px-2 py-1 rounded shrink-0"><Download size={13} /> Dîner Excel</button>
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          {invited.map((p) => { const pr = pres[p.id] || {}; return (
-            <div key={p.id} className="bg-white border border-stone-200 rounded-md p-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-stone-800 flex-1 truncate">{p.name}</span>
-                <div className="flex gap-1 shrink-0">
-                  <button onClick={() => onSetPresence(journee.id, p.id, { statut: pr.statut === "present" ? null : "present" })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.statut === "present" ? "bg-emerald-700 text-white border-emerald-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>Présent</button>
-                  <button onClick={() => onSetPresence(journee.id, p.id, { statut: pr.statut === "absent" ? null : "absent" })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.statut === "absent" ? "bg-red-700 text-white border-red-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>Absent</button>
-                </div>
-              </div>
-              {pr.statut === "present" && (<div className="flex items-center gap-3 mt-2 pt-2 border-t border-stone-100">
-                <button onClick={() => onSetPresence(journee.id, p.id, { diner: !pr.diner })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.diner ? "bg-amber-700 text-white border-amber-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>🍽️ Dîner</button>
-                {pr.diner && (<span className="flex items-center gap-1 text-xs text-stone-600">+ invités
-                  <input type="number" inputMode="numeric" value={pr.invitesSup || 0} onFocus={(e) => e.target.select()} onChange={(e) => onSetPresence(journee.id, p.id, { invitesSup: Math.max(0, parseInt(e.target.value || "0", 10) || 0) })} className="w-14 border border-stone-300 rounded px-2 py-1 bg-white" /></span>)}
-              </div>)}
-            </div>); })}
-        </div>
-      </div>)}
-    </div>)}
-  </SectionCard>);
-}
-function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings, userId, orgEmail }) {
+function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings, userId }) {
   const [openJournee, setOpenJournee] = useState(null);
   const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
@@ -1080,9 +962,6 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const removeJournee = (id) => { if (window.confirm("Supprimer cette journée ?")) setJournees((prev) => prev.filter((j) => j.id !== id)); };
   const setJourneeDate = (id, date) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, date } : j)));
   const setJourneeTerrain = (id, terrainId) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, terrainId, placements: {} } : j)));
-  const toggleInvite = (jid, mid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const inv = j.invites || []; return { ...j, invites: inv.includes(mid) ? inv.filter((x) => x !== mid) : [...inv, mid] }; }));
-  const setPresence = (jid, mid, patch) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const pr = { ...(j.presence || {}) }; pr[mid] = { ...(pr[mid] || { statut: null, diner: false, invitesSup: 0 }), ...patch }; return { ...j, presence: pr }; }));
-  const setInviteMsg = (jid, patch) => setJournees((prev) => prev.map((j) => (j.id === jid ? { ...j, ...patch } : j)));
   const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: { ...(j.placements[trackId] || {}), [hid]: mid } } })));
   const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...(j.placements[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...j.placements, [trackId]: t } }; }));
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
@@ -1105,7 +984,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     // 1) Fauteuils -> postes fauteuil, 2) Cannes -> postes canne/fauteuil, 3) Valides -> tout ce qui reste
     place(pending.filter((h) => h.mobility === "fauteuil"), okFauteuil);
     place(pending.filter((h) => h.mobility === "canne"), okCanne);
-    place(pending.filter((h) => h.mobility !== "fauteuil" && h.mobility !== "canne"), () => true);
+    place(pending.filter((h) => !h.mobility), () => true);
     return { ...j, placements: { ...j.placements, [track.id]: cur } };
   }));
   const clearAll = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: {} } })));
@@ -1113,14 +992,14 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const clearArrows = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [] } })));
   const updateArrow = (jid, trackId, idx, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: ((j.arrows || {})[trackId] || []).map((a, i) => (i === idx ? { ...a, ...patch } : a)) } })));
   const deleteArrow = (jid, trackId, idx) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: ((j.arrows || {})[trackId] || []).filter((a, i) => i !== idx) } })));
-  const addKill = (jid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const terrain = terrains.find((t) => t.id === j.terrainId); const firstTrack = terrain?.tracks?.[0]?.id || ""; return { ...j, tableau: [...(j.tableau || []), { id: "k-" + Date.now(), espece: "chevreuil", especeLabel: "", quantite: 1, sexe: "", poids: "", bracelet: "", tireurId: "", trackId: firstTrack }] }; }));
+  const addKill = (jid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const terrain = terrains.find((t) => t.id === j.terrainId); const firstTrack = terrain?.tracks?.[0]?.id || ""; return { ...j, tableau: [...(j.tableau || []), { id: "k-" + Date.now(), espece: "chevreuil", especeLabel: "", quantite: 1, tireurId: "", trackId: firstTrack }] }; }));
   const updateKill = (jid, kid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).map((k) => (k.id === kid ? { ...k, ...patch } : k)) })));
   const removeKill = (jid, kid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).filter((k) => k.id !== kid) })));
   const setShot = (jid, trackId, mid, val) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, shots: { ...(j.shots || {}), [trackId]: { ...((j.shots || {})[trackId] || {}), [mid]: val } } })));
   const setMiradorState = (jid, trackId, mid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, miradorStates: { ...(j.miradorStates || {}), [trackId]: { ...((j.miradorStates || {})[trackId] || {}), [mid]: { ...(((j.miradorStates || {})[trackId] || {})[mid] || {}), ...patch } } } })));
 
   if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
-    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
+    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
   if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
     return <EnvoiChasseurs journee={journee} terrain={terrain} participants={participants} safety={safety} onBack={() => setShareView(null)} />; }
 
@@ -1134,7 +1013,6 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
           <div className="flex flex-wrap items-center gap-2 text-sm"><span className="text-stone-500">Date :</span><input type="date" value={j.date} onChange={(e) => setJourneeDate(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white" /><span className="text-stone-500 ml-2">Territoire :</span>
             <select value={j.terrainId || ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white"><option value="" disabled>Choisir…</option>{terrains.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
             <button onClick={() => removeJournee(j.id)} className="ml-auto flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer</button></div>
-          <InvitationsSection journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
           {terrain ? (<>
             {terrain.tracks.map((trk) => { const placed = Object.keys(j.placements[trk.id] || {}).length;
               return (<div key={trk.id} className="flex items-center justify-between bg-white border border-stone-200 rounded-md px-3 py-2"><div><p className="font-medium text-sm text-stone-800">{trk.name}</p><p className="text-xs text-stone-500 flex items-center gap-1"><MapPin size={12} /> {placed}/{trk.miradors.length} postes</p></div><button onClick={() => setPosterView({ journeeId: j.id, trackId: trk.id })} className="flex items-center gap-1.5 text-sm font-medium bg-emerald-800 hover:bg-emerald-900 text-stone-50 px-3 py-1.5 rounded-md"><Crosshair size={14} /> Poster les fusils</button></div>); })}
@@ -1170,58 +1048,6 @@ function computeStats(inSeason, terrains, participants) {
   return { totalAnimals, totalBullets, ratio: totalAnimals ? totalBullets / totalAnimals : 0, bySpecies, byShooter, byPost, perJournee };
 }
 const STATS_CSS = "@page{margin:14mm}body{font-family:Georgia,serif;color:#1c1917;margin:0}header{border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}h2{font-size:16px;margin:18px 0 6px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:12px;margin-bottom:8px}th{text-align:left;color:#78716c;font-size:10px;text-transform:uppercase;border-bottom:1px solid #e7e5e4;padding:4px}td{padding:4px;border-bottom:1px solid #f0efee}.c{text-align:center}.tot{display:flex;gap:20px;margin-bottom:6px}.tot b{font-size:22px;color:#166534}";
-function buildDinerHtml(journee, terrain, participants) {
-  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const df = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return d; } };
-  const pres = journee.presence || {};
-  const list = participants.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  let total = 0;
-  let rows = list.map((p, i) => { const sup = Number((pres[p.id] || {}).invitesSup) || 0; const conv = 1 + sup; total += conv; return "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td class='c'>" + sup + "</td><td class='c'>" + conv + "</td></tr>"; }).join("");
-  if (!rows) rows = "<tr><td colspan='4' style='text-align:center;color:#999;padding:14px'>Personne n'est encore inscrit au dîner.</td></tr>";
-  const css = "*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1c1917;margin:0;padding:28px 26px;background:#fff}"
-    + ".head{border:2px solid #b45309;border-radius:12px;padding:16px 20px;margin-bottom:16px;background:#fffbeb}"
-    + ".head h1{margin:0 0 4px;font-size:22px;color:#7c2d12}.head .sub{font-size:14px;color:#b45309;font-weight:600;text-transform:capitalize}"
-    + ".meta{margin-top:8px;font-size:13px;color:#44403c}.meta b{color:#1c1917}"
-    + "table{border-collapse:collapse;width:100%;font-size:13px;margin-top:4px}"
-    + "th,td{border:1px solid #e7e5e4;padding:9px 10px;text-align:left}th{background:#b45309;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.03em}"
-    + "tbody tr:nth-child(even){background:#fafaf9}.num{width:26px;text-align:center;color:#78716c}.nom{font-weight:600}.c{text-align:center;width:120px}"
-    + ".tot{margin-top:14px;font-size:16px;font-weight:700;color:#7c2d12;text-align:right}";
-  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Dîner</title><style>" + css + "</style></head><body>"
-    + "<div class='head'><h1>🍽️ Liste du dîner</h1><div class='sub'>" + esc(df(journee.date)) + "</div>"
-    + "<div class='meta'><b>Territoire :</b> " + esc(terrain ? terrain.name : "—") + "</div></div>"
-    + "<table><thead><tr><th class='num'>#</th><th>Prénom &amp; nom</th><th class='c'>Invités suppl.</th><th class='c'>Convives</th></tr></thead><tbody>" + rows + "</tbody></table>"
-    + "<p class='tot'>Total : " + total + " convive" + (total > 1 ? "s" : "") + "</p>"
-    + "</body></html>";
-}
-function buildEmargementHtml(journee, terrain, participants) {
-  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const df = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return d; } };
-  const pres = journee.presence || {};
-  const list = participants.filter((p) => (pres[p.id] || {}).statut === "present").sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  let rows = list.map((p, i) => "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td>" + esc(p.permis || "") + "</td><td>" + esc(p.validation || "") + "</td><td>" + esc(p.assurance || "") + "</td><td class='sig'></td></tr>").join("");
-  const emptyRows = Math.max(0, 12 - list.length);
-  for (let i = 0; i < emptyRows; i++) rows += "<tr><td class='num'>" + (list.length + i + 1) + "</td><td></td><td></td><td></td><td></td><td class='sig'></td></tr>";
-  const css = "*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1c1917;margin:0;padding:28px 26px;background:#fff}"
-    + ".head{border:2px solid #166534;border-radius:12px;padding:16px 20px;margin-bottom:18px;background:#f0fdf4}"
-    + ".head h1{margin:0 0 4px;font-size:22px;color:#14532d}.head .sub{font-size:14px;color:#166534;font-weight:600;text-transform:capitalize}"
-    + ".meta{display:flex;gap:24px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:#44403c}.meta b{color:#1c1917}"
-    + ".note{font-size:11px;color:#78716c;margin:10px 2px 14px;line-height:1.4}"
-    + "table{border-collapse:collapse;width:100%;font-size:12.5px}"
-    + "th,td{border:1px solid #d6d3d1;padding:9px 8px;text-align:left;vertical-align:middle}"
-    + "th{background:#166534;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.03em}"
-    + "tbody tr:nth-child(even){background:#fafaf9}"
-    + ".num{width:26px;text-align:center;color:#78716c}.nom{font-weight:600}.sig{width:150px}"
-    + "tbody td{height:34px}"
-    + ".foot{margin-top:16px;font-size:11px;color:#78716c;display:flex;justify-content:space-between}"
-    + "@media print{body{padding:0}.head{border-color:#166534}}";
-  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Feuille d'émargement</title><style>" + css + "</style></head><body>"
-    + "<div class='head'><h1>🦌 Feuille d'émargement</h1><div class='sub'>" + esc(df(journee.date)) + "</div>"
-    + "<div class='meta'><span><b>Territoire :</b> " + esc(terrain ? terrain.name : "—") + "</span><span><b>Présents :</b> " + list.length + "</span></div></div>"
-    + "<p class='note'>Chaque participant doit être titulaire d'un permis de chasser validé pour la saison en cours et d'une assurance responsabilité civile. Signature obligatoire avant le début de la battue.</p>"
-    + "<table><thead><tr><th class='num'>#</th><th>Prénom &amp; nom</th><th>N° de permis</th><th>Validation saison</th><th>Assurance</th><th>Signature</th></tr></thead><tbody>" + rows + "</tbody></table>"
-    + "<div class='foot'><span>Organisateur : _______________________</span><span>Fait le " + esc(df(journee.date)) + "</span></div>"
-    + "</body></html>";
-}
 function buildStatsPrintHtml(stats, season) {
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
   const df = (d) => { try { return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }); } catch (e) { return d; } };
@@ -1236,38 +1062,17 @@ function buildStatsPrintHtml(stats, season) {
     + "<h2>Animaux &amp; balles par poste</h2><table><thead><tr><th>Territoire</th><th>Traque</th><th>Poste</th><th class='c'>Animaux</th><th class='c'>Balles</th></tr></thead><tbody>" + (po || "<tr><td colspan='5'>—</td></tr>") + "</tbody></table>"
     + "</body></html>";
 }
-function CarnetView({ journees, terrains, participants, setJournees }) {
+function CarnetView({ journees, terrains, participants }) {
   const seasons = [...new Set(journees.map((j) => seasonOf(j.date)))].sort().reverse();
   const [season, setSeason] = useState(seasons[0] || seasonOf(new Date().toISOString()));
   const [openId, setOpenId] = useState(null);
   const [terrFilter, setTerrFilter] = useState("all");
   const [statsPrint, setStatsPrint] = useState(null);
-  const [expSpecies, setExpSpecies] = useState(null);
   const seasonJournees = journees.filter((j) => seasonOf(j.date) === season);
   const territoriesInSeason = [...new Map(seasonJournees.filter((j) => j.terrainId).map((j) => { const t = terrains.find((x) => x.id === j.terrainId); return [j.terrainId, t ? t.name : "—"]; })).entries()];
   const inSeason = seasonJournees.filter((j) => terrFilter === "all" || j.terrainId === terrFilter).sort((a, b) => (a.date < b.date ? 1 : -1));
   const stats = computeStats(inSeason, terrains, participants);
   const nameOf = (hid) => participants.find((p) => p.id === hid)?.name || "?";
-  const updateKill = (jid, kid, patch) => setJournees && setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).map((k) => (k.id === kid ? { ...k, ...patch } : k)) })));
-  const animalRows = () => { const rows = []; inSeason.forEach((j) => { const terr = terrains.find((t) => t.id === j.terrainId); (j.tableau || []).forEach((k) => { rows.push({ jid: j.id, kid: k.id, date: j.date, terrain: terr ? terr.name : "", espece: especeLabel(k), sexe: k.sexe || "", poids: k.poids || "", bracelet: k.bracelet || "", tireur: k.tireurId ? nameOf(k.tireurId) : "" }); }); }); return rows; };
-  const dfr = (d) => { try { return new Date(d).toLocaleDateString("fr-FR"); } catch (e) { return d; } };
-  const sexLabel = (s) => (s === "M" ? "Mâle" : s === "F" ? "Femelle" : "");
-  const exportFedExcel = () => {
-    try {
-      const rows = animalRows().map((r) => ({ Date: dfr(r.date), Territoire: r.terrain, Espèce: r.espece, Sexe: sexLabel(r.sexe), "Poids (kg)": r.poids, "N° bracelet": r.bracelet, Tireur: r.tireur }));
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Date: "" }]), "Fédération");
-      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }); const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const fn = "federation-" + season + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: fn }).catch(() => {}); } else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-    } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
-  };
-  const printFed = () => {
-    const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const rows = animalRows();
-    const trs = rows.map((r) => "<tr><td>" + esc(dfr(r.date)) + "</td><td>" + esc(r.terrain) + "</td><td>" + esc(r.espece) + "</td><td>" + esc(sexLabel(r.sexe)) + "</td><td>" + esc(r.poids) + "</td><td>" + esc(r.bracelet) + "</td><td>" + esc(r.tireur) + "</td></tr>").join("");
-    const html = "<!doctype html><html><head><meta charset='utf-8'><title>Fédération " + esc(season) + "</title><style>body{font-family:-apple-system,sans-serif;padding:20px;color:#1c1917}h1{font-size:18px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #d6d3d1;padding:5px 7px;text-align:left}th{background:#f5f5f4}</style></head><body><h1>Bilan fédération — Saison " + esc(season) + "</h1><table><thead><tr><th>Date</th><th>Territoire</th><th>Espèce</th><th>Sexe</th><th>Poids (kg)</th><th>N° bracelet</th><th>Tireur</th></tr></thead><tbody>" + trs + "</tbody></table></body></html>";
-    setStatsPrint(html);
-  };
   const printStats = () => { setStatsPrint(buildStatsPrintHtml(stats, season)); };
   const exportStatsExcel = () => {
     try {
@@ -1291,25 +1096,8 @@ function CarnetView({ journees, terrains, participants, setJournees }) {
         <div className="bg-white border border-stone-200 rounded-md p-3 text-center"><p className="text-2xl font-bold text-amber-800">{stats.totalBullets}</p><p className="text-xs text-stone-600">balles</p></div>
         <div className="bg-white border border-stone-200 rounded-md p-3 text-center"><p className="text-2xl font-bold text-stone-700">{stats.ratio ? stats.ratio.toFixed(1) : "—"}</p><p className="text-xs text-stone-600">balles / animal</p></div>
       </div>
-      <div className="flex gap-2"><button onClick={printStats} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2 rounded-md"><FileText size={15} /> Carnet de chasse PDF</button><button onClick={exportStatsExcel} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2 rounded-md"><Download size={15} /> Carnet de chasse Excel</button></div>
-      <div className="flex gap-2"><button onClick={printFed} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2 rounded-md"><FileText size={15} /> Fédération PDF</button><button onClick={exportFedExcel} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2 rounded-md"><Download size={15} /> Fédération Excel</button></div>
-      {Object.keys(stats.bySpecies).length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par espèce (clique une espèce pour saisir sexe / poids / bracelet)</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(stats.bySpecies).sort((a, b) => b[1] - a[1]).map(([k, n]) => (<button key={k} onClick={() => setExpSpecies(expSpecies === k ? null : k)} className={`bg-white border rounded-md p-2 text-center ${expSpecies === k ? "border-emerald-500 ring-2 ring-emerald-200" : "border-stone-200"}`}><p className="text-xl font-bold text-emerald-800">{n}</p><p className="text-xs text-stone-600">{k}</p></button>))}</div>
-        {expSpecies && (<div className="mt-3 space-y-2">
-          <p className="text-xs font-medium text-stone-600">{expSpecies} — {animalRows().filter((r) => r.espece === expSpecies).length} animal(aux)</p>
-          {animalRows().filter((r) => r.espece === expSpecies).map((r) => (<div key={r.kid} className="border border-stone-200 rounded-md p-2 bg-stone-50">
-            <div className="flex justify-between items-center text-[11px] text-stone-500 mb-1.5"><span>{dfr(r.date)}{r.terrain ? " · " + r.terrain : ""}</span><span>{r.tireur}</span></div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex gap-1">
-                <button onClick={() => updateKill(r.jid, r.kid, { sexe: r.sexe === "M" ? "" : "M" })} className={`px-2 py-1 rounded text-xs font-medium border ${r.sexe === "M" ? "bg-sky-700 text-white border-sky-700" : "bg-white text-stone-600 border-stone-200"}`}>♂ M</button>
-                <button onClick={() => updateKill(r.jid, r.kid, { sexe: r.sexe === "F" ? "" : "F" })} className={`px-2 py-1 rounded text-xs font-medium border ${r.sexe === "F" ? "bg-pink-700 text-white border-pink-700" : "bg-white text-stone-600 border-stone-200"}`}>♀ F</button>
-              </div>
-              <div className="flex items-center gap-1"><input type="number" inputMode="decimal" step="0.1" min="0" onFocus={(e) => e.target.select()} value={r.poids} onChange={(e) => updateKill(r.jid, r.kid, { poids: e.target.value })} placeholder="kg" className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /><span className="text-xs text-stone-400">kg</span></div>
-              <input value={r.bracelet} onChange={(e) => updateKill(r.jid, r.kid, { bracelet: e.target.value })} placeholder="n° bracelet" className="w-28 border border-stone-300 rounded px-2 py-1 text-sm bg-white" />
-            </div>
-          </div>))}
-        </div>)}
-      </SectionCard>}
+      <div className="flex gap-2"><button onClick={printStats} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2 rounded-md"><FileText size={15} /> Export PDF</button><button onClick={exportStatsExcel} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2 rounded-md"><Download size={15} /> Export Excel</button></div>
+      {Object.keys(stats.bySpecies).length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par espèce</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(stats.bySpecies).sort((a, b) => b[1] - a[1]).map(([k, n]) => (<div key={k} className="bg-white border border-stone-200 rounded-md p-2 text-center"><p className="text-xl font-bold text-emerald-800">{n}</p><p className="text-xs text-stone-600">{k}</p></div>))}</div></SectionCard>}
       {stats.byShooter.length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par personne (animaux · balles)</p><div className="space-y-1">{stats.byShooter.map((t, i) => (<div key={i} className="flex items-center justify-between text-sm border-b border-stone-100 py-1 last:border-0"><span className="text-stone-800">{i + 1}. {t.name}</span><span className="text-stone-500"><b className="text-emerald-800">{t.animals}</b> animal(aux) · <b className="text-amber-800">{t.bullets}</b> balle(s)</span></div>))}</div></SectionCard>}
       {stats.byPost.length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par poste (animaux · balles)</p><div className="space-y-1">{stats.byPost.map((p, i) => (<div key={i} className="flex items-center justify-between text-sm border-b border-stone-100 py-1 last:border-0"><span className="text-stone-700 truncate mr-2"><b>{p.track}</b> — {p.post}</span><span className="text-stone-500 shrink-0"><b className="text-emerald-800">{p.animals}</b> · <b className="text-amber-800">{p.bullets}</b></span></div>))}</div></SectionCard>}
       <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Historique des journées ({inSeason.length})</p><div className="space-y-2">
@@ -1398,7 +1186,7 @@ function AuthScreen() {
 }
 
 function CarnetApp({ session, onSignOut }) {
-  const [tab, setTab] = useState("journees");
+  const [tab, setTab] = useState("participants");
   const [participants, setParticipants] = useState(initialParticipants);
   const [terrains, setTerrains] = useState(initialTerrains);
   const [journees, setJournees] = useState(initialJournees);
@@ -1480,10 +1268,10 @@ function CarnetApp({ session, onSignOut }) {
           const tireurId = hp ? hp.id : "";
           Object.keys(animals).forEach((esp) => {
             const qty = Math.max(0, Number(animals[esp]) || 0);
-            // On retire les lignes "chasseur" existantes de ce tireur/traque/espèce (dernier envoi fait foi)
-            for (let k = j.tableau.length - 1; k >= 0; k--) { const kk = j.tableau[k]; if (kk.source === "chasseur" && kk.tireurId === tireurId && kk.trackId === f.track_id && kk.espece === esp) j.tableau.splice(k, 1); }
-            // Puis on ajoute une ligne par animal (à compléter : sexe/poids/bracelet)
-            for (let n = 0; n < qty; n++) { j.tableau.push({ id: "k-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6) + "-" + n, espece: esp, especeLabel: "", quantite: 1, sexe: "", poids: "", bracelet: "", tireurId: tireurId, trackId: f.track_id, source: "chasseur" }); }
+            const ix = j.tableau.findIndex((k) => k.source === "chasseur" && k.tireurId === tireurId && k.trackId === f.track_id && k.espece === esp);
+            if (qty <= 0) { if (ix >= 0) j.tableau.splice(ix, 1); }
+            else if (ix >= 0) { j.tableau[ix] = { ...j.tableau[ix], quantite: qty }; }
+            else { j.tableau.push({ id: "k-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6), espece: esp, especeLabel: "", quantite: qty, tireurId: tireurId, trackId: f.track_id, source: "chasseur" }); }
           });
         }
         changed = true;
@@ -1556,7 +1344,7 @@ function CarnetApp({ session, onSignOut }) {
     const P = sh("Participants"), T = sh("Territoires"), TRK = sh("Traques"), M = sh("Miradors"), J = sh("Journées"), PL = sh("Placements"), PH = sh("_Photos"), CO = sh("Consignes"), SO = sh("Sonneries");
     const photoMap = {}; PH.forEach((r) => { if (!r.Kind) return; const key = `${r.Kind}|${r.OwnerId}|${r.PhotoIndex || 0}`; (photoMap[key] = photoMap[key] || []).push({ c: Number(r.Chunk) || 0, d: String(r.Data || "") }); });
     const blob = (key) => (photoMap[key] ? photoMap[key].sort((a, b) => a.c - b.c).map((x) => x.d).join("") : null);
-    const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: r.Rôle || r.Role || null, mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })() }));
+    const parts = P.filter((r) => r.Nom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: String(r.Nom), phone: r.Téléphone ? String(r.Téléphone) : "", participe: isYes(r.Participe), invitation: isYes(r.Invité), role: r.Rôle || null, diner: { vient: isYes(r.Dîner), invitesSupplementaires: Number(r.Invités_sup) || 0 } }));
     const terrs = T.filter((r) => r.Territoire || r.id).map((r) => ({ id: r.id || `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: r.Territoire || "Territoire", planImage: blob(`plan|${r.id}|0`), tracks: [] }));
     const terrById = Object.fromEntries(terrs.map((t) => [t.id, t]));
     TRK.filter((r) => r.TraqueId).forEach((r) => { const t = terrById[r.TerritoireId]; if (!t) return; t.tracks.push({ id: r.TraqueId, name: r.Traque || "Traque", color: r.Couleur || "#dc2626", crop: { x: Number(r.crop_x) || 0, y: Number(r.crop_y) || 0, w: Number(r.crop_w) || 100, h: Number(r.crop_h) || 100 }, miradors: [] }); });
@@ -1636,7 +1424,7 @@ function CarnetApp({ session, onSignOut }) {
 
   const resetAll = () => { if (!window.confirm("Tout réinitialiser ?")) return; setParticipants(initialParticipants); setTerrains(initialTerrains); setJournees(initialJournees); setSafety(DEFAULT_SAFETY); };
 
-  const tabs = [{ id: "journees", label: "Journées", icon: CalendarDays }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "participants", label: "Membres", icon: Users }, { id: "securite", label: "Sécurité", icon: Shield }];
+  const tabs = [{ id: "participants", label: "Participants", icon: Users }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "journees", label: "Journées", icon: CalendarDays }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "securite", label: "Sécurité", icon: Shield }];
   const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !t.planImage);
 
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
@@ -1662,9 +1450,9 @@ function CarnetApp({ session, onSignOut }) {
     <main className="max-w-3xl mx-auto px-4 py-5">
       {tab === "participants" && <ParticipantsView participants={participants} setParticipants={setParticipants} />}
       {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} journees={journees} />}
-      {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} userId={session?.user?.id} orgEmail={session?.user?.email} />}
+      {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} userId={session?.user?.id} />}
       {tab === "securite" && <SecurityView safety={safety} setSafety={setSafety} />}
-      {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} setJournees={setJournees} />}
+      {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} />}
     </main>
   </div>);
 }
