@@ -138,6 +138,7 @@ function Fauteuil({ size = 15, color = "#166534" }) {
     React.createElement("path", { d: "M4.24 14.5a5 5 0 0 0 6.88 6" }),
     React.createElement("path", { d: "M13.76 17.5a5 5 0 0 0-6.88-6" }));
 }
+function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [] }; }
 function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack), planChasse: normPlan(t.planChasse) }; }
@@ -601,10 +602,10 @@ function PosterFusils({ terrain, track, placements, participants, presentIds, on
   for (const pr of prios) { freeByPrio[pr].forEach((m) => recommendedIds.add(m.id)); acc += freeByPrio[pr].length; if (acc >= pending.length) break; }
   const hasPlacements = Object.keys(placements).length > 0;
   return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={14} /> Retour à la journée</button>
-    <h3 className="font-serif text-lg text-stone-800">Poster les fusils — {track.name} <span className="text-xs font-sans text-red-600">[carte reçoit {Object.keys(placements).length} placement(s)]</span></h3>
+    <h3 className="font-serif text-lg text-stone-800">Poster les fusils — {track.name}</h3>
     <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} />
       <SectionCard className="p-3 sm:col-span-2">
-        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap"><p className="text-xs uppercase tracking-wide text-stone-400">Le chiffre = priorité · liseré vert = à utiliser</p><div className="flex gap-1.5">{pending.length > 0 && freeMiradors.length > 0 && <button onClick={() => { window.alert("Diagnostic — À placer : " + pending.length + " · Postes libres : " + sortedFree.length + " · Mobilités : " + pending.map((p) => (p.mobility || "aucune")).join(", ")); onAutoFill(track, pending, sortedFree); }} className="text-xs font-medium bg-emerald-700 text-stone-50 px-2.5 py-1 rounded">Remplir par priorité</button>}{hasPlacements && <button onClick={() => onClearAll(track)} className="text-xs font-medium bg-stone-200 hover:bg-stone-300 text-stone-700 px-2.5 py-1 rounded">Décocher tous</button>}</div></div>
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap"><p className="text-xs uppercase tracking-wide text-stone-400">Le chiffre = priorité · liseré vert = à utiliser</p><div className="flex gap-1.5">{pending.length > 0 && freeMiradors.length > 0 && <button onClick={() => onAutoFill(track, pending, sortedFree)} className="text-xs font-medium bg-emerald-700 text-stone-50 px-2.5 py-1 rounded">Remplir par priorité</button>}{hasPlacements && <button onClick={() => onClearAll(track)} className="text-xs font-medium bg-stone-200 hover:bg-stone-300 text-stone-700 px-2.5 py-1 rounded">Décocher tous</button>}</div></div>
         {!terrain.planImage ? <MapNotice>Photo manquante. Importe ta sauvegarde ou rajoute la photo (onglet Territoires).</MapNotice>
           : track.miradors.length === 0 ? <MapNotice>Cette traque n'a pas de miradors (onglet Territoires).</MapNotice>
           : <AssignSurface image={terrain.planImage} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={onAssign} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} />}</SectionCard></div>
@@ -986,7 +987,7 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   return (<SectionCard className="p-3 space-y-2">
     <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
       <span className="font-medium text-stone-800 flex items-center gap-2">📧 Invitations</span>
-      <span className="text-xs text-stone-500">{invites.length} invités · {nbPres} présents {open ? "▲" : "▼"}</span>
+      <span className="text-xs text-stone-500">{invited.length} invités · {nbPres} présents {open ? "▲" : "▼"}</span>
     </button>
     {open && (<div className="space-y-3 pt-1">
       <div className="space-y-1">
@@ -1076,15 +1077,15 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
     setPostesPrint(buildPrintHtml(journee, terrain, participants, safety));
   };
-  const addJournee = () => { const id = `j-${Date.now()}`; setJournees((prev) => [...prev, { id, date: new Date().toISOString().slice(0, 10), terrainId: terrains[0]?.id || null, placements: {} }]); setOpenJournee(id); };
+  const addJournee = () => { const id = `j-${Date.now()}`; setJournees((prev) => [...prev, normJournee({ id, date: new Date().toISOString().slice(0, 10), terrainId: terrains[0]?.id || null })]); setOpenJournee(id); };
   const removeJournee = (id) => { if (window.confirm("Supprimer cette journée ?")) setJournees((prev) => prev.filter((j) => j.id !== id)); };
   const setJourneeDate = (id, date) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, date } : j)));
   const setJourneeTerrain = (id, terrainId) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, terrainId, placements: {} } : j)));
   const toggleInvite = (jid, mid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const inv = j.invites || []; return { ...j, invites: inv.includes(mid) ? inv.filter((x) => x !== mid) : [...inv, mid] }; }));
   const setPresence = (jid, mid, patch) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const pr = { ...(j.presence || {}) }; pr[mid] = { ...(pr[mid] || { statut: null, diner: false, invitesSup: 0 }), ...patch }; return { ...j, presence: pr }; }));
   const setInviteMsg = (jid, patch) => setJournees((prev) => prev.map((j) => (j.id === jid ? { ...j, ...patch } : j)));
-  const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: { ...(j.placements[trackId] || {}), [hid]: mid } } })));
-  const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...(j.placements[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...j.placements, [trackId]: t } }; }));
+  const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...(j.placements || {}), [trackId]: { ...((j.placements || {})[trackId] || {}), [hid]: mid } } })));
+  const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...((j.placements || {})[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...(j.placements || {}), [trackId]: t } }; }));
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
   const autoFill = (jid, track, pending, sortedFree) => {
     const tierOrder = (arr) => { const byP = {}; arr.forEach((m) => { const p = m.priority || 1; (byP[p] = byP[p] || []).push(m); }); return Object.keys(byP).map(Number).sort((a, b) => a - b).reduce((acc, p) => acc.concat(shuffle(byP[p])), []); };
@@ -1097,9 +1098,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     place(pending.filter((h) => h.mobility === "fauteuil"), okFauteuil);
     place(pending.filter((h) => h.mobility === "canne"), okCanne);
     place(pending.filter((h) => h.mobility !== "fauteuil" && h.mobility !== "canne"), () => true);
-    const dbg = Object.entries(cur).map(([hid, mid]) => { const inP = participants.find((p) => p.id === hid) ? "membre OK" : "MEMBRE ABSENT"; const inM = track.miradors.find((m) => m.id === mid) ? "poste OK" : "POSTE ABSENT"; return hid + " → " + mid + " [" + inP + ", " + inM + "]"; }).join("\n");
-    window.alert("Diagnostic 3 — " + Object.keys(cur).length + " placements :\n" + dbg);
-    setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [track.id]: cur } })));
+    setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...(j.placements || {}), [track.id]: cur } })));
   };
   const clearAll = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: {} } })));
   const addArrow = (jid, trackId, a) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [...((j.arrows || {})[trackId] || []), a] } })));
@@ -1424,7 +1423,7 @@ function CarnetApp({ session, onSignOut }) {
         if (d) {
           setParticipants((d.participants || []).map(normParticipant));
           setTerrains((d.terrains || []).map(normTerrain));
-          setJournees(d.journees || []);
+          setJournees((d.journees || []).map(normJournee));
           setSafety(normSafety(d.safety || DEFAULT_SAFETY));
         }
       } catch (e) { console.error(e); } finally { setLoaded(true); }
@@ -1458,33 +1457,34 @@ function CarnetApp({ session, onSignOut }) {
     try {
       const { data, error } = await SB.from("feedbacks").select("*").eq("user_id", session.user.id).order("ts", { ascending: true });
       if (error || !data || !data.length) return;
-      const js = stateRef.current.journees.map((j) => ({ ...j, shots: { ...(j.shots || {}) }, miradorStates: { ...(j.miradorStates || {}) }, tableau: (j.tableau || []).slice() }));
       const parts = stateRef.current.participants || [];
-      let changed = false;
-      data.forEach((f) => {
-        const j = js.find((x) => x.id === f.journee_id);
-        if (!j) return;
-        j.shots[f.track_id] = { ...(j.shots[f.track_id] || {}), [f.mirador_id]: f.bullets };
-        j.miradorStates[f.track_id] = { ...(j.miradorStates[f.track_id] || {}), [f.mirador_id]: { state: f.state || "", comment: f.comment || "", hunter: f.hunter || "", ts: f.ts } };
-        // Prélèvements -> Tableau final (tireur = chasseur, dernier envoi fait foi, ne touche que ses espèces)
-        let animals = f.animals; if (typeof animals === "string") { try { animals = JSON.parse(animals); } catch (e) { animals = null; } }
-        if (animals && typeof animals === "object") {
-          const hp = parts.find((p) => p.name === f.hunter);
-          const tireurId = hp ? hp.id : "";
-          Object.keys(animals).forEach((esp) => {
-            const qty = Math.max(0, Number(animals[esp]) || 0);
-            // On retire les lignes "chasseur" existantes de ce tireur/traque/espèce (dernier envoi fait foi)
-            for (let k = j.tableau.length - 1; k >= 0; k--) { const kk = j.tableau[k]; if (kk.source === "chasseur" && kk.tireurId === tireurId && kk.trackId === f.track_id && kk.espece === esp) j.tableau.splice(k, 1); }
-            // Puis on ajoute une ligne par animal (à compléter : sexe/poids/bracelet)
-            for (let n = 0; n < qty; n++) { j.tableau.push({ id: "k-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6) + "-" + n, espece: esp, especeLabel: "", quantite: 1, sexe: "", poids: "", bracelet: "", tireurId: tireurId, trackId: f.track_id, source: "chasseur" }); }
-          });
-        }
-        changed = true;
+      let changed = false; let mergedJs = null;
+      setJournees((prev) => {
+        const js = prev.map((j) => ({ ...j, shots: { ...(j.shots || {}) }, miradorStates: { ...(j.miradorStates || {}) }, tableau: (j.tableau || []).slice() }));
+        let ch = false;
+        data.forEach((f) => {
+          const j = js.find((x) => x.id === f.journee_id);
+          if (!j) return;
+          j.shots[f.track_id] = { ...(j.shots[f.track_id] || {}), [f.mirador_id]: f.bullets };
+          j.miradorStates[f.track_id] = { ...(j.miradorStates[f.track_id] || {}), [f.mirador_id]: { state: f.state || "", comment: f.comment || "", hunter: f.hunter || "", ts: f.ts } };
+          let animals = f.animals; if (typeof animals === "string") { try { animals = JSON.parse(animals); } catch (e) { animals = null; } }
+          if (animals && typeof animals === "object") {
+            const hp = parts.find((p) => p.name === f.hunter);
+            const tireurId = hp ? hp.id : "";
+            Object.keys(animals).forEach((esp) => {
+              const qty = Math.max(0, Number(animals[esp]) || 0);
+              for (let k = j.tableau.length - 1; k >= 0; k--) { const kk = j.tableau[k]; if (kk.source === "chasseur" && kk.tireurId === tireurId && kk.trackId === f.track_id && kk.espece === esp) j.tableau.splice(k, 1); }
+              for (let n = 0; n < qty; n++) { j.tableau.push({ id: "k-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6) + "-" + n, espece: esp, especeLabel: "", quantite: 1, sexe: "", poids: "", bracelet: "", tireurId: tireurId, trackId: f.track_id, source: "chasseur" }); }
+            });
+          }
+          ch = true;
+        });
+        changed = ch; mergedJs = ch ? js : prev;
+        return ch ? js : prev;
       });
       if (!changed) return;
-      setJournees(js);
       const s = stateRef.current;
-      const payload = { version: 3, savedAt: Date.now(), participants: s.participants, terrains: s.terrains, journees: js, safety: s.safety };
+      const payload = { version: 3, savedAt: Date.now(), participants: s.participants, terrains: s.terrains, journees: mergedJs, safety: s.safety };
       await SB.from("carnets").upsert({ user_id: session.user.id, data: payload, updated_at: new Date().toISOString() });
       try { await window.storage.set("cb_supa_" + session.user.id, JSON.stringify(payload)); } catch (e) {}
       await SB.from("feedbacks").delete().in("id", data.map((f) => f.id));
