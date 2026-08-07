@@ -1612,7 +1612,7 @@ function CarnetApp({ session, onSignOut }) {
   // Retire automatiquement des postes tout participant devenu absent ou supprimé
   useEffect(() => {
     if (!loaded) return;
-    const activeIds = new Set(participants.filter((p) => p.participe).map((p) => p.id));
+    const activeIds = new Set(participants.map((p) => p.id));
     let changed = false;
     const next = journees.map((j) => {
       let jChanged = false; const placements = {};
