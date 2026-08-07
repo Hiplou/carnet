@@ -1097,7 +1097,8 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     place(pending.filter((h) => h.mobility === "fauteuil"), okFauteuil);
     place(pending.filter((h) => h.mobility === "canne"), okCanne);
     place(pending.filter((h) => h.mobility !== "fauteuil" && h.mobility !== "canne"), () => true);
-    window.alert("Diagnostic 2 — placements calculés : " + Object.keys(cur).length + " (postes reçus : " + sortedFree.length + ")");
+    const dbg = Object.entries(cur).map(([hid, mid]) => { const inP = participants.find((p) => p.id === hid) ? "membre OK" : "MEMBRE ABSENT"; const inM = track.miradors.find((m) => m.id === mid) ? "poste OK" : "POSTE ABSENT"; return hid + " → " + mid + " [" + inP + ", " + inM + "]"; }).join("\n");
+    window.alert("Diagnostic 3 — " + Object.keys(cur).length + " placements :\n" + dbg);
     setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [track.id]: cur } })));
   };
   const clearAll = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: {} } })));
