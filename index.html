@@ -179,14 +179,53 @@ async function extractDocxText(arrayBuffer) { const r = await mammoth.extractRaw
 function parseGuestList(text) {
   const out = [];
   text.split(/\r?\n/).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean).forEach((l) => {
-    if (/@/.test(l)) return;
-    const pm = l.match(/(\+?\d[\d .\-]{7,}\d)/);
+    const em = l.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+    const email = em ? em[0] : "";
+    let rest = em ? l.replace(em[0], " ") : l;
+    const pm = rest.match(/(\+?\d[\d .\-]{7,}\d)/);
     const phone = pm ? pm[1].replace(/[ .\-]/g, "") : "";
-    let name = (pm ? l.replace(pm[1], "") : l).replace(/[:;,\-]+$/, "").trim();
-    if (name.length < 2 || name.length > 60) return;
-    if (!/[a-zA-ZÀ-ÿ]/.test(name)) return;
-    if (/^(liste|invit|nom\b|pr[ée]nom|adresse|t[ée]l|email|e-mail|date|convives?|d[îi]ner)/i.test(name)) return;
-    out.push({ name, phone });
+    let name = (pm ? rest.replace(pm[1], " ") : rest).replace(/[:;,|\t]+/g, " ").replace(/\s+/g, " ").replace(/[:;,\-]+$/, "").trim();
+    if (name && !/[a-zA-ZÀ-ÿ]/.test(name)) name = "";
+    if (/^(liste|invit|nom\b|pr[ée]nom|adresse|t[ée]l|email|e-mail|date|convives?|d[îi]ner|membres?)/i.test(name)) return;
+    if (name.length > 60) name = name.slice(0, 60);
+    if (!name && !email && !phone) return;
+    if (!name && (email || phone)) return; // ligne orpheline (email/tel sans nom) : ignorée
+    out.push({ name, phone, email });
+  });
+  return out;
+}
+function extractRowsFromExcel(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { defval: "" });
+}
+function rowsToGuests(rows) {
+  if (!rows.length) return [];
+  const headers = Object.keys(rows[0]);
+  const findCol = (matchers, exclude) => headers.find((h) => { const hn = String(h).toLowerCase().trim(); if (exclude && exclude.some((e) => hn.includes(e))) return false; return matchers.some((m) => hn.includes(m)); });
+  const cPrenom = findCol(["prénom", "prenom"]);
+  const cNom = findCol(["nom"], ["prénom", "prenom"]);
+  const cTel = findCol(["tél", "tel", "phone", "portable", "mobile", "gsm", "numéro", "numero"]);
+  const cMail = findCol(["mail", "courriel"]);
+  const cPermis = findCol(["permis"]);
+  const cValid = findCol(["validation", "valid"]);
+  const cAssur = findCol(["assurance", "assur"]);
+  const cRole = findCol(["rôle", "role"]);
+  const cMob = findCol(["mobilité", "mobilite", "mobil"]);
+  const g = (r, c) => (c ? String(r[c] == null ? "" : r[c]).trim() : "");
+  const out = [];
+  rows.forEach((r) => {
+    let name = "";
+    if (cPrenom || cNom) name = [g(r, cPrenom), g(r, cNom)].filter(Boolean).join(" ").trim();
+    if (!name) { const first = headers.length ? g(r, headers[0]) : ""; if (/[a-zA-ZÀ-ÿ]/.test(first)) name = first; }
+    const email = g(r, cMail);
+    let phone = g(r, cTel); if (phone) phone = phone.replace(/[ .\-]/g, "");
+    const mobRaw = g(r, cMob).toLowerCase();
+    const mobility = mobRaw.indexOf("fauteuil") >= 0 ? "fauteuil" : (mobRaw.indexOf("canne") >= 0 ? "canne" : null);
+    const roleRaw = g(r, cRole).toLowerCase();
+    const role = roleRaw.indexOf("rabatteur") >= 0 ? "rabatteur" : "chasseur";
+    if (!name && !email && !phone) return;
+    out.push({ name, phone, email, permis: g(r, cPermis), validation: g(r, cValid), assurance: g(r, cAssur), role, mobility });
   });
   return out;
 }
@@ -433,6 +472,14 @@ function PrintOverlay({ html, onClose }) {
 }
 function ParticipantsView({ participants, setParticipants }) {
   const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
+  const [search, setSearch] = useState(""); const [selected, setSelected] = useState({}); const [dupOn, setDupOn] = useState(false);
+  const nrm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const dg = (s) => (s || "").replace(/\D/g, "");
+  const dupIds = (() => { const set = new Set(); const byN = {}, byP = {}, byM = {}; participants.forEach((p) => { const nk = nrm(p.name), pk = dg(p.phone), mk = nrm(p.email); if (nk) (byN[nk] = byN[nk] || []).push(p.id); if (pk) (byP[pk] = byP[pk] || []).push(p.id); if (mk) (byM[mk] = byM[mk] || []).push(p.id); }); [byN, byP, byM].forEach((m) => Object.keys(m).forEach((k) => { if (m[k].length > 1) m[k].forEach((id) => set.add(id)); })); return set; })();
+  const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; if (dupOn && !dupIds.has(p.id)) return false; return true; });
+  const selCount = Object.keys(selected).filter((id) => selected[id]).length;
+  const toggleSel = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }));
+  const deleteSelected = () => { const ids = Object.keys(selected).filter((id) => selected[id]); if (!ids.length) return; if (!window.confirm("Supprimer " + ids.length + " membre(s) sélectionné(s) ?")) return; setParticipants((prev) => prev.filter((p) => !ids.includes(p.id))); setSelected({}); };
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
   const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
@@ -453,32 +500,52 @@ function ParticipantsView({ participants, setParticipants }) {
   };
   const onImportList = async (e) => {
     const file = e.target.files?.[0]; if (!file) return; setImporting(true); setImportErr("");
-    try { let text = ""; const n = file.name.toLowerCase();
-      if (n.endsWith(".docx")) text = await extractDocxText(await file.arrayBuffer());
-      else if (n.endsWith(".pdf")) text = await extractPdfText(new Uint8Array(await file.arrayBuffer()));
-      else if (n.endsWith(".txt") || n.endsWith(".csv")) text = await file.text();
-      else throw new Error("Format non reconnu. Utilise Word (.docx), PDF, ou un fichier texte.");
-      const guests = parseGuestList(text); if (!guests.length) throw new Error("Aucun nom détecté dans le fichier.");
-      let added = 0;
-      setParticipants((prev) => { const existing = new Set(prev.map((p) => p.name.toLowerCase())); const seen = new Set(); const additions = [];
-        guests.forEach((g, i) => { const key = g.name.toLowerCase(); if (existing.has(key) || seen.has(key)) return; seen.add(key); additions.push({ id: `p-imp-${Date.now()}-${i}`, name: g.name, phone: g.phone || "", participe: false, invitation: true, role: null, diner: { vient: true, invitesSupplementaires: 0 } }); });
-        added = additions.length; return [...prev, ...additions]; });
-      window.alert(`${added} invité(s) ajouté(s).`);
+    try { const n = file.name.toLowerCase(); let guests = [];
+      if (n.endsWith(".xlsx") || n.endsWith(".xls") || n.endsWith(".csv")) guests = rowsToGuests(extractRowsFromExcel(await file.arrayBuffer()));
+      else if (n.endsWith(".docx")) guests = parseGuestList(await extractDocxText(await file.arrayBuffer()));
+      else if (n.endsWith(".pdf")) guests = parseGuestList(await extractPdfText(new Uint8Array(await file.arrayBuffer())));
+      else if (n.endsWith(".txt")) guests = parseGuestList(await file.text());
+      else throw new Error("Format non reconnu. Utilise Excel (.xlsx), CSV, Word (.docx), PDF ou texte (.txt).");
+      if (!guests.length) throw new Error("Aucun membre détecté dans le fichier.");
+      let added = 0, skipped = 0;
+      const norm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+      const dig = (s) => (s || "").replace(/\D/g, "");
+      setParticipants((prev) => {
+        const existName = new Set(prev.map((p) => norm(p.name)).filter(Boolean));
+        const existPhone = new Set(prev.map((p) => dig(p.phone)).filter(Boolean));
+        const existMail = new Set(prev.map((p) => norm(p.email)).filter(Boolean));
+        const seen = new Set(); const additions = [];
+        guests.forEach((gs, i) => {
+          const nk = norm(gs.name), pk = dig(gs.phone), mk = norm(gs.email);
+          if ((nk && (existName.has(nk) || seen.has("n:" + nk))) || (pk && (existPhone.has(pk) || seen.has("p:" + pk))) || (mk && (existMail.has(mk) || seen.has("m:" + mk)))) { skipped++; return; }
+          if (nk) seen.add("n:" + nk); if (pk) seen.add("p:" + pk); if (mk) seen.add("m:" + mk);
+          additions.push({ id: `p-imp-${Date.now()}-${i}`, name: gs.name || "", phone: gs.phone || "", email: gs.email || "", permis: gs.permis || "", validation: gs.validation || "", assurance: gs.assurance || "", participe: false, invitation: true, role: gs.role || "chasseur", mobility: gs.mobility || null, diner: { vient: false, invitesSupplementaires: 0 } });
+        });
+        added = additions.length; return [...prev, ...additions];
+      });
+      window.alert(added + " membre(s) ajouté(s)." + (skipped ? " " + skipped + " doublon(s) ignoré(s)." : ""));
     } catch (ex) { setImportErr(ex.message || "Import impossible."); } finally { setImporting(false); if (listFileRef.current) listFileRef.current.value = ""; }
   };
   return (<div className="space-y-6">
     {dinerPrint && <PrintOverlay html={dinerPrint} onClose={() => setDinerPrint(null)} />}    <div className="space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Membres</h2>
-        <div className="flex gap-2"><input ref={listFileRef} type="file" accept=".docx,.pdf,.txt,.csv" onChange={onImportList} className="hidden" />
-          <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer liste (Word/PDF)"}</button>
+      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Membres <span className="text-sm font-sans text-stone-400">({participants.length})</span></h2>
+        <div className="flex gap-2 flex-wrap"><input ref={listFileRef} type="file" accept=".xlsx,.xls,.csv,.docx,.pdf,.txt" onChange={onImportList} className="hidden" />
+          <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer"}</button>
           <button onClick={addParticipant} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Ajouter</button></div></div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[160px]"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded-md px-3 py-1.5 text-sm bg-white" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 text-sm">✕</button>}</div>
+        <button onClick={() => setDupOn(!dupOn)} className={`flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-md border shrink-0 ${dupOn ? "bg-red-700 text-white border-red-700" : "bg-white text-stone-600 border-stone-300"}`}>⚠️ Doublons{dupIds.size ? " (" + dupIds.size + ")" : ""}</button>
+      </div>
+      {selCount > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2"><span className="text-sm text-red-800 font-medium">{selCount} sélectionné(s)</span><div className="flex gap-3 items-center"><button onClick={() => setSelected({})} className="text-xs text-stone-600">Annuler</button><button onClick={deleteSelected} className="flex items-center gap-1 bg-red-700 hover:bg-red-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Trash2 size={13} /> Supprimer la sélection</button></div></div>}
       {importErr && <p className="text-sm text-red-700">{importErr}</p>}
-      <p className="text-xs text-stone-400">L'import lit .docx / PDF / texte, récupère le nom (et le téléphone s'il est sur la ligne).</p>
-      {participants.length === 0 && <p className="text-sm text-stone-500 italic">Aucun participant. Clique « Ajouter » ou importe ta liste.</p>}
-      {participants.map((p) => { const isOpen = expanded === p.id;
-        return (<SectionCard key={p.id}>
-          <div className="flex items-center justify-between px-4 py-3 gap-2">
-            <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button>
+      <p className="text-xs text-stone-400">Import : Excel (.xlsx), CSV, Word (.docx), PDF ou texte. Colonnes reconnues : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
+      {participants.length === 0 && <p className="text-sm text-stone-500 italic">Aucun membre. Clique « Ajouter » ou importe ta liste.</p>}
+      {participants.length > 0 && filtered.length === 0 && <p className="text-sm text-stone-500 italic">Aucun résultat.</p>}
+      {filtered.map((p) => { const isOpen = expanded === p.id; const isDup = dupIds.has(p.id);
+        return (<SectionCard key={p.id} className={isDup ? "ring-1 ring-red-300" : ""}>
+          <div className="flex items-center px-4 py-3 gap-2">
+            <input type="checkbox" checked={!!selected[p.id]} onChange={() => toggleSel(p.id)} className="w-4 h-4 shrink-0 accent-red-700" />
+            <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0 flex-1">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{isDup && <span className="text-[10px] font-normal bg-red-100 text-red-700 rounded-full px-2 py-0.5 shrink-0">doublon</span>}{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button>
           </div>
           {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
             <div><label className="text-xs uppercase tracking-wide text-stone-400">Prénom et nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
