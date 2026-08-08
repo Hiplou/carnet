@@ -875,20 +875,21 @@ function buildPrintHtml(journee, terrain, participants, safety) {
   const nameOf = (hid) => { const p = participants.find((x) => x.id === hid); return p ? p.name : hid; };
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   let sections = "";
-  (terrain.tracks || []).forEach((trk) => {
+  const traquesData = [];
+  (terrain.tracks || []).forEach((trk, idx) => {
     const pl = journee.placements[trk.id] || {}; const byMir = {}; Object.entries(pl).forEach(([hid, mid]) => { byMir[mid] = hid; });
     let rows = "";
     (trk.miradors || []).forEach((m) => { const hid = byMir[m.id]; rows += "<tr><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td></tr>"; });
     if (!trk.miradors || !trk.miradors.length) rows = "<tr><td colspan='2' class='free'>Aucun mirador</td></tr>";
-    let markers = "";
-    (trk.miradors || []).forEach((m) => { const hid = byMir[m.id]; const who = hid ? esc(nameOf(hid)) : esc(m.label); markers += "<div class='mk' style='left:" + m.gx + "%;top:" + m.gy + "%'><span class='mkdot' style='background:" + (trk.color || "#166534") + "'></span><span class='mklbl'>" + who + "</span></div>"; });
-    const mapHtml = terrain.planImage ? "<div class='mapwrap'><img src='" + terrain.planImage + "'/>" + markers + "</div>" : "";
+    const mapHtml = terrain.planImage ? "<div class='mapbox' id='map" + idx + "'></div>" : "";
     sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>Poste</th><th>Chasseur</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
+    traquesData.push({ color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m) => ({ gx: m.gx, gy: m.gy, who: (byMir[m.id] ? nameOf(byMir[m.id]) : m.label) })) });
   });
+  const script = terrain.planImage ? ("<script>var IMG=" + JSON.stringify(terrain.planImage) + ";var TQ=" + JSON.stringify(traquesData) + ";var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;TQ.forEach(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var bg=document.createElement('div');bg.style.position='absolute';bg.style.left='0';bg.style.top='0';bg.style.right='0';bg.style.bottom='0';bg.style.backgroundImage=\"url('\"+IMG+\"')\";bg.style.backgroundSize=(100/fw)+'% '+(100/fh)+'%';bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+'% '+(fh<1?fy/(1-fh)*100:0)+'%';box.appendChild(bg);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var el=document.createElement('div');el.style.position='absolute';el.style.left=lx+'%';el.style.top=ly+'%';el.style.transform='translate(-50%,-50%)';el.style.display='flex';el.style.flexDirection='column';el.style.alignItems='center';el.style.zIndex='2';el.innerHTML=\"<span style='display:block;width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35);background:\"+t.color+\"'></span><span style='margin-top:2px;background:rgba(255,255,255,.94);border:1px solid #d6d3d1;border-radius:5px;padding:1px 4px;font-size:9px;white-space:nowrap;font-weight:bold;color:#1c1917'>\"+String(m.who||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')+\"</span>\";box.appendChild(el);});});};im.src=IMG;</scr" + "ipt>") : "";
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + PRINT_CSS + "</style></head><body>"
     + "<header><div class='emo'>🦌</div><div><h1>" + esc(terrain.name) + "</h1><p>" + esc(d) + "</p></div></header>"
     + "<div>" + sections + "</div>"
-    + "<footer>Carnet de Battue — " + esc(terrain.name) + "</footer></body></html>";
+    + "<footer>Carnet de Battue — " + esc(terrain.name) + "</footer>" + script + "</body></html>";
 }
 
 function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onRemoveKill, onSetShot, onSetState }) {
