@@ -881,7 +881,7 @@ function buildPrintHtml(journee, terrain, participants, safety) {
     (trk.miradors || []).forEach((m) => { const hid = byMir[m.id]; rows += "<tr><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td></tr>"; });
     if (!trk.miradors || !trk.miradors.length) rows = "<tr><td colspan='2' class='free'>Aucun mirador</td></tr>";
     let markers = "";
-    (trk.miradors || []).forEach((m) => { const hid = byMir[m.id]; const who = hid ? esc(nameOf(hid)) : "libre"; markers += "<div class='mk' style='left:" + m.gx + "%;top:" + m.gy + "%'><span class='mkdot' style='background:" + (trk.color || "#166534") + "'></span><span class='mklbl'>" + esc(m.label) + " · " + who + "</span></div>"; });
+    (trk.miradors || []).forEach((m) => { const hid = byMir[m.id]; const who = hid ? esc(nameOf(hid)) : esc(m.label); markers += "<div class='mk' style='left:" + m.gx + "%;top:" + m.gy + "%'><span class='mkdot' style='background:" + (trk.color || "#166534") + "'></span><span class='mklbl'>" + who + "</span></div>"; });
     const mapHtml = terrain.planImage ? "<div class='mapwrap'><img src='" + terrain.planImage + "'/>" + markers + "</div>" : "";
     sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>Poste</th><th>Chasseur</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
   });
