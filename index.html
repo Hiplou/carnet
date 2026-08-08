@@ -151,7 +151,7 @@ function Grip({ size = 16, className = "" }) {
 function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {} }; }
 function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
-function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack), planChasse: normPlan(t.planChasse), consigneCommune: t.consigneCommune || "" }; }
+function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
 function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
@@ -336,7 +336,7 @@ function PlaceMiradors({ image, track, updateTrack }) {
 }
 
 // Editeur d'un mirador (nom, consignes, photos)
-function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, hasCommon }) {
+function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon }) {
   const [open, setOpen] = useState(false); const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [renaming, setRenaming] = useState(false);
   const patch = (p) => updateTrack({ miradors: track.miradors.map((x) => (x.id === m.id ? { ...x, ...p } : x)) });
   const del = () => updateTrack({ miradors: track.miradors.filter((x) => x.id !== m.id) });
@@ -352,7 +352,7 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, hasCommon 
       )}
       {(m.accFauteuil || m.accCanne) ? <span className="text-[11px] shrink-0" title="Accessible mobilité réduite">{m.accFauteuil ? <Fauteuil size={13} /> : "🦯"}</span> : null}
       {(m.photos && m.photos.length) ? <span className="text-[10px] text-stone-400 shrink-0">📷{m.photos.length}</span> : null}
-      {m.useCommon ? <span className="text-[10px] shrink-0" title="Reçoit la consigne commune">🔗</span> : null}
+      {inCommon ? <span className="text-[10px] shrink-0" title="Reçoit une consigne commune">🔗</span> : null}
       <button onClick={() => setRenaming((r) => !r)} title="Renommer" className="shrink-0 text-stone-400 hover:text-amber-700 p-0.5"><Pencil size={14} /></button>
       <button onClick={() => { if (window.confirm("Supprimer « " + (m.label || "ce poste") + " » ?")) del(); }} title="Supprimer" className="shrink-0 text-stone-400 hover:text-red-700 p-0.5"><Trash2 size={14} /></button>
     </div>
@@ -368,7 +368,7 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, hasCommon 
         <p className="text-[10px] text-stone-400 mt-1">Un poste fauteuil accepte aussi une canne. Visible par toi seulement (jamais côté chasseur).</p></div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Consignes du poste (envoyées au chasseur)</label>
         <textarea value={m.consignes || ""} onChange={(e) => patch({ consignes: e.target.value })} rows={2} placeholder="Ex. Ne pas tirer vers le chemin à droite. Voisin à 40 m." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mt-1" />
-        {hasCommon && <label className="flex items-center gap-2 text-xs text-stone-600 mt-1.5"><input type="checkbox" checked={!!m.useCommon} onChange={(e) => patch({ useCommon: e.target.checked })} className="w-4 h-4 accent-emerald-700" /> Ajouter aussi la consigne commune du territoire 🔗</label>}</div>
+</div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Photos du poste</label>
         <div className="flex gap-2 flex-wrap mt-1">
           {(m.photos || []).map((ph, i) => (<div key={i} className="relative"><img src={ph} alt="" className="w-16 h-16 object-cover rounded border border-stone-300" /><button onClick={() => rmPhoto(i)} className="absolute -top-1.5 -right-1.5 bg-red-700 text-white rounded-full p-0.5"><X size={11} /></button></div>))}
@@ -379,14 +379,20 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, hasCommon 
   </div>);
 }
 
-function TrackEditor({ image, track, updateTrack, consigneCommune, setConsigneCommune }) {
+function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsignesCommunes }) {
   const [showCrop, setShowCrop] = useState(false); const crop = track.crop || DEFAULT_CROP;
   const [dragId, setDragId] = useState(null);
-  const hasCommon = !!(consigneCommune || "").trim();
+  const groups = consignesCommunes || [];
+  const commonMids = new Set(); groups.forEach((g) => (g.miradorIds || []).forEach((id) => commonMids.add(id)));
   const reorder = (fromId, toId) => { if (fromId === toId) return; const arr = track.miradors.slice(); const fi = arr.findIndex((x) => x.id === fromId), ti = arr.findIndex((x) => x.id === toId); if (fi < 0 || ti < 0) return; const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv); updateTrack({ miradors: arr }); };
   useEffect(() => { if (!dragId) return; const mv = (e) => { const el = document.elementFromPoint(e.clientX, e.clientY); const row = el && el.closest ? el.closest("[data-mid]") : null; if (row) { const over = row.getAttribute("data-mid"); if (over && over !== dragId) reorder(dragId, over); } }; const up = () => setDragId(null); window.addEventListener("pointermove", mv, { passive: false }); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up); return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); }; }, [dragId, track.miradors]);
-  const allOn = track.miradors.length > 0 && track.miradors.every((m) => m.useCommon);
-  const toggleAllCommon = () => updateTrack({ miradors: track.miradors.map((m) => ({ ...m, useCommon: !allOn })) });
+  const setGroups = setConsignesCommunes;
+  const addGroup = () => setGroups && setGroups((prev) => [...(prev || []), { id: "cc-" + Date.now(), text: "", miradorIds: [] }]);
+  const updGroup = (gid, patch) => setGroups && setGroups((prev) => (prev || []).map((g) => (g.id === gid ? { ...g, ...patch } : g)));
+  const rmGroup = (gid) => setGroups && setGroups((prev) => (prev || []).filter((g) => g.id !== gid));
+  const toggleMid = (gid, mid) => setGroups && setGroups((prev) => (prev || []).map((g) => (g.id === gid ? { ...g, miradorIds: (g.miradorIds || []).indexOf(mid) >= 0 ? (g.miradorIds || []).filter((x) => x !== mid) : [...(g.miradorIds || []), mid] } : g)));
+  const allInTraque = (g) => track.miradors.length > 0 && track.miradors.every((m) => (g.miradorIds || []).indexOf(m.id) >= 0);
+  const toggleAllTraque = (g) => { const on = allInTraque(g); const tids = track.miradors.map((m) => m.id); updGroup(g.id, { miradorIds: on ? (g.miradorIds || []).filter((id) => tids.indexOf(id) < 0) : Array.from(new Set([...(g.miradorIds || []), ...tids])) }); };
   if (!image) return <MapNotice>Importe d'abord la photo du territoire dans l'onglet « 🗺️ Cartes », puis reviens ici pour recadrer la traque.</MapNotice>;
   return (<div className="space-y-3">
     <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom de la traque</label>
@@ -395,13 +401,18 @@ function TrackEditor({ image, track, updateTrack, consigneCommune, setConsigneCo
     <button onClick={() => setShowCrop((s) => !s)} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Crop size={15} /> {showCrop ? "Terminer le cadrage" : "Choisir le cadrage de la traque"}</button>
     {showCrop && (<div className="space-y-1.5"><p className="text-xs text-stone-500">Déplace le rectangle (au centre) et tire ses 4 coins pour délimiter la zone de cette traque.</p><CropBox image={image} crop={crop} setCrop={(c) => updateTrack({ crop: c })} /></div>)}
     <PlaceMiradors image={image} track={{ ...track, crop }} updateTrack={updateTrack} />
-    {setConsigneCommune && (<div className="bg-stone-50 border border-stone-200 rounded-md p-2.5 space-y-2"><label className="text-[10px] uppercase tracking-wide text-stone-400">🔗 Consigne commune du territoire</label>
-      <textarea value={consigneCommune || ""} onChange={(e) => setConsigneCommune(e.target.value)} rows={2} placeholder="Ex. Gilet fluo obligatoire. Fin de battue à la trompe : 3 sonneries." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white" />
-      {track.miradors.length > 0 && (<div><div className="flex items-center justify-between mb-1"><span className="text-[10px] uppercase tracking-wide text-stone-400">Postes concernés (cette traque)</span><button onClick={toggleAllCommon} className="text-xs font-medium text-emerald-800">{allOn ? "Tout retirer" : "Tout cocher"}</button></div>
-        <div className="flex flex-wrap gap-1.5">{track.miradors.map((m) => (<button key={m.id} onClick={() => updateTrack({ miradors: track.miradors.map((x) => (x.id === m.id ? { ...x, useCommon: !x.useCommon } : x)) })} className={`text-xs px-2 py-1 rounded-full border ${m.useCommon ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{m.useCommon ? "✓ " : ""}{m.label}</button>))}</div></div>)}
-      <p className="text-[10px] text-stone-400">Les postes cochés afficheront cette consigne <b>en plus</b> de la leur, sur la page des chasseurs.</p></div>)}
+    {setGroups && (<div className="bg-stone-50 border border-stone-200 rounded-md p-2.5 space-y-2">
+      <div className="flex items-center justify-between"><label className="text-[10px] uppercase tracking-wide text-stone-400">🔗 Consignes communes du territoire</label><button onClick={addGroup} className="text-xs font-medium text-emerald-800 flex items-center gap-1"><Plus size={13} /> Ajouter</button></div>
+      {groups.length === 0 && <p className="text-[11px] text-stone-400 italic">Aucune consigne commune. « Ajouter » pour en créer (ex. une pour les postes 1-4, une autre pour les autres).</p>}
+      {groups.map((g, gi) => (<div key={g.id} className="bg-white border border-stone-200 rounded-md p-2 space-y-1.5">
+        <div className="flex items-center justify-between"><span className="text-[10px] font-semibold text-stone-500 uppercase tracking-wide">Consigne {gi + 1}</span><button onClick={() => rmGroup(g.id)} className="text-stone-400 hover:text-red-700"><Trash2 size={13} /></button></div>
+        <textarea value={g.text || ""} onChange={(e) => updGroup(g.id, { text: e.target.value })} rows={2} placeholder="Ex. Gilet fluo obligatoire. Fin de battue : 3 sonneries." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white" />
+        {track.miradors.length > 0 && (<div><div className="flex items-center justify-between mb-1"><span className="text-[10px] uppercase tracking-wide text-stone-400">Postes concernés (cette traque)</span><button onClick={() => toggleAllTraque(g)} className="text-xs font-medium text-emerald-800">{allInTraque(g) ? "Tout retirer" : "Tout cocher"}</button></div>
+          <div className="flex flex-wrap gap-1.5">{track.miradors.map((m) => { const on = (g.miradorIds || []).indexOf(m.id) >= 0; return (<button key={m.id} onClick={() => toggleMid(g.id, m.id)} className={`text-xs px-2 py-1 rounded-full border ${on ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{on ? "✓ " : ""}{m.label}</button>); })}</div></div>)}
+      </div>))}
+      {groups.length > 0 && <p className="text-[10px] text-stone-400">Chaque poste affichera sa consigne propre + toutes les consignes communes qui le concernent.</p>}</div>)}
     {track.miradors.length > 0 && (<div><p className="text-xs uppercase tracking-wide text-stone-400 mb-1.5">Miradors ({track.miradors.length}) — glisse ≡ pour réordonner · clic sur le nom = fiche</p>
-      <div className="space-y-1">{track.miradors.map((m) => (<MiradorRow key={m.id} m={m} track={track} updateTrack={updateTrack} onDragStart={setDragId} isDragging={dragId === m.id} hasCommon={hasCommon} />))}</div></div>)}
+      <div className="space-y-1">{track.miradors.map((m) => (<MiradorRow key={m.id} m={m} track={track} updateTrack={updateTrack} onDragStart={setDragId} isDragging={dragId === m.id} inCommon={commonMids.has(m.id)} />))}</div></div>)}
   </div>);
 }
 
@@ -448,10 +459,10 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
   const [planChasse, setPlanChasse] = useState(normPlan(initialTerrain?.planChasse));
   const [tracks, setTracks] = useState(initialTerrain?.tracks?.length ? initialTerrain.tracks.map(normTrack) : [{ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }]);
   const [tab, setTab] = useState("plan");
-  const [consigneCommune, setConsigneCommune] = useState(initialTerrain?.consigneCommune || "");
+  const [consignesCommunes, setConsignesCommunes] = useState(initialTerrain?.consignesCommunes || []);
   const firstRun = useRef(true);
   // Auto-enregistrement en direct : dès qu'on change photo / traque / mirador, on l'enregistre sans attendre le bouton
-  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consigneCommune }); }, [name, planImage, tracks, planChasse, consigneCommune]);
+  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consignesCommunes }); }, [name, planImage, tracks, planChasse, consignesCommunes]);
   const updateTrack = (id, patch) => setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   const addTrack = () => { const id = `trk-${Date.now()}`; setTracks((prev) => [...prev, { id, name: `Traque ${prev.length + 1}`, color: PALETTE[prev.length % PALETTE.length], crop: { ...DEFAULT_CROP }, miradors: [] }]); setTab(id); };
   const deleteTrack = (id) => { if (tracks.length === 1) { alert("Il faut au moins une traque."); return; } if (!window.confirm("Supprimer cette traque ?")) return; setTracks((prev) => { const next = prev.filter((t) => t.id !== id); if (tab === id) setTab("plan"); return next; }); };
@@ -467,8 +478,8 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
     </div>
     {tab === "plan" ? (<div className="space-y-2"><p className="text-xs uppercase tracking-wide text-stone-400">Photo du territoire (une seule pour tout)</p><PlanImagePicker image={planImage} onChange={setPlanImage} /></div>)
       : tab === "chasse" ? (<PlanChasseEditor planChasse={planChasse} setPlanChasse={setPlanChasse} journees={journees} tid={tid} />)
-      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consigneCommune={consigneCommune} setConsigneCommune={setConsigneCommune} /></div>) : null}
-    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consigneCommune })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
+      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} /></div>) : null}
+    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consignesCommunes })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
   </SectionCard>);
 }
 
@@ -955,7 +966,7 @@ var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR
 
 function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId) {
   const posted = {};
-  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", (m.useCommon && terrain.consigneCommune) ? terrain.consigneCommune : ""].filter(Boolean).join("\n\n"), photos: m.photos || [] }); }); });
+  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: m.photos || [] }); }); });
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => a.name.localeCompare(b.name));
   const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
