@@ -492,7 +492,7 @@ function TerrainsView({ terrains, setTerrains, journees }) {
     <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Territoires</h2>{!editorState && <button onClick={() => setEditorState("new")} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouveau territoire</button>}</div>
     {editorState ? (<TerritoryEditor initialTerrain={editorState === "new" ? null : editorState} journees={journees} onSave={saveTerrain} onCancel={() => setEditorState(null)} onDelete={() => deleteTerrain(editorState.id)} onLiveCommit={commitTerrain} />)
       : (<div className="grid sm:grid-cols-2 gap-3">{terrains.length === 0 && <p className="text-sm text-stone-500 italic sm:col-span-2">Aucun territoire. Clique « Nouveau territoire ».</p>}
-        {terrains.map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
+        {[...terrains].sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" })).map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
           {t.planImage ? <img src={t.planImage} alt={t.name} className="h-28 w-full object-cover" /> : <div className="h-28 bg-gradient-to-br from-emerald-900 via-emerald-800 to-stone-700 flex items-center justify-center text-stone-300"><MapPin size={20} /></div>}
           <div className="p-3"><p className="font-medium text-stone-800 truncate">{t.name}</p><p className="text-xs text-stone-500">{t.tracks.length} traque(s) · appuie pour ouvrir</p></div></SectionCard>))}
       </div>)}
@@ -517,7 +517,7 @@ function ParticipantsView({ participants, setParticipants }) {
   const nrm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
   const dg = (s) => (s || "").replace(/\D/g, "");
   const dupPairs = (() => { const out = []; for (let i = 0; i < participants.length; i++) for (let j = i + 1; j < participants.length; j++) { const a = participants[i], b = participants[j]; if ((a.dupIgnore || []).indexOf(b.id) >= 0 || (b.dupIgnore || []).indexOf(a.id) >= 0) continue; const na = foldName(a.name), nb = foldName(b.name); const pa = dg(a.phone), pb = dg(b.phone); const ea = nrm(a.email), eb = nrm(b.email); let reason = ""; if (na && na === nb) reason = "Même nom"; else if (pa && pa === pb) reason = "Même téléphone"; else if (ea && ea === eb) reason = "Même email"; else if (na && nb && na.length >= 3 && nb.length >= 3 && levDist(na, nb) <= 2) reason = "Noms très proches"; if (reason) out.push({ a, b, reason }); } return out; })();
-  const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; return true; });
+  const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; return true; }).sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" }));
   const selCount = Object.keys(selected).filter((id) => selected[id]).length;
   const toggleSel = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }));
   const deleteSelected = () => { const ids = Object.keys(selected).filter((id) => selected[id]); if (!ids.length) return; if (!window.confirm("Supprimer " + ids.length + " membre(s) sélectionné(s) ?")) return; setParticipants((prev) => prev.filter((p) => !ids.includes(p.id))); setSelected({}); };
@@ -721,7 +721,7 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
 function PosterFusils({ terrain, track, placements, participants, presentIds, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const [selectedHunter, setSelectedHunter] = useState(null);
   const assignedIds = Object.keys(placements);
-  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id));
+  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id)).sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" }));
   const freeMiradors = track.miradors.filter((m) => !Object.values(placements).includes(m.id));
   const sortedFree = [...freeMiradors].sort((a, b) => (a.priority || 1) - (b.priority || 1) || a.label.localeCompare(b.label));
   // Surbrillance par PALIER de priorité : toute la priorité 1, puis 2, etc. jusqu'à couvrir le nb de chasseurs
@@ -1103,7 +1103,7 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   const [showMailPick, setShowMailPick] = useState(false);
   const [emarg, setEmarg] = useState(null);
   const invites = journee.invites || [];
-  const invited = participants.filter((p) => invites.includes(p.id));
+  const invited = participants.filter((p) => invites.includes(p.id)).sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" }));
   const pres = journee.presence || {};
   const dateFr = journee.date ? new Date(journee.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
   const terrName = terrain ? terrain.name : "";
@@ -1162,7 +1162,7 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
         <p className="text-xs uppercase tracking-wide text-stone-400 mb-1">Qui inviter</p>
         {participants.length === 0 && <p className="text-xs text-stone-400 italic">Ajoute d'abord des membres dans l'onglet Membres.</p>}
         <div className="space-y-1 max-h-56 overflow-auto">
-          {participants.map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
+          {[...participants].sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" })).map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
             <button key={p.id} onClick={() => onToggleInvite(journee.id, p.id)} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded border text-left text-sm ${on ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
               <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{on ? "✓" : ""}</span>
               <span className="flex-1 text-stone-800 truncate">{p.name || "(sans nom)"}</span>
@@ -1297,7 +1297,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
         <div className="flex items-center justify-between px-4 py-3"><button onClick={() => setOpenJournee(isOpen ? null : j.id)} className="flex items-center gap-2 font-medium text-stone-800">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<CalendarDays size={16} className="text-amber-800" />{new Date(j.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</button><span className="text-xs text-stone-400">{terrain?.name || "aucun territoire"}</span></div>
         {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-sm"><span className="text-stone-500">Date :</span><input type="date" value={j.date} onChange={(e) => setJourneeDate(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white" /><span className="text-stone-500 ml-2">Territoire :</span>
-            <select value={terrains.some((t) => t.id === j.terrainId) ? j.terrainId : ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white"><option value="" disabled>Choisir…</option>{terrains.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+            <select value={terrains.some((t) => t.id === j.terrainId) ? j.terrainId : ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white"><option value="" disabled>Choisir…</option>{[...terrains].sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" })).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
             <button onClick={() => removeJournee(j.id)} className="ml-auto flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer</button></div>
           <InvitationsSection journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
           {terrain ? (<>
