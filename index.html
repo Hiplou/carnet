@@ -138,10 +138,20 @@ function Fauteuil({ size = 15, color = "#166534" }) {
     React.createElement("path", { d: "M4.24 14.5a5 5 0 0 0 6.88 6" }),
     React.createElement("path", { d: "M13.76 17.5a5 5 0 0 0-6.88-6" }));
 }
+function Pencil({ size = 14, className = "" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", className: className },
+    React.createElement("path", { d: "M12 20h9" }),
+    React.createElement("path", { d: "M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" }));
+}
+function Grip({ size = 16, className = "" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "currentColor", stroke: "none", className: className },
+    React.createElement("circle", { cx: 9, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 19, r: 1.4 }),
+    React.createElement("circle", { cx: 15, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 19, r: 1.4 }));
+}
 function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {} }; }
-function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne }; }
+function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
-function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack), planChasse: normPlan(t.planChasse) }; }
+function normTerrain(t) { return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks: (t.tracks || []).map(normTrack), planChasse: normPlan(t.planChasse), consigneCommune: t.consigneCommune || "" }; }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
 function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
@@ -326,20 +336,25 @@ function PlaceMiradors({ image, track, updateTrack }) {
 }
 
 // Editeur d'un mirador (nom, consignes, photos)
-function MiradorRow({ m, updateTrack, track }) {
-  const [open, setOpen] = useState(false); const fileRef = useRef(null); const [busy, setBusy] = useState(false);
+function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, hasCommon }) {
+  const [open, setOpen] = useState(false); const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [renaming, setRenaming] = useState(false);
   const patch = (p) => updateTrack({ miradors: track.miradors.map((x) => (x.id === m.id ? { ...x, ...p } : x)) });
   const del = () => updateTrack({ miradors: track.miradors.filter((x) => x.id !== m.id) });
   const addPhoto = async (e) => { const f = e.target.files?.[0]; if (!f) return; setBusy(true); try { const d = await downscaleImage(f, 1100, 0.55); patch({ photos: [...(m.photos || []), d] }); } catch {} finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } };
   const rmPhoto = (i) => patch({ photos: (m.photos || []).filter((_, k) => k !== i) });
-  return (<div className={`border rounded ${(m.accFauteuil || m.accCanne) ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
-    <div className="flex items-center gap-2 px-2 py-1">
-      <Target size={12} className="text-amber-800 shrink-0" />
-      <input value={m.label} onChange={(e) => patch({ label: e.target.value })} className="flex-1 text-sm bg-transparent outline-none" />
-      {(m.accFauteuil || m.accCanne) ? <span className="text-[11px]" title="Accessible mobilité réduite">{m.accFauteuil ? <Fauteuil size={13} /> : "🦯"}</span> : null}
-      {(m.photos && m.photos.length) ? <span className="text-[10px] text-stone-400">📷{m.photos.length}</span> : null}
-      <button onClick={() => setOpen((o) => !o)} className="text-stone-400 hover:text-stone-700">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
-      <button onClick={del} className="text-stone-400 hover:text-red-700"><X size={14} /></button>
+  return (<div data-mid={m.id} className={`border rounded ${isDragging ? "opacity-60 ring-2 ring-amber-400 " : ""}${(m.accFauteuil || m.accCanne) ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
+    <div className="flex items-center gap-1.5 px-2 py-1.5">
+      <button onPointerDown={(e) => { e.preventDefault(); onDragStart && onDragStart(m.id); }} title="Glisser pour réordonner" className="shrink-0 text-stone-300 hover:text-stone-500 touch-none px-0.5"><Grip size={16} /></button>
+      {renaming ? (
+        <input value={m.label} autoFocus onChange={(e) => patch({ label: e.target.value })} onBlur={() => setRenaming(false)} onKeyDown={(e) => { if (e.key === "Enter") setRenaming(false); }} className="flex-1 text-sm border border-amber-300 rounded px-1.5 py-0.5 bg-white outline-none" />
+      ) : (
+        <button onClick={() => setOpen((o) => !o)} className="flex-1 text-left text-sm text-stone-800 min-w-0 flex items-center gap-1.5"><Target size={12} className="text-amber-800 shrink-0" /><span className="truncate">{m.label}</span>{open ? <ChevronDown size={13} className="text-stone-400 shrink-0" /> : <ChevronRight size={13} className="text-stone-400 shrink-0" />}</button>
+      )}
+      {(m.accFauteuil || m.accCanne) ? <span className="text-[11px] shrink-0" title="Accessible mobilité réduite">{m.accFauteuil ? <Fauteuil size={13} /> : "🦯"}</span> : null}
+      {(m.photos && m.photos.length) ? <span className="text-[10px] text-stone-400 shrink-0">📷{m.photos.length}</span> : null}
+      {m.useCommon ? <span className="text-[10px] shrink-0" title="Reçoit la consigne commune">🔗</span> : null}
+      <button onClick={() => setRenaming((r) => !r)} title="Renommer" className="shrink-0 text-stone-400 hover:text-amber-700 p-0.5"><Pencil size={14} /></button>
+      <button onClick={() => { if (window.confirm("Supprimer « " + (m.label || "ce poste") + " » ?")) del(); }} title="Supprimer" className="shrink-0 text-stone-400 hover:text-red-700 p-0.5"><Trash2 size={14} /></button>
     </div>
     {open && (<div className="border-t border-stone-100 px-2 py-2 space-y-2">
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Priorité d'attribution</label>
@@ -352,7 +367,8 @@ function MiradorRow({ m, updateTrack, track }) {
         </div>
         <p className="text-[10px] text-stone-400 mt-1">Un poste fauteuil accepte aussi une canne. Visible par toi seulement (jamais côté chasseur).</p></div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Consignes du poste (envoyées au chasseur)</label>
-        <textarea value={m.consignes || ""} onChange={(e) => patch({ consignes: e.target.value })} rows={2} placeholder="Ex. Ne pas tirer vers le chemin à droite. Voisin à 40 m." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mt-1" /></div>
+        <textarea value={m.consignes || ""} onChange={(e) => patch({ consignes: e.target.value })} rows={2} placeholder="Ex. Ne pas tirer vers le chemin à droite. Voisin à 40 m." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mt-1" />
+        {hasCommon && <label className="flex items-center gap-2 text-xs text-stone-600 mt-1.5"><input type="checkbox" checked={!!m.useCommon} onChange={(e) => patch({ useCommon: e.target.checked })} className="w-4 h-4 accent-emerald-700" /> Ajouter aussi la consigne commune du territoire 🔗</label>}</div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Photos du poste</label>
         <div className="flex gap-2 flex-wrap mt-1">
           {(m.photos || []).map((ph, i) => (<div key={i} className="relative"><img src={ph} alt="" className="w-16 h-16 object-cover rounded border border-stone-300" /><button onClick={() => rmPhoto(i)} className="absolute -top-1.5 -right-1.5 bg-red-700 text-white rounded-full p-0.5"><X size={11} /></button></div>))}
@@ -363,8 +379,14 @@ function MiradorRow({ m, updateTrack, track }) {
   </div>);
 }
 
-function TrackEditor({ image, track, updateTrack }) {
+function TrackEditor({ image, track, updateTrack, consigneCommune, setConsigneCommune }) {
   const [showCrop, setShowCrop] = useState(false); const crop = track.crop || DEFAULT_CROP;
+  const [dragId, setDragId] = useState(null);
+  const hasCommon = !!(consigneCommune || "").trim();
+  const reorder = (fromId, toId) => { if (fromId === toId) return; const arr = track.miradors.slice(); const fi = arr.findIndex((x) => x.id === fromId), ti = arr.findIndex((x) => x.id === toId); if (fi < 0 || ti < 0) return; const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv); updateTrack({ miradors: arr }); };
+  useEffect(() => { if (!dragId) return; const mv = (e) => { const el = document.elementFromPoint(e.clientX, e.clientY); const row = el && el.closest ? el.closest("[data-mid]") : null; if (row) { const over = row.getAttribute("data-mid"); if (over && over !== dragId) reorder(dragId, over); } }; const up = () => setDragId(null); window.addEventListener("pointermove", mv, { passive: false }); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up); return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); }; }, [dragId, track.miradors]);
+  const allOn = track.miradors.length > 0 && track.miradors.every((m) => m.useCommon);
+  const toggleAllCommon = () => updateTrack({ miradors: track.miradors.map((m) => ({ ...m, useCommon: !allOn })) });
   if (!image) return <MapNotice>Importe d'abord la photo du territoire dans l'onglet « 🗺️ Cartes », puis reviens ici pour recadrer la traque.</MapNotice>;
   return (<div className="space-y-3">
     <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom de la traque</label>
@@ -373,8 +395,12 @@ function TrackEditor({ image, track, updateTrack }) {
     <button onClick={() => setShowCrop((s) => !s)} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Crop size={15} /> {showCrop ? "Terminer le cadrage" : "Choisir le cadrage de la traque"}</button>
     {showCrop && (<div className="space-y-1.5"><p className="text-xs text-stone-500">Déplace le rectangle (au centre) et tire ses 4 coins pour délimiter la zone de cette traque.</p><CropBox image={image} crop={crop} setCrop={(c) => updateTrack({ crop: c })} /></div>)}
     <PlaceMiradors image={image} track={{ ...track, crop }} updateTrack={updateTrack} />
-    {track.miradors.length > 0 && (<div><p className="text-xs uppercase tracking-wide text-stone-400 mb-1.5">Miradors ({track.miradors.length}) — ouvre un poste pour ajouter photo & consignes</p>
-      <div className="space-y-1">{track.miradors.map((m) => (<MiradorRow key={m.id} m={m} track={track} updateTrack={updateTrack} />))}</div></div>)}
+    {setConsigneCommune && (<div className="bg-stone-50 border border-stone-200 rounded-md p-2.5 space-y-1.5"><label className="text-[10px] uppercase tracking-wide text-stone-400">🔗 Consigne commune du territoire</label>
+      <textarea value={consigneCommune || ""} onChange={(e) => setConsigneCommune(e.target.value)} rows={2} placeholder="Ex. Gilet fluo obligatoire. Fin de battue à la trompe : 3 sonneries." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white" />
+      <p className="text-[10px] text-stone-400">Elle s'ajoute aux consignes des postes que tu coches (ci-dessous ou dans chaque fiche). Valable pour tout le territoire.</p>
+      {track.miradors.length > 0 && hasCommon && <button onClick={toggleAllCommon} className="text-xs font-medium text-emerald-800 border border-emerald-300 bg-white rounded px-2 py-1">{allOn ? "Retirer de tous les postes de cette traque" : "Ajouter à tous les postes de cette traque"}</button>}</div>)}
+    {track.miradors.length > 0 && (<div><p className="text-xs uppercase tracking-wide text-stone-400 mb-1.5">Miradors ({track.miradors.length}) — glisse ≡ pour réordonner · clic sur le nom = fiche</p>
+      <div className="space-y-1">{track.miradors.map((m) => (<MiradorRow key={m.id} m={m} track={track} updateTrack={updateTrack} onDragStart={setDragId} isDragging={dragId === m.id} hasCommon={hasCommon} />))}</div></div>)}
   </div>);
 }
 
@@ -421,9 +447,10 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
   const [planChasse, setPlanChasse] = useState(normPlan(initialTerrain?.planChasse));
   const [tracks, setTracks] = useState(initialTerrain?.tracks?.length ? initialTerrain.tracks.map(normTrack) : [{ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }]);
   const [tab, setTab] = useState("plan");
+  const [consigneCommune, setConsigneCommune] = useState(initialTerrain?.consigneCommune || "");
   const firstRun = useRef(true);
   // Auto-enregistrement en direct : dès qu'on change photo / traque / mirador, on l'enregistre sans attendre le bouton
-  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse }); }, [name, planImage, tracks, planChasse]);
+  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consigneCommune }); }, [name, planImage, tracks, planChasse, consigneCommune]);
   const updateTrack = (id, patch) => setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   const addTrack = () => { const id = `trk-${Date.now()}`; setTracks((prev) => [...prev, { id, name: `Traque ${prev.length + 1}`, color: PALETTE[prev.length % PALETTE.length], crop: { ...DEFAULT_CROP }, miradors: [] }]); setTab(id); };
   const deleteTrack = (id) => { if (tracks.length === 1) { alert("Il faut au moins une traque."); return; } if (!window.confirm("Supprimer cette traque ?")) return; setTracks((prev) => { const next = prev.filter((t) => t.id !== id); if (tab === id) setTab("plan"); return next; }); };
@@ -439,8 +466,8 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
     </div>
     {tab === "plan" ? (<div className="space-y-2"><p className="text-xs uppercase tracking-wide text-stone-400">Photo du territoire (une seule pour tout)</p><PlanImagePicker image={planImage} onChange={setPlanImage} /></div>)
       : tab === "chasse" ? (<PlanChasseEditor planChasse={planChasse} setPlanChasse={setPlanChasse} journees={journees} tid={tid} />)
-      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} /></div>) : null}
-    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
+      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consigneCommune={consigneCommune} setConsigneCommune={setConsigneCommune} /></div>) : null}
+    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consigneCommune })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
   </SectionCard>);
 }
 
@@ -486,7 +513,7 @@ function ParticipantsView({ participants, setParticipants }) {
   const dismissPair = (aId, bId) => { setParticipants((prev) => prev.map((p) => { if (p.id === aId) return { ...p, dupIgnore: [...(p.dupIgnore || []), bId] }; if (p.id === bId) return { ...p, dupIgnore: [...(p.dupIgnore || []), aId] }; return p; })); };
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
-  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [...prev, { id, name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }]); setExpanded(id); };
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
   const [dinerPrint, setDinerPrint] = useState(null);
@@ -902,7 +929,7 @@ function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var
 function buildTabs(def){var tabs=$("tabs");tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){var ks=tabs.children;for(var k=0;k<ks.length;k++)ks[k].classList.remove("active");b.classList.add("active");renderMap(i);renderPostInfo(i);};tabs.appendChild(b);});renderMap(def);renderPostInfo(def);}
 function aesc(x){return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function renderAttribs(){var card=$("attribsCard");var box=$("attribs");if(!card||!box)return;var list=DATA.attributions||[];box.innerHTML="";if(!list.length){card.style.display="none";return;}card.style.display="block";list.forEach(function(a){var txt,bg,col;if(a.mode==="bracelets"){txt=a.count+" bracelet"+(a.count>1?"s":"");bg="#f0fdf4";col="#166534";}else if(a.mode==="interdit"){txt="Interdit";bg="#fef2f2";col="#b91c1c";}else{txt="Libre";bg="#f5f5f4";col="#57534e";}var note=a.note?(" — "+aesc(a.note)):"";var d=document.createElement("div");d.style.cssText="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 11px;border-radius:9px;margin-bottom:6px;font-size:14px;background:"+bg;d.innerHTML="<span style='font-weight:600;color:#1c1917'>"+aesc(a.emoji)+" "+aesc(a.label)+"</span><span style='font-weight:700;color:"+col+";text-align:right'>"+txt+note+"</span>";box.appendChild(d);});}
-function renderPostInfo(index){var card=$("postInfoCard");if(!card)return;if(!me||!me.posts){card.style.display="none";return;}var post=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){post=me.posts[i];break;}}var title=$("postInfoTitle");var cons=$("myConsigne");var ph=$("myPhotos");if(!post){if(title)title.textContent="📍 Tu n'as pas de poste sur cette traque";if(cons)cons.style.display="none";if(ph)ph.innerHTML="";card.style.display="block";return;}if(title)title.textContent="📍 Ton poste : "+post.label+" ["+(post.photos||[]).length+" photo(s)]";if(cons){if(post.consignes){cons.style.display="flex";cons.querySelector("span").textContent=post.consignes;}else{cons.style.display="none";}}if(ph){ph.innerHTML="";(post.photos||[]).forEach(function(src){var im=document.createElement("img");im.className="postphoto";im.src=src;im.style.display="block";im.style.marginTop="8px";ph.appendChild(im);});}card.style.display="block";}
+function renderPostInfo(index){var card=$("postInfoCard");if(!card)return;if(!me||!me.posts){card.style.display="none";return;}var post=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){post=me.posts[i];break;}}var title=$("postInfoTitle");var cons=$("myConsigne");var ph=$("myPhotos");if(!post){if(title)title.textContent="📍 Tu n'as pas de poste sur cette traque";if(cons)cons.style.display="none";if(ph)ph.innerHTML="";card.style.display="block";return;}if(title)title.textContent="📍 Ton poste : "+post.label+" ["+(post.photos||[]).length+" photo(s)]";if(cons){if(post.consignes){cons.style.display="flex";var cs=cons.querySelector("span");cs.textContent=post.consignes;cs.style.whiteSpace="pre-line";}else{cons.style.display="none";}}if(ph){ph.innerHTML="";(post.photos||[]).forEach(function(src){var im=document.createElement("img");im.className="postphoto";im.src=src;im.style.display="block";im.style.marginTop="8px";ph.appendChild(im);});}card.style.display="block";}
 function renderHero(){var hc=document.querySelector("#appview .hero");if(hc)hc.style.display="";var mh=document.querySelector(".maphint");if(mh)mh.textContent="Ton poste est surligné en orange · lecture seule";var p=me.posts[0];$("myTraque").textContent=p?p.traqueName:"—";$("myPost").textContent=p?p.label:"—";$("myName").textContent="🦌 "+me.name;$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var ex=$("extra");ex.innerHTML="";if(me.posts.length>1){me.posts.forEach(function(pp){var d=document.createElement("div");d.textContent="• "+pp.traqueName+" → "+pp.label;ex.appendChild(d);});}setupFeedback();renderAttribs();}
 var FB_SENT=true, FB_B=[], FB_S=[], FB_A=[];
 function fbHasData(){for(var i=0;i<FB_B.length;i++){if((FB_B[i]||0)>0)return true;if(FB_S[i])return true;var c=$("fbC"+i);if(c&&c.value)return true;if(FB_A[i]){for(var k in FB_A[i]){if(FB_A[i][k]>0)return true;}}}return false;}
@@ -927,7 +954,7 @@ var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR
 
 function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId) {
   const posted = {};
-  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: m.consignes || "", photos: m.photos || [] }); }); });
+  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", (m.useCommon && terrain.consigneCommune) ? terrain.consigneCommune : ""].filter(Boolean).join("\n\n"), photos: m.photos || [] }); }); });
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => a.name.localeCompare(b.name));
   const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
