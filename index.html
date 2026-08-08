@@ -846,7 +846,7 @@ function PublishModal({ github, setGithub, onClose, onLoad }) {
   const [owner, setOwner] = useState(github.owner || "Hiplou");
   const [repo, setRepo] = useState(github.repo || "battue");
   const [dataRepo, setDataRepo] = useState(github.dataRepo || "battue-data");
-  const [fnUrl, setFnUrl] = useState(github.fnUrl || "");
+  const [fnUrl, setFnUrl] = useState(github.fnUrl || DEFAULT_FACTEUR);
   const [orgName, setOrgName] = useState(github.orgName || "");
   const url = "https://" + (owner || "hiplou").toLowerCase() + ".github.io/" + (repo || "battue") + "/";
   return (<div className="fixed inset-0 z-50 bg-stone-900/70 flex items-end sm:items-center justify-center p-3 overflow-auto">
@@ -858,7 +858,7 @@ function PublishModal({ github, setGithub, onClose, onLoad }) {
         <div><label className="text-xs uppercase tracking-wide text-stone-400">Clé GitHub (jeton)</label><input value={token} onChange={(e) => setToken(e.target.value)} placeholder="github_pat_…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /></div>
         <div className="flex gap-2"><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Compte</label><input value={owner} onChange={(e) => setOwner(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Dossier public (page)</label><input value={repo} onChange={(e) => setRepo(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div></div>
         <div><label className="text-xs uppercase tracking-wide text-stone-400">Dossier privé (sauvegarde des données)</label><input value={dataRepo} onChange={(e) => setDataRepo(e.target.value)} placeholder="battue-data" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Adresse du facteur (retours chasseurs)</label><input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder="https://…netlify.app/.netlify/functions/feedback" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /><p className="text-[10px] text-stone-400 mt-1">Laisse vide si tu n'utilises pas les retours automatiques.</p></div>
+        <div><label className="text-xs uppercase tracking-wide text-stone-400">Adresse du facteur (retours chasseurs)</label><input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder="https://battue-facteur.hippolyte-houdard.workers.dev/" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /><p className="text-[10px] text-stone-400 mt-1">Pré-rempli par défaut. Ne change ça que si tu as ton propre facteur.</p></div>
         <p className="text-xs text-stone-500">Lien des chasseurs : <span className="text-emerald-800 break-all">{url}</span></p>
         {onLoad && <div className="border-t border-stone-200 pt-3"><button onClick={() => { onClose(); onLoad(); }} className="w-full flex items-center justify-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md">⬇ Importer mes anciennes données (GitHub)</button><p className="text-[11px] text-stone-400 mt-1">À faire UNE fois pour rapatrier ta sauvegarde GitHub dans ce compte.</p></div>}
       </div>
@@ -1095,9 +1095,18 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     if (!github.token) { openSettings(); return; }
     setPub({ status: "publishing" });
     try {
-      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl, github.orgName, userId);
-      await githubPutFile({ token: github.token, owner: github.owner, repo: github.repo, path: (github.path || "index.html"), content: toBase64Utf8(html), message: "Publication battue " + new Date().toISOString() });
-      setPub({ status: "ok", url: pubUrl + "?v=" + Date.now() });
+      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId);
+      const token = "PUBTS-" + Date.now();
+      const stamped = html + "\n<!--" + token + "-->";
+      await githubPutFile({ token: github.token, owner: github.owner, repo: github.repo, path: (github.path || "index.html"), content: toBase64Utf8(stamped), message: "Publication battue " + new Date().toISOString() });
+      const url = pubUrl + "?v=" + Date.now();
+      setPub({ status: "propagating", url });
+      let live = false;
+      for (let i = 0; i < 40 && !live; i++) {
+        await new Promise((res) => setTimeout(res, 3000));
+        try { const r = await fetch(pubUrl + "?c=" + Date.now(), { cache: "no-store" }); if (r.ok) { const t = await r.text(); if (t.indexOf(token) >= 0) live = true; } } catch (e) {}
+      }
+      setPub({ status: live ? "live" : "ok", url: pubUrl + "?v=" + Date.now() });
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
   };
   const shareLinkWhatsApp = () => { const link = (pub && pub.url) ? pub.url : pubUrl; const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
@@ -1167,8 +1176,10 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
             <TableauSection j={j} terrain={terrains.find((t) => t.id === j.terrainId)} participants={participants} onAddKill={() => addKill(j.id)} onUpdateKill={(kid, patch) => updateKill(j.id, kid, patch)} onRemoveKill={(kid) => removeKill(j.id, kid)} onSetShot={(trackId, mid, val) => setShot(j.id, trackId, mid, val)} onSetState={(trackId, mid, patch) => setMiradorState(j.id, trackId, mid, patch)} />
             <div className="mt-1 border-t border-stone-200 pt-2 space-y-2">
               <div className="flex items-center justify-between"><p className="text-xs uppercase tracking-wide text-stone-400">Lien en ligne (lecture seule)</p><button onClick={openSettings} className="text-xs text-stone-500 underline">Réglages</button></div>
-              <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 disabled:bg-stone-400 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Share2 size={16} /> {pub.status === "publishing" ? "Publication en cours…" : "Publier en ligne (chasseurs + rabatteurs)"}</button>
-              {pub.status === "ok" && (<div className="bg-emerald-50 border border-emerald-200 rounded-md p-2.5 space-y-2"><p className="text-sm text-emerald-800">✓ Publié ! Le lien se met à jour dans ~1 minute.</p><a href={pub.url} target="_blank" rel="noreferrer" className="text-xs text-emerald-800 underline break-all block">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
+              <button onClick={() => publish(j)} disabled={pub.status === "publishing" || pub.status === "propagating"} className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 disabled:bg-stone-400 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Share2 size={16} /> {pub.status === "publishing" ? "Envoi…" : pub.status === "propagating" ? "Mise en ligne…" : "Publier en ligne (chasseurs + rabatteurs)"}</button>
+              {pub.status === "propagating" && (<div className="bg-amber-50 border border-amber-200 rounded-md p-2.5 space-y-2"><p className="text-sm text-amber-800">⏳ Envoyé à GitHub ✓ — mise en ligne en cours… <span className="text-xs">(vérification automatique, ~30 s à 1 min)</span></p><a href={pub.url} target="_blank" rel="noreferrer" className="text-xs text-amber-800 underline break-all block">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
+              {pub.status === "live" && (<div className="bg-emerald-50 border border-emerald-300 rounded-md p-2.5 space-y-2"><p className="text-sm font-semibold text-emerald-800">✅ En ligne et à jour ! Tu peux partager le lien.</p><a href={pub.url} target="_blank" rel="noreferrer" className="text-xs text-emerald-800 underline break-all block">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
+              {pub.status === "ok" && (<div className="bg-emerald-50 border border-emerald-200 rounded-md p-2.5 space-y-2"><p className="text-sm text-emerald-800">✓ Publié ! Le lien sera à jour d'ici ~1 minute.</p><a href={pub.url} target="_blank" rel="noreferrer" className="text-xs text-emerald-800 underline break-all block">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
               {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-md p-2.5"><p className="text-sm text-red-800">⚠ Échec : {pub.msg}</p><p className="text-xs text-red-700 mt-1">Vérifie la clé dans « Réglages ». Si l'erreur parle de « 404 », le compte/dossier est peut-être mal orthographié.</p></div>)}
             </div>
           </>) : <p className="text-sm text-stone-500 italic">Choisis un territoire pour voir ses traques.</p>}
@@ -1368,7 +1379,8 @@ function buildDinnerPrintHtml(participants) {
 
 // ---------- Application ----------
 const K = { participants: "cdb2:participants", journees: "cdb2:journees", terrainIndex: "cdb2:terrain-index", terrainPrefix: "cdb2:terrain:", imgPrefix: "cdb2:img:", mimgPrefix: "cdb2:mimg:", safety: "cdb2:safety", github: "cdb2:github", localAt: "cdb2:localAt", cloudAt: "cdb2:cloudAt" };
-const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", dataRepo: "battue-data", fnUrl: "", orgName: "" };
+const DEFAULT_FACTEUR = "https://battue-facteur.hippolyte-houdard.workers.dev/";
+const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", dataRepo: "battue-data", fnUrl: DEFAULT_FACTEUR, orgName: "" };
 const STORAGE_OK = typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
 
 const SUPA_URL = "https://zbneklsactpgttkpzwiv.supabase.co";
