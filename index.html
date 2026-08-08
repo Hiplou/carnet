@@ -152,6 +152,8 @@ function normJournee(j) { return { ...j, placements: j.placements || {}, presenc
 function normMirador(m) { return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
+function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
+function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
 function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
@@ -492,7 +494,7 @@ function TerrainsView({ terrains, setTerrains, journees }) {
     <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Territoires</h2>{!editorState && <button onClick={() => setEditorState("new")} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouveau territoire</button>}</div>
     {editorState ? (<TerritoryEditor initialTerrain={editorState === "new" ? null : editorState} journees={journees} onSave={saveTerrain} onCancel={() => setEditorState(null)} onDelete={() => deleteTerrain(editorState.id)} onLiveCommit={commitTerrain} />)
       : (<div className="grid sm:grid-cols-2 gap-3">{terrains.length === 0 && <p className="text-sm text-stone-500 italic sm:col-span-2">Aucun territoire. Clique « Nouveau territoire ».</p>}
-        {[...terrains].sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" })).map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
+        {[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
           {t.planImage ? <img src={t.planImage} alt={t.name} className="h-28 w-full object-cover" /> : <div className="h-28 bg-gradient-to-br from-emerald-900 via-emerald-800 to-stone-700 flex items-center justify-center text-stone-300"><MapPin size={20} /></div>}
           <div className="p-3"><p className="font-medium text-stone-800 truncate">{t.name}</p><p className="text-xs text-stone-500">{t.tracks.length} traque(s) · appuie pour ouvrir</p></div></SectionCard>))}
       </div>)}
@@ -517,7 +519,7 @@ function ParticipantsView({ participants, setParticipants }) {
   const nrm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
   const dg = (s) => (s || "").replace(/\D/g, "");
   const dupPairs = (() => { const out = []; for (let i = 0; i < participants.length; i++) for (let j = i + 1; j < participants.length; j++) { const a = participants[i], b = participants[j]; if ((a.dupIgnore || []).indexOf(b.id) >= 0 || (b.dupIgnore || []).indexOf(a.id) >= 0) continue; const na = foldName(a.name), nb = foldName(b.name); const pa = dg(a.phone), pb = dg(b.phone); const ea = nrm(a.email), eb = nrm(b.email); let reason = ""; if (na && na === nb) reason = "Même nom"; else if (pa && pa === pb) reason = "Même téléphone"; else if (ea && ea === eb) reason = "Même email"; else if (na && nb && na.length >= 3 && nb.length >= 3 && levDist(na, nb) <= 2) reason = "Noms très proches"; if (reason) out.push({ a, b, reason }); } return out; })();
-  const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; return true; }).sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" }));
+  const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; return true; }).sort((a, b) => byNom(a.name || "", b.name || ""));
   const selCount = Object.keys(selected).filter((id) => selected[id]).length;
   const toggleSel = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }));
   const deleteSelected = () => { const ids = Object.keys(selected).filter((id) => selected[id]); if (!ids.length) return; if (!window.confirm("Supprimer " + ids.length + " membre(s) sélectionné(s) ?")) return; setParticipants((prev) => prev.filter((p) => !ids.includes(p.id))); setSelected({}); };
@@ -721,7 +723,7 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
 function PosterFusils({ terrain, track, placements, participants, presentIds, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const [selectedHunter, setSelectedHunter] = useState(null);
   const assignedIds = Object.keys(placements);
-  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id)).sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" }));
+  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id)).sort((a, b) => byNom(a.name || "", b.name || ""));
   const freeMiradors = track.miradors.filter((m) => !Object.values(placements).includes(m.id));
   const sortedFree = [...freeMiradors].sort((a, b) => (a.priority || 1) - (b.priority || 1) || a.label.localeCompare(b.label));
   // Surbrillance par PALIER de priorité : toute la priorité 1, puis 2, etc. jusqu'à couvrir le nb de chasseurs
@@ -967,8 +969,8 @@ var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR
 function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId) {
   const posted = {};
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: m.photos || [] }); }); });
-  const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => a.name.localeCompare(b.name));
-  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => a.localeCompare(b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
+  const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid] }; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const DATA = { date: journee.date, journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy })), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
 }
 
@@ -1103,7 +1105,7 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   const [showMailPick, setShowMailPick] = useState(false);
   const [emarg, setEmarg] = useState(null);
   const invites = journee.invites || [];
-  const invited = participants.filter((p) => invites.includes(p.id)).sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" }));
+  const invited = participants.filter((p) => invites.includes(p.id)).sort((a, b) => byNom(a.name || "", b.name || ""));
   const pres = journee.presence || {};
   const dateFr = journee.date ? new Date(journee.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
   const terrName = terrain ? terrain.name : "";
@@ -1133,7 +1135,7 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   const copyMsg = () => { const txt = subject + "\n\n" + body; if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Message copié ✓")); else window.prompt("Copie le message :", txt); };
   const exportDinerExcel = () => {
     try {
-      const list = invited.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      const list = invited.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => byNom(a.name || "", b.name || ""));
       const rows = list.map((p) => { const sup = Number((pres[p.id] || {}).invitesSup) || 0; return { Nom: p.name || "", "Invités supplémentaires": sup, Convives: 1 + sup }; });
       const total = rows.reduce((s, r) => s + r.Convives, 0);
       rows.push({ Nom: "TOTAL", "Invités supplémentaires": "", Convives: total });
@@ -1162,7 +1164,7 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
         <p className="text-xs uppercase tracking-wide text-stone-400 mb-1">Qui inviter</p>
         {participants.length === 0 && <p className="text-xs text-stone-400 italic">Ajoute d'abord des membres dans l'onglet Membres.</p>}
         <div className="space-y-1 max-h-56 overflow-auto">
-          {[...participants].sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" })).map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
+          {[...participants].sort((a, b) => byNom(a.name || "", b.name || "")).map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
             <button key={p.id} onClick={() => onToggleInvite(journee.id, p.id)} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded border text-left text-sm ${on ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
               <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{on ? "✓" : ""}</span>
               <span className="flex-1 text-stone-800 truncate">{p.name || "(sans nom)"}</span>
@@ -1297,7 +1299,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
         <div className="flex items-center justify-between px-4 py-3"><button onClick={() => setOpenJournee(isOpen ? null : j.id)} className="flex items-center gap-2 font-medium text-stone-800">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<CalendarDays size={16} className="text-amber-800" />{new Date(j.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</button><span className="text-xs text-stone-400">{terrain?.name || "aucun territoire"}</span></div>
         {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-sm"><span className="text-stone-500">Date :</span><input type="date" value={j.date} onChange={(e) => setJourneeDate(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white" /><span className="text-stone-500 ml-2">Territoire :</span>
-            <select value={terrains.some((t) => t.id === j.terrainId) ? j.terrainId : ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white"><option value="" disabled>Choisir…</option>{[...terrains].sort((a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" })).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+            <select value={terrains.some((t) => t.id === j.terrainId) ? j.terrainId : ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white"><option value="" disabled>Choisir…</option>{[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
             <button onClick={() => removeJournee(j.id)} className="ml-auto flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer</button></div>
           <InvitationsSection journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
           {terrain ? (<>
@@ -1345,7 +1347,7 @@ function buildDinerHtml(journee, terrain, participants) {
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const df = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return d; } };
   const pres = journee.presence || {};
-  const list = participants.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const list = participants.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => byNom(a.name || "", b.name || ""));
   let total = 0;
   let rows = list.map((p, i) => { const sup = Number((pres[p.id] || {}).invitesSup) || 0; const conv = 1 + sup; total += conv; return "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td class='c'>" + sup + "</td><td class='c'>" + conv + "</td></tr>"; }).join("");
   if (!rows) rows = "<tr><td colspan='4' style='text-align:center;color:#999;padding:14px'>Personne n'est encore inscrit au dîner.</td></tr>";
@@ -1368,7 +1370,7 @@ function buildEmargementHtml(journee, terrain, participants) {
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const df = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return d; } };
   const pres = journee.presence || {};
-  const list = participants.filter((p) => (pres[p.id] || {}).statut === "present").sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const list = participants.filter((p) => (pres[p.id] || {}).statut === "present").sort((a, b) => byNom(a.name || "", b.name || ""));
   let rows = list.map((p, i) => "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td>" + esc(p.permis || "") + "</td><td>" + esc(p.validation || "") + "</td><td>" + esc(p.assurance || "") + "</td><td class='sig'></td></tr>").join("");
   const emptyRows = Math.max(0, 12 - list.length);
   for (let i = 0; i < emptyRows; i++) rows += "<tr><td class='num'>" + (list.length + i + 1) + "</td><td></td><td></td><td></td><td></td><td class='sig'></td></tr>";
