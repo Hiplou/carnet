@@ -413,6 +413,7 @@ function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsigne
           <div className="flex flex-wrap gap-1.5">{track.miradors.map((m) => { const on = (g.miradorIds || []).indexOf(m.id) >= 0; return (<button key={m.id} onClick={() => toggleMid(g.id, m.id)} className={`text-xs px-2 py-1 rounded-full border ${on ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{on ? "✓ " : ""}{m.label}</button>); })}</div></div>)}
       </div>))}
       {groups.length > 0 && <p className="text-[10px] text-stone-400">Chaque poste affichera sa consigne propre + toutes les consignes communes qui le concernent.</p>}</div>)}
+    {(() => { const seen = {}; const dups = []; track.miradors.forEach((m) => { const k = (m.label || "").trim().toLowerCase(); if (!k) return; seen[k] = (seen[k] || 0) + 1; if (seen[k] === 2) dups.push((m.label || "").trim()); }); return dups.length ? (<div className="bg-red-50 border border-red-300 rounded-md p-2.5 text-sm text-red-800">⚠️ Attention : plusieurs postes portent le même nom sur cette traque ({dups.join(", ")}). Renomme-les distinctement (✏️) — sinon impossible de les distinguer (photos/consignes pourraient sembler manquantes).</div>) : null; })()}
     {track.miradors.length > 0 && (<div><p className="text-xs uppercase tracking-wide text-stone-400 mb-1.5">Miradors ({track.miradors.length}) — glisse ≡ pour réordonner · clic sur le nom = fiche</p>
       <div className="space-y-1">{track.miradors.map((m) => (<MiradorRow key={m.id} m={m} track={track} updateTrack={updateTrack} onDragStart={setDragId} isDragging={dragId === m.id} inCommon={commonMids.has(m.id)} />))}</div></div>)}
   </div>);
@@ -1001,7 +1002,7 @@ function PublishModal({ github, setGithub, onClose, onLoad }) {
 }
 
 // ---------- Impression des postes ----------
-const PRINT_CSS = "@page{margin:14mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Georgia,'Times New Roman',serif;color:#1c1917;margin:0}header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header .emo{font-size:34px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}.traque{border:1px solid #d6d3d1;border-radius:8px;padding:10px 12px;break-inside:avoid;margin-bottom:14px}.traque h2{margin:0 0 8px;font-size:16px;border-left:5px solid #166534;padding-left:8px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:13px}th{text-align:left;color:#78716c;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e7e5e4;padding:3px 4px}td{padding:4px;border-bottom:1px solid #f0efee}td.pl{color:#57534e;width:45%}td.ch{font-weight:bold}.free{color:#a8a29e;font-weight:normal;font-style:italic}.mapwrap{position:relative;width:100%;margin-top:10px;break-inside:avoid}.mapwrap img{width:100%;display:block;border-radius:8px;border:1px solid #d6d3d1}.mk{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;font-family:Helvetica,Arial,sans-serif}.mkdot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}.mklbl{margin-top:2px;background:rgba(255,255,255,.92);border:1px solid #d6d3d1;border-radius:5px;padding:1px 4px;font-size:9px;white-space:nowrap;font-weight:bold;color:#1c1917}footer{margin-top:16px;text-align:center;color:#a8a29e;font-size:11px;font-family:Helvetica,Arial,sans-serif}";
+const PRINT_CSS = "@page{margin:14mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Georgia,'Times New Roman',serif;color:#1c1917;margin:0}header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header .emo{font-size:34px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}.traque{border:1px solid #d6d3d1;border-radius:8px;padding:10px 12px;break-inside:avoid;margin-bottom:14px}.traque h2{margin:0 0 8px;font-size:16px;border-left:5px solid #166534;padding-left:8px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:13px}th{text-align:left;color:#78716c;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e7e5e4;padding:3px 4px}td{padding:4px;border-bottom:1px solid #f0efee}td.num{color:#a8a29e;width:34px;font-weight:bold;text-align:center}td.pl{color:#57534e;width:42%}td.ch{font-weight:bold}.free{color:#a8a29e;font-weight:normal;font-style:italic}.mapwrap{position:relative;width:100%;margin-top:10px;break-inside:avoid}.mapwrap img{width:100%;display:block;border-radius:8px;border:1px solid #d6d3d1}.mk{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;font-family:Helvetica,Arial,sans-serif}.mkdot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}.mklbl{margin-top:2px;background:rgba(255,255,255,.92);border:1px solid #d6d3d1;border-radius:5px;padding:1px 4px;font-size:9px;white-space:nowrap;font-weight:bold;color:#1c1917}footer{margin-top:16px;text-align:center;color:#a8a29e;font-size:11px;font-family:Helvetica,Arial,sans-serif}";
 function buildPrintHtml(journee, terrain, participants, safety) {
   const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
@@ -1012,13 +1013,13 @@ function buildPrintHtml(journee, terrain, participants, safety) {
   (terrain.tracks || []).forEach((trk, idx) => {
     const pl = journee.placements[trk.id] || {}; const byMir = {}; Object.entries(pl).forEach(([hid, mid]) => { byMir[mid] = hid; });
     let rows = "";
-    (trk.miradors || []).forEach((m) => { const hid = byMir[m.id]; rows += "<tr><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td></tr>"; });
-    if (!trk.miradors || !trk.miradors.length) rows = "<tr><td colspan='2' class='free'>Aucun mirador</td></tr>";
+    (trk.miradors || []).forEach((m, mi) => { const hid = byMir[m.id]; rows += "<tr><td class='num'>" + (mi + 1) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td></tr>"; });
+    if (!trk.miradors || !trk.miradors.length) rows = "<tr><td colspan='3' class='free'>Aucun mirador</td></tr>";
     const mapHtml = terrain.planImage ? "<div class='mapbox' id='map" + idx + "'></div>" : "";
-    sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>Poste</th><th>Chasseur</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
-    traquesData.push({ color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m) => ({ gx: m.gx, gy: m.gy, who: (byMir[m.id] ? nameOf(byMir[m.id]) : m.label) })) });
+    sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
+    traquesData.push({ color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m, mi) => ({ gx: m.gx, gy: m.gy, n: mi + 1 })) });
   });
-  const script = terrain.planImage ? ("<script>var IMG=" + JSON.stringify(terrain.planImage) + ";var TQ=" + JSON.stringify(traquesData) + ";" + "var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;TQ.forEach(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var img=document.createElement('img');img.src=IMG;img.style.position='absolute';img.style.maxWidth='none';img.style.width=(100/fw)+'%';img.style.left=(-(fx/fw)*100)+'%';img.style.top=(-(fy/fh)*100)+'%';box.appendChild(img);var labs=[];t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var dot=document.createElement('div');dot.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);width:9px;height:9px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);z-index:3;background:'+t.color;box.appendChild(dot);var lab=document.createElement('div');lab.style.cssText='position:absolute;z-index:4;background:rgba(255,255,255,.95);border:1px solid #d6d3d1;border-radius:4px;padding:0 3px;font-size:8px;line-height:1.4;font-weight:bold;color:#1c1917;white-space:nowrap';lab.textContent=String(m.who||'');box.appendChild(lab);labs.push({el:lab,lx:lx,ly:ly});});var declut=function(){var bw=box.clientWidth,bh=box.clientHeight;if(!bw||!bh){setTimeout(declut,60);return;}labs.forEach(function(L){var w=L.el.offsetWidth,h=L.el.offsetHeight;L.w=w;L.h=h;L.x=Math.max(1,Math.min(bw-1-w,L.lx/100*bw-w/2));L.y=Math.min(bh-1-h,L.ly/100*bh+6);if(L.y<1)L.y=1;});labs.sort(function(a,b){return a.y-b.y||a.x-b.x;});var placed=[];labs.forEach(function(L){var guard=0;while(guard++<300){var hit=null;for(var k=0;k<placed.length;k++){var P=placed[k];if(L.x<P.x+P.w&&L.x+L.w>P.x&&L.y<P.y+P.h&&L.y+L.h>P.y){hit=P;break;}}if(!hit)break;L.y=hit.y+hit.h+1;if(L.y+L.h>bh-1){L.y=Math.max(1,hit.y-L.h-1);}}if(L.x<1)L.x=1;if(L.x+L.w>bw-1)L.x=Math.max(1,bw-1-L.w);if(L.y<1)L.y=1;if(L.y+L.h>bh-1)L.y=Math.max(1,bh-1-L.h);placed.push(L);L.el.style.left=L.x+'px';L.el.style.top=L.y+'px';});};declut();});};im.src=IMG;" + "</scr" + "ipt>") : "";
+  const script = terrain.planImage ? ("<script>var IMG=" + JSON.stringify(terrain.planImage) + ";var TQ=" + JSON.stringify(traquesData) + ";" + "var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;TQ.forEach(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var img=document.createElement('img');img.src=IMG;img.style.position='absolute';img.style.maxWidth='none';img.style.width=(100/fw)+'%';img.style.left=(-(fx/fw)*100)+'%';img.style.top=(-(fy/fh)*100)+'%';box.appendChild(img);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);min-width:16px;height:16px;padding:0 3px;border-radius:9px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);background:'+t.color+';color:#fff;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:3;font-family:Helvetica,Arial,sans-serif';d.textContent=m.n;box.appendChild(d);});});};im.src=IMG;" + "</scr" + "ipt>") : "";
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + PRINT_CSS + "</style></head><body>"
     + "<header><div class='emo'>🦌</div><div><h1>" + esc(terrain.name) + "</h1><p>" + esc(d) + "</p></div></header>"
     + "<div>" + sections + "</div>"
@@ -1104,6 +1105,8 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   const [open, setOpen] = useState(false);
   const [showMailPick, setShowMailPick] = useState(false);
   const [emarg, setEmarg] = useState(null);
+  const [qInv, setQInv] = useState(""); const [qPres, setQPres] = useState(""); const [showInv, setShowInv] = useState(true); const [showPres, setShowPres] = useState(true);
+  const matchQ = (p, q) => !q.trim() || (p.name || "").toLowerCase().indexOf(q.toLowerCase()) >= 0;
   const invites = journee.invites || [];
   const invited = participants.filter((p) => invites.includes(p.id)).sort((a, b) => byNom(a.name || "", b.name || ""));
   const pres = journee.presence || {};
@@ -1161,16 +1164,17 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
         <textarea value={body} onChange={(e) => onSetMsg(journee.id, { inviteBody: e.target.value })} rows={4} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
       </div>
       <div>
-        <p className="text-xs uppercase tracking-wide text-stone-400 mb-1">Qui inviter</p>
-        {participants.length === 0 && <p className="text-xs text-stone-400 italic">Ajoute d'abord des membres dans l'onglet Membres.</p>}
-        <div className="space-y-1 max-h-56 overflow-auto">
-          {[...participants].sort((a, b) => byNom(a.name || "", b.name || "")).map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
+        <div className="flex items-center justify-between mb-1"><button onClick={() => setShowInv((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Qui inviter {showInv ? "▲" : "▼"}</button></div>
+        {showInv && participants.length === 0 && <p className="text-xs text-stone-400 italic">Ajoute d'abord des membres dans l'onglet Membres.</p>}
+        {showInv && participants.length > 4 && <input value={qInv} onChange={(e) => setQInv(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mb-1" />}
+        {showInv && <div className="space-y-1 max-h-56 overflow-auto">
+          {[...participants].filter((p) => matchQ(p, qInv)).sort((a, b) => byNom(a.name || "", b.name || "")).map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
             <button key={p.id} onClick={() => onToggleInvite(journee.id, p.id)} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded border text-left text-sm ${on ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
               <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{on ? "✓" : ""}</span>
               <span className="flex-1 text-stone-800 truncate">{p.name || "(sans nom)"}</span>
               {noMail && <span className="text-[10px] text-amber-700 shrink-0">pas d'email</span>}
             </button>); })}
-        </div>
+        </div>}
       </div>
       <button onClick={() => { if (!invitedEmails().length) { window.alert("Coche au moins un invité qui a une adresse email."); return; } setShowMailPick(true); }} className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium px-3 py-2 rounded-md">✉️ Écrire l'invitation</button>
       {showMailPick && (<div className="border border-stone-300 rounded-lg p-2 bg-stone-50 space-y-1">
@@ -1190,15 +1194,16 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
       {invited.length > 0 && (<div>
         {emarg && <PrintOverlay html={emarg} onClose={() => setEmarg(null)} />}
         <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
-          <p className="text-xs uppercase tracking-wide text-stone-400">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""}</p>
+          <button onClick={() => setShowPres((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""} {showPres ? "▲" : "▼"}</button>
           <div className="flex gap-1.5 flex-wrap">
             <button onClick={() => { if (!nbPres) { window.alert("Coche au moins un présent."); return; } setEmarg(buildEmargementHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Émargement</button>
             <button onClick={() => { if (!nbDiner) { window.alert("Personne n'est inscrit au dîner."); return; } setEmarg(buildDinerHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Dîner PDF</button>
             <button onClick={exportDinerExcel} className="flex items-center gap-1 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white px-2 py-1 rounded shrink-0"><Download size={13} /> Dîner Excel</button>
           </div>
         </div>
-        <div className="space-y-1.5">
-          {invited.map((p) => { const pr = pres[p.id] || {}; return (
+        {showPres && invited.length > 4 && <input value={qPres} onChange={(e) => setQPres(e.target.value)} placeholder="🔍 Rechercher un présent…" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mb-1.5" />}
+        {showPres && <div className="space-y-1.5">
+          {invited.filter((p) => matchQ(p, qPres)).map((p) => { const pr = pres[p.id] || {}; return (
             <div key={p.id} className="bg-white border border-stone-200 rounded-md p-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-stone-800 flex-1 truncate">{p.name}</span>
@@ -1213,7 +1218,7 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
                   <input type="number" inputMode="numeric" value={pr.invitesSup || 0} onFocus={(e) => e.target.select()} onChange={(e) => onSetPresence(journee.id, p.id, { invitesSup: Math.max(0, parseInt(e.target.value || "0", 10) || 0) })} className="w-14 border border-stone-300 rounded px-2 py-1 bg-white" /></span>)}
               </div>)}
             </div>); })}
-        </div>
+        </div>}
       </div>)}
     </div>)}
   </SectionCard>);
