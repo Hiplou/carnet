@@ -707,6 +707,27 @@ function HunterList({ pending, selectedHunter, setSelectedHunter }) {
     {selectedHunter && <p className="text-xs text-amber-800 mt-2">Clique un poste pour l'y placer.</p>}</SectionCard>);
 }
 const ARROW_COLORS = ["#2563eb", "#dc2626", "#ea580c", "#7c3aed", "#059669", "#111827", "#f59e0b"];
+function ChefAssign({ terrain, journee, chefId, chefName, participants, onToggle, onBack }) {
+  const [tab, setTab] = useState(0);
+  const track = terrain.tracks[tab] || terrain.tracks[0];
+  const image = terrain.planImage; const ar = useImageAR(image);
+  if (!track) return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button><p className="text-sm text-stone-500">Aucune traque.</p></div>);
+  const crop = track.crop || FULL_CROP;
+  const placements = journee.placements[track.id] || {};
+  const cl = journee.chefLignes || {};
+  const myCount = Object.keys(cl).filter((mid) => cl[mid] === chefId).length;
+  return (<div className="space-y-3">
+    <div className="flex items-center justify-between gap-2"><button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button><span className="text-sm font-semibold text-stone-800">👨‍✈️ {chefName} <span className="font-normal text-stone-400">· {myCount} poste(s)</span></span></div>
+    <p className="text-xs text-stone-500">Tape les postes dont <b>{chefName}</b> est responsable (traque par traque). Les postes surlignés en vert sont les siens.</p>
+    <div className="flex gap-1.5 flex-wrap">{terrain.tracks.map((t, i) => <button key={t.id} onClick={() => setTab(i)} className={`text-xs font-medium px-2.5 py-1 rounded ${tab === i ? "bg-stone-800 text-stone-50" : "bg-stone-200 text-stone-700"}`}>{t.name}</button>)}</div>
+    <div style={cropWrapperStyle(crop, ar)} className="border border-stone-300 select-none"><div style={cropBgStyle(image, crop)} />
+      {track.miradors.map((m) => { const hid = Object.entries(placements).find(([, mid2]) => mid2 === m.id)?.[0]; if (!hid) return null; const hunter = participants.find((p) => p.id === hid); const lx = ((m.gx - crop.x) / crop.w) * 100, ly = ((m.gy - crop.y) / crop.h) * 100; if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null; const mine = cl[m.id] === chefId; const other = cl[m.id] && cl[m.id] !== chefId;
+        return (<button key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, opacity: other ? 0.5 : 1 }} onClick={() => onToggle(m.id, mine ? null : chefId)} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
+          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] border-2 shadow text-white" style={{ backgroundColor: mine ? "#166534" : other ? "#a8a29e" : "#78716c", borderColor: mine ? "#4ade80" : "#fff" }}>{mine ? "✓" : ""}</span>
+          <span className={`text-[9px] px-1 rounded leading-tight text-center max-w-[92px] break-words ${mine ? "bg-emerald-700 text-white ring-1 ring-emerald-300" : "bg-stone-900/70 text-stone-50"}`}>{hunter ? hunter.name : "?"}</span></button>); })}
+    </div>
+  </div>);
+}
 function AssignSurface({ image, track, placements, participants, selectedHunter, setSelectedHunter, onAssign, onUnassign, recommendedIds, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const crop = track.crop || FULL_CROP; const ar = useImageAR(image);
   const [draw, setDraw] = useState(false); const [draft, setDraft] = useState(null); const mapRef = useRef(null);
@@ -1099,7 +1120,7 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
 }
 
 // ---------- Journées ----------
-function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefLigne }) {
+function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefLigne, onAssignPosts }) {
   const [open, setOpen] = useState(false);
   const placedPosts = []; (terrain.tracks || []).forEach((trk) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (!m) return; const p = participants.find((x) => x.id === hid); placedPosts.push({ mid, label: m.label, trackId: trk.id, traqueName: trk.name, hid, hunterName: p ? p.name : "?" }); }); });
   const seen = {}; const placedHunters = []; placedPosts.forEach((pp) => { if (!seen[pp.hid]) { seen[pp.hid] = 1; placedHunters.push({ id: pp.hid, name: pp.hunterName }); } }); placedHunters.sort((a, b) => byNom(a.name || "", b.name || ""));
@@ -1111,9 +1132,10 @@ function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefL
       <p className="text-[11px] text-stone-400">Désigne les chefs (parmi les chasseurs placés), puis coche les postes dont chacun est responsable.</p>
       <div><span className="text-[10px] uppercase tracking-wide text-stone-400">Qui est chef de ligne ?</span>
         <div className="flex flex-wrap gap-1.5 mt-1">{placedHunters.map((h) => { const on = chefs.indexOf(h.id) >= 0; return (<button key={h.id} onClick={() => onToggleChef(journee.id, h.id)} className={`text-xs px-2 py-1 rounded-full border ${on ? "bg-stone-800 text-white border-stone-800" : "bg-white text-stone-600 border-stone-300"}`}>{on ? "👨‍✈️ " : ""}{h.name}</button>); })}</div></div>
-      {chefs.map((chefId) => { const chef = placedHunters.find((h) => h.id === chefId); if (!chef) return null; return (<div key={chefId} className="bg-white border border-stone-200 rounded-md p-2">
-        <p className="text-sm font-medium text-stone-800 mb-1">👨‍✈️ {chef.name} <span className="text-xs font-normal text-stone-400">— postes sous sa responsabilité</span></p>
-        <div className="flex flex-wrap gap-1.5">{placedPosts.map((pp) => { const mine = cl[pp.mid] === chefId; const other = cl[pp.mid] && cl[pp.mid] !== chefId; const otherName = other ? (placedHunters.find((h) => h.id === cl[pp.mid]) || {}).name : ""; return (<button key={pp.mid} onClick={() => onSetChefLigne(journee.id, pp.mid, mine ? null : chefId)} title={other ? "Déjà à " + otherName : ""} className={`text-xs px-2 py-1 rounded-full border ${mine ? "bg-emerald-700 text-white border-emerald-700" : other ? "bg-stone-100 text-stone-300 border-stone-200" : "bg-white text-stone-600 border-stone-300"}`}>{mine ? "✓ " : ""}{pp.label} <span className="opacity-70">({pp.hunterName})</span></button>); })}</div>
+      {chefs.map((chefId) => { const chef = placedHunters.find((h) => h.id === chefId); if (!chef) return null; const mine = placedPosts.filter((pp) => cl[pp.mid] === chefId); return (<div key={chefId} className="bg-white border border-stone-200 rounded-md p-2">
+        <div className="flex items-center justify-between gap-2"><p className="text-sm font-medium text-stone-800">👨‍✈️ {chef.name} <span className="text-xs font-normal text-stone-400">· {mine.length} poste(s)</span></p>
+          <button onClick={() => onAssignPosts(journee.id, chefId)} className="shrink-0 text-xs font-medium bg-emerald-800 hover:bg-emerald-900 text-white px-2.5 py-1.5 rounded-md flex items-center gap-1"><Crosshair size={13} /> Attribuer les postes</button></div>
+        {mine.length > 0 && <p className="text-[11px] text-stone-500 mt-1">{mine.map((pp) => pp.traqueName + " · " + pp.label).join(" — ")}</p>}
       </div>); })}
     </div>))}
   </SectionCard>);
@@ -1269,7 +1291,7 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
 }
 function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings, userId, orgEmail }) {
   const [openJournee, setOpenJournee] = useState(null);
-  const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null);
+  const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null); const [chefView, setChefView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
   const pubSlug = userId ? String(userId).replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 12) : "public";
   const pubUrl = "https://" + (github.owner || "hiplou").toLowerCase() + ".github.io/" + (github.repo || "battue") + "/" + pubSlug + "/";
@@ -1338,6 +1360,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const setShot = (jid, trackId, mid, val) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, shots: { ...(j.shots || {}), [trackId]: { ...((j.shots || {})[trackId] || {}), [mid]: val } } })));
   const setMiradorState = (jid, trackId, mid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, miradorStates: { ...(j.miradorStates || {}), [trackId]: { ...((j.miradorStates || {})[trackId] || {}), [mid]: { ...(((j.miradorStates || {})[trackId] || {})[mid] || {}), ...patch } } } })));
 
+  if (chefView) { const journee = journees.find((j) => j.id === chefView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const chef = participants.find((p) => p.id === chefView.chefId); if (!journee || !terrain || !chef) { setChefView(null); return null; } return <ChefAssign terrain={terrain} journee={journee} chefId={chefView.chefId} chefName={chef.name} participants={participants} onToggle={(mid, chefId) => setChefLigne(journee.id, mid, chefId)} onBack={() => setChefView(null)} />; }
   if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
     return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
   if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
@@ -1358,7 +1381,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
             {terrain.tracks.map((trk) => { const placed = Object.keys(j.placements[trk.id] || {}).length;
               return (<div key={trk.id} className="flex items-center justify-between bg-white border border-stone-200 rounded-md px-3 py-2"><div><p className="font-medium text-sm text-stone-800">{trk.name}</p><p className="text-xs text-stone-500 flex items-center gap-1"><MapPin size={12} /> {placed}/{trk.miradors.length} postes</p></div><button onClick={() => setPosterView({ journeeId: j.id, trackId: trk.id })} className="flex items-center gap-1.5 text-sm font-medium bg-emerald-800 hover:bg-emerald-900 text-stone-50 px-3 py-1.5 rounded-md"><Crosshair size={14} /> Poster les fusils</button></div>); })}
             <AttributionsSection journee={j} terrain={terrain} onSet={setAttribution} />
-            <ChefsSection journee={j} terrain={terrain} participants={participants} onToggleChef={toggleChef} onSetChefLigne={setChefLigne} />
+            <ChefsSection journee={j} terrain={terrain} participants={participants} onToggleChef={toggleChef} onSetChefLigne={setChefLigne} onAssignPosts={(jid, chefId) => setChefView({ journeeId: jid, chefId })} />
             <div className="flex gap-2 mt-1">
               <button onClick={() => printPostes(j)} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2.5 rounded-md"><FileText size={16} /> Imprimer les postes</button>
               <button onClick={() => { const np = Object.keys(j.presence || {}).filter((id) => (j.presence[id] || {}).statut === "present").length; if (!np) { window.alert("Coche d'abord des présents dans la section Invitations."); return; } setPostesPrint(buildEmargementHtml(j, terrain, participants)); }} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2.5 rounded-md"><FileText size={16} /> Feuille d'émargement</button>
