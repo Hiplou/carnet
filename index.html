@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.11";
+const APP_VERSION = "v1.12";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -598,20 +598,16 @@ function IgnMapPicker({ onCapture, onCancel }) {
   const [opac, setOpac] = useState(0);
   const [q, setQ] = useState(""); const [res, setRes] = useState([]); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const ORTHO = IGN_FONDS[0], PLAN = IGN_FONDS[1];
-  const [diag, setDiag] = useState("init");
   useEffect(() => {
-    if (typeof L === "undefined") { setErr("Leaflet absent"); setDiag("L=absent"); return; }
-    if (!divRef.current) { setErr("Conteneur absent"); setDiag("div=absent"); return; }
-    const r0 = divRef.current.getBoundingClientRect();
-    setDiag("L=ok div=" + Math.round(r0.width) + "x" + Math.round(r0.height));
+    if (typeof L === "undefined" || !divRef.current) { setErr("La carte n'a pas pu se charger (connexion ?)."); return; }
     const map = L.map(divRef.current, { zoomControl: true }).setView([46.6, 2.5], 6);
     mapRef.current = map;
     baseRef.current = L.tileLayer(IGN_WMTS + "&LAYER=" + ORTHO.wmts + "&FORMAT=" + ORTHO.fmt, { maxZoom: 19, attribution: "© IGN" }).addTo(map);
     overRef.current = L.tileLayer(IGN_WMTS + "&LAYER=" + PLAN.wmts + "&FORMAT=" + PLAN.fmt, { maxZoom: 19, opacity: 0 }).addTo(map);
-    let nOk = 0, nErr = 0, lastUrl = "";
-    baseRef.current.on("tileload", () => { nOk++; setDiag("tuiles ok:" + nOk + " err:" + nErr); setErr(""); });
-    baseRef.current.on("tileerror", (ev) => { nErr++; try { lastUrl = (ev && ev.tile && ev.tile.src) || ""; } catch (e) {} setDiag("tuiles ok:" + nOk + " err:" + nErr + " | " + lastUrl.slice(0, 90)); });
-    [60, 250, 700, 1500].forEach((d) => setTimeout(() => { try { map.invalidateSize(); const r = divRef.current ? divRef.current.getBoundingClientRect() : null; if (r && nOk === 0) setDiag((dg) => dg + " | div " + Math.round(r.width) + "x" + Math.round(r.height)); } catch (e) {} }, d));
+    let nOk = 0;
+    baseRef.current.on("tileload", () => { nOk++; setErr(""); });
+    baseRef.current.on("tileerror", () => { if (nOk === 0) setErr("Les images IGN ne se chargent pas (connexion ?)."); });
+    [60, 250, 700, 1500].forEach((d) => setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, d));
     return () => { try { map.remove(); } catch (e) {} };
   }, []);
   useEffect(() => { if (overRef.current) overRef.current.setOpacity(opac / 100); }, [opac]);
@@ -662,34 +658,32 @@ function IgnMapPicker({ onCapture, onCancel }) {
     } catch (e) { setErr("Capture impossible : " + (e.message || e) + " Réessaie ou importe une image."); } finally { setBusy(false); }
   };
   const [panel, setPanel] = useState(false);
-  return (<div className="fixed inset-0 z-50 bg-stone-200">
-    <div ref={divRef} className="absolute inset-0" />
-
-    <div className="absolute top-0 left-0 right-0 z-[1000] p-2 pointer-events-none" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
-      <div className="flex gap-2 items-center pointer-events-auto">
-        <button onClick={onCancel} aria-label="Retour" className="shrink-0 w-11 h-11 rounded-full bg-white shadow-lg flex items-center justify-center text-stone-700"><ArrowLeft size={20} /></button>
-        <div className="flex-1 flex gap-1.5 bg-white rounded-full shadow-lg pl-4 pr-2 py-2.5 items-center">
-          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} placeholder="Commune, lieu-dit…" autoComplete="off" autoCorrect="off" className="flex-1 min-w-0 text-base bg-transparent outline-none" style={{ fontSize: 16 }} />
-          {q && <button onClick={() => { setQ(""); setRes([]); }} aria-label="Effacer" className="shrink-0 w-7 h-7 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center"><X size={15} /></button>}
-        </div>
+  return (<div className="fixed inset-0 z-50 bg-white flex flex-col">
+    <div className="shrink-0 p-2 border-b border-stone-200 space-y-2" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
+      <div className="flex gap-2 items-center">
+        <button onClick={onCancel} aria-label="Retour" className="shrink-0 flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={18} /> Retour</button>
+        <span className="text-sm font-semibold text-stone-800 flex-1 text-right">Choisir la zone</span>
       </div>
-      {res.length > 0 && <div className="pointer-events-auto mt-2 ml-[52px] bg-white rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">{res.map((r, i) => <button key={i} onClick={() => goTo(r)} className="w-full text-left px-3 py-3 text-sm border-b border-stone-100 last:border-0">{r.label}</button>)}</div>}
+      <div className="flex gap-1.5 border border-stone-300 rounded-lg px-3 py-2 items-center bg-white">
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} placeholder="Commune, lieu-dit…" autoComplete="off" autoCorrect="off" className="flex-1 min-w-0 bg-transparent outline-none" style={{ fontSize: 16 }} />
+        {q && <button onClick={() => { setQ(""); setRes([]); }} aria-label="Effacer" className="shrink-0 w-7 h-7 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center"><X size={15} /></button>}
+      </div>
+      {res.length > 0 && <div className="border border-stone-200 rounded-lg divide-y max-h-44 overflow-y-auto">{res.map((r, i) => <button key={i} onClick={() => goTo(r)} className="w-full text-left px-3 py-2.5 text-sm">{r.label}</button>)}</div>}
     </div>
 
-    <div className="absolute bottom-0 left-0 right-0 z-[1000] p-2" style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}>
-      {err && <p className="text-xs text-white bg-red-700 rounded-lg px-3 py-2 mb-2 shadow-lg">{err}</p>}
-      <p className="text-[10px] text-white bg-stone-800/90 rounded px-2 py-1 mb-2 break-all">DIAG : {diag}</p>
-      <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-        <button onClick={() => setPanel(!panel)} className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-stone-800">
-          <span>{opac === 0 ? "🛰️ Photo aérienne" : opac === 100 ? "🗺️ Carte IGN" : "🛰️🗺️ Mixte " + opac + "%"}</span>
-          <span className="text-xs font-normal text-stone-500">{panel ? "Masquer ▾" : "Réglage du fond ▴"}</span>
-        </button>
-        {panel && (<div className="px-3 pb-3 border-t border-stone-100 pt-2">
-          <input type="range" min="0" max="100" step="5" value={opac} onChange={(e) => setOpac(Number(e.target.value))} className="w-full" style={{ height: 34 }} />
-          <div className="flex gap-1.5">{[["🛰️ Photo", 0], ["Mixte", 50], ["🗺️ Carte", 100]].map(([lbl, v]) => <button key={lbl} onClick={() => setOpac(v)} className={`flex-1 text-xs font-medium px-2 py-2 rounded-lg border ${opac === v ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{lbl}</button>)}</div>
-        </div>)}
-        <button onClick={capture} disabled={busy} className="w-full bg-emerald-800 disabled:bg-stone-400 text-white font-bold px-3 py-3.5 text-base">{busy ? "Capture…" : "📸 Utiliser cette vue"}</button>
-      </div>
+    <div ref={divRef} className="flex-1 min-h-0" style={{ minHeight: 220, background: "#e7e5e4" }} />
+
+    <div className="shrink-0 border-t border-stone-200 p-2 space-y-2" style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}>
+      {err && <p className="text-xs text-white bg-red-700 rounded-lg px-3 py-2">{err}</p>}
+      <button onClick={() => setPanel(!panel)} className="w-full flex items-center justify-between text-sm font-semibold text-stone-800">
+        <span>{opac === 0 ? "🛰️ Photo aérienne" : opac === 100 ? "🗺️ Carte IGN" : "🛰️🗺️ Mixte " + opac + "%"}</span>
+        <span className="text-xs font-normal text-stone-500">{panel ? "Masquer ▾" : "Réglage du fond ▴"}</span>
+      </button>
+      {panel && (<div>
+        <input type="range" min="0" max="100" step="5" value={opac} onChange={(e) => setOpac(Number(e.target.value))} className="w-full" style={{ height: 32 }} />
+        <div className="flex gap-1.5">{[["🛰️ Photo", 0], ["Mixte", 50], ["🗺️ Carte", 100]].map(([lbl, v]) => <button key={lbl} onClick={() => setOpac(v)} className={`flex-1 text-xs font-medium px-2 py-2 rounded-lg border ${opac === v ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{lbl}</button>)}</div>
+      </div>)}
+      <button onClick={capture} disabled={busy} className="w-full bg-emerald-800 disabled:bg-stone-400 text-white font-bold px-3 py-3 rounded-lg text-base">{busy ? "Capture…" : "📸 Utiliser cette vue"}</button>
     </div>
   </div>);
 }
