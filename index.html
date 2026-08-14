@@ -255,6 +255,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
+const APP_VERSION = "v1.2";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -610,6 +611,7 @@ function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
   const capOf = (cfg) => (cfg.mode === "proportionnel") ? chevCap : (cfg.target || 0);
   const isOn = (k) => !!(planChasse[k] && planChasse[k].enabled);
   const nbOn = (fam) => fam.sous.filter(isOn).length;
+  const setFamille = (fam, on) => { const next = { ...planChasse }; fam.sous.forEach((k) => { next[k] = { ...(next[k] || { mode: "proportionnel", target: 0 }), enabled: on }; }); setPlanChasse(next); };
 
   const especeBlock = (k, compact) => {
     const e = especeOf(k);
@@ -630,7 +632,6 @@ function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
 
   const groupes = ["Grand gibier", "Petit gibier", "Gibier d'eau"];
   return (<div className="space-y-3">
-    <p className="text-[10px] text-stone-300">version 2026-08-14-b</p>
     <p className="text-xs text-stone-500">Active les espèces présentes sur ce territoire : elles apparaîtront dans le tableau, les prélèvements des chasseurs et les stats. Les jauges cumulent la saison {curSeason}.</p>
     {groupes.map((g) => (<div key={g}>
       <p className="text-[11px] uppercase tracking-wide text-stone-400 font-semibold mb-1.5">{g}</p>
@@ -647,8 +648,9 @@ function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
               <span className="text-sm font-medium text-stone-800 leading-tight">{fam.emoji} {fam.label}</span>
             </button>);
           }
-          return (<button key={fam.key} onClick={() => setOpenFam(open ? null : fam.key)} className={`text-left rounded-lg p-2.5 border flex items-center gap-2 ${on ? "bg-white border-emerald-500" : "bg-stone-50 border-stone-200"}`}>
-            <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{on ? "✓" : ""}</span>
+          const allOn = nbOn(fam) === fam.sous.length;
+          return (<button key={fam.key} onClick={() => { if (allOn) { setFamille(fam, false); setOpenFam(null); } else { setFamille(fam, true); setOpenFam(fam.key); } }} className={`text-left rounded-lg p-2.5 border flex items-center gap-2 ${on ? "bg-white border-emerald-500" : "bg-stone-50 border-stone-200"}`}>
+            <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{allOn ? "✓" : on ? "–" : ""}</span>
             <span className="text-sm font-medium text-stone-800 leading-tight flex-1">{fam.emoji} {fam.label}{on ? <span className="text-[10px] text-emerald-700 font-normal"> · {nbOn(fam)}</span> : null}</span>
             {open ? <ChevronDown size={14} className="text-stone-400 shrink-0" /> : <ChevronRight size={14} className="text-stone-400 shrink-0" />}
           </button>);
@@ -2212,6 +2214,7 @@ function CarnetApp({ session, onSignOut }) {
           <button onClick={onSignOut} className="text-xs text-stone-400 hover:text-stone-200 underline">Déconnexion</button>
         </div>
         <p className="text-[10px] text-stone-500 mt-0.5 truncate max-w-[180px]">{session?.user?.email}</p>
+        <p className="text-[10px] text-stone-600">{APP_VERSION}</p>
       </div>
     </div></header>
 
