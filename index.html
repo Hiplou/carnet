@@ -131,6 +131,30 @@ const initialTerrains = [
 const initialJournees = [{ id: "j1", date: "2026-11-08", terrainId: "t1", placements: {} }];
 
 // ---------- Normalisation ----------
+function IconRayee({ size = 15, color = "#166534" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.8, strokeLinecap: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
+    React.createElement("circle", { cx: 12, cy: 12, r: 9 }),
+    React.createElement("circle", { cx: 12, cy: 12, r: 5.5, strokeWidth: 1.2 }),
+    React.createElement("path", { d: "M12 6.5v11M17.5 12h-11M15.9 8.1 8.1 15.9M15.9 15.9 8.1 8.1", strokeWidth: 1.2 }));
+}
+function IconLisse({ size = 15, color = "#166534" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.8, strokeLinecap: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
+    React.createElement("circle", { cx: 12, cy: 12, r: 9 }),
+    React.createElement("circle", { cx: 12, cy: 12, r: 5.5, strokeWidth: 1.2 }));
+}
+function IconArc({ size = 15, color = "#166534" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
+    React.createElement("path", { d: "M17 3a13 13 0 0 1 0 18" }),
+    React.createElement("path", { d: "M17 3 6.5 12 17 21" }),
+    React.createElement("path", { d: "M3 12h12" }),
+    React.createElement("path", { d: "m12 9 3 3-3 3" }));
+}
+function ArmeIcon({ k, size = 15, color = "#166534" }) {
+  if (k === "rayee") return React.createElement(IconRayee, { size, color });
+  if (k === "lisse") return React.createElement(IconLisse, { size, color });
+  if (k === "arc") return React.createElement(IconArc, { size, color });
+  return null;
+}
 function Fauteuil({ size = 15, color = "#166534" }) {
   return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
     React.createElement("circle", { cx: 16, cy: 4, r: 1 }),
@@ -442,7 +466,7 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
         <p className="text-[10px] text-stone-400 mt-1">Un poste fauteuil accepte aussi une canne. Visible par toi seulement (jamais côté chasseur).</p></div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Arme idéale du poste</label>
         <div className="flex gap-1.5 mt-1 flex-wrap">
-          {[{ v: "indifferent", l: "Indifférent" }].concat(ARMES.map((a) => ({ v: a.key, l: a.emoji + " " + a.label }))).map((o) => (<button key={o.v} onClick={() => patch({ arme: o.v })} className={`flex-1 min-w-[70px] px-2 py-2 rounded-md text-xs font-medium border ${(m.arme || "indifferent") === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.l}</button>))}
+          {[{ v: "indifferent", l: "Indifférent" }].concat(ARMES.map((a) => ({ v: a.key, l: a.label }))).map((o) => { const on = (m.arme || "indifferent") === o.v; return (<button key={o.v} onClick={() => patch({ arme: o.v })} className={`flex-1 min-w-[70px] px-2 py-2 rounded-md text-xs font-medium border flex items-center justify-center gap-1 ${on ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.v !== "indifferent" && <ArmeIcon k={o.v} size={14} color={on ? "#fff" : "#166534"} />}{o.l}</button>); })}
         </div>
         <p className="text-[10px] text-stone-400 mt-1">Rayée = carabine uniquement · Lisse = fusil, carabine tolérée · Arc = arc uniquement.</p></div>
       <div className="border-t border-stone-100 pt-2"><label className="text-[10px] uppercase tracking-wide text-stone-400">🎯 Zones de tir interdites (affichées au chasseur)</label>
@@ -762,7 +786,7 @@ function ParticipantsView({ participants, setParticipants }) {
               {[{ v: null, l: "Aucune" }, { v: "canne", l: "🦯 Canne", ic: "c" }, { v: "fauteuil", l: "Fauteuil", ic: "f" }].map((o) => (<button key={o.l} onClick={() => update(p.id, { mobility: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.mobility || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.ic === "f" ? <Fauteuil size={13} color={(p.mobility || null) === o.v ? "#fff" : "#166534"} /> : null} {o.l}</button>))}
             </div><p className="text-[11px] text-stone-400 mt-1">Fauteuil = accès aux postes fauteuil. Canne = postes canne ou fauteuil.</p></div>
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Arme habituelle</p><div className="flex gap-2">
-              {[{ v: null, l: "Non renseignée" }].concat(ARMES.map((a) => ({ v: a.key, l: a.emoji + " " + a.label }))).map((o) => (<button key={o.l} onClick={() => update(p.id, { arme: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.arme || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.l}</button>))}
+              {[{ v: null, l: "Non renseignée" }].concat(ARMES.map((a) => ({ v: a.key, l: a.label }))).map((o) => { const on = (p.arme || null) === o.v; return (<button key={o.l} onClick={() => update(p.id, { arme: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border flex items-center justify-center gap-1 ${on ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.v && <ArmeIcon k={o.v} size={14} color={on ? "#fff" : "#166534"} />}{o.l}</button>); })}
             </div><p className="text-[11px] text-stone-400 mt-1">Sert au placement : une carabine (rayée) peut aller sur un poste lisse, l'inverse est interdit.</p></div>
             <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
           </div>)}
@@ -829,7 +853,7 @@ function HunterList({ pending, selectedHunter, setSelectedHunter, armeOf, onSetA
             <button onClick={() => setArmeEdit(isEdit ? null : p.id)} title="Arme du jour" className={`shrink-0 mr-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${a ? (selectedHunter === p.id ? "bg-white/20 text-stone-50 border-white/40" : "bg-stone-100 text-stone-600 border-stone-300") : (selectedHunter === p.id ? "bg-white/10 text-stone-200 border-white/30" : "bg-white text-stone-400 border-stone-200")}`}>{a ? armeShort(a) : "—"}</button>
           </div>
           {isEdit && onSetArme && (<div className="flex gap-1 mt-1 mb-1.5 flex-wrap">
-            {[{ v: null, l: "—" }].concat(ARMES.map((x) => ({ v: x.key, l: x.label }))).map((o) => (<button key={o.l} onClick={() => { onSetArme(p.id, o.v); setArmeEdit(null); }} className={`px-2 py-1 rounded text-[11px] font-medium border ${a === o.v ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.l}</button>))}
+            {[{ v: null, l: "—" }].concat(ARMES.map((x) => ({ v: x.key, l: x.label }))).map((o) => (<button key={o.l} onClick={() => { onSetArme(p.id, o.v); setArmeEdit(null); }} className={`px-2 py-1 rounded text-[11px] font-medium border flex items-center gap-1 ${a === o.v ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.v && <ArmeIcon k={o.v} size={12} color={a === o.v ? "#fff" : "#166534"} />}{o.l}</button>))}
           </div>)}
         </div>); })}</div>
     {selectedHunter && <p className="text-xs text-amber-800 mt-2">Clique un poste pour l'y placer.</p>}</SectionCard>);
@@ -1492,14 +1516,22 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...((j.placements || {})[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...(j.placements || {}), [trackId]: t } }; }));
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
   const autoFill = (jid, track, pending, sortedFree) => {
-    const tierOrder = (arr) => { const byP = {}; arr.forEach((m) => { const p = m.priority || 1; (byP[p] = byP[p] || []).push(m); }); return Object.keys(byP).map(Number).sort((a, b) => a - b).reduce((acc, p) => acc.concat(shuffle(byP[p])), []); };
     const okFauteuil = (m) => !!m.accFauteuil;
     const okCanne = (m) => !!m.accCanne || !!m.accFauteuil;
     const jCur = journees.find((j) => j.id === jid);
     const armeOf = (h) => ((jCur && jCur.armes && jCur.armes[h.id]) || h.arme || null);
+    const armeRank = (posteArme, a) => { const p = posteArme || "indifferent"; if (a && p === a) return 0; if (p === "indifferent") return 1; return 2; };
     let free = sortedFree.slice();
     const cur = { ...((jCur && jCur.placements && jCur.placements[track.id]) || {}) };
-    const place = (hunters, ok) => { shuffle(hunters.slice()).forEach((h) => { const a = armeOf(h); const cands = free.filter(ok); const ordered = tierOrder(cands.filter((m) => armeOk(m.arme, a))); const fallback = tierOrder(cands); const post = ordered[0] || fallback[0]; if (!post) return; cur[h.id] = post.id; free = free.filter((m) => m.id !== post.id); }); };
+    const pickPost = (cands, a) => {
+      if (!cands.length) return null;
+      const allowed = cands.filter((m) => armeOk(m.arme, a));
+      const pool = shuffle((allowed.length ? allowed : cands).slice());
+      const scored = pool.map((m) => ({ m, p: m.priority || 1, w: armeRank(m.arme, a) }));
+      scored.sort((x, y) => (x.p - y.p) || (x.w - y.w));
+      return scored[0].m;
+    };
+    const place = (hunters, ok) => { shuffle(hunters.slice()).forEach((h) => { const post = pickPost(free.filter(ok), armeOf(h)); if (!post) return; cur[h.id] = post.id; free = free.filter((m) => m.id !== post.id); }); };
     place(pending.filter((h) => h.mobility === "fauteuil"), okFauteuil);
     place(pending.filter((h) => h.mobility === "canne"), okCanne);
     place(pending.filter((h) => h.mobility !== "fauteuil" && h.mobility !== "canne"), () => true);
