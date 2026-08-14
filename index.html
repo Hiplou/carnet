@@ -14,8 +14,8 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>body{margin:0;background:#f5f5f4}.boot{padding:48px 16px;text-align:center;font-family:-apple-system,sans-serif;color:#78716c}.err{padding:16px;font:13px/1.5 ui-monospace,monospace;color:#b91c1c;white-space:pre-wrap;word-break:break-word}</style>
 <script>
 window.__appReady = false;
@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.9";
+const APP_VERSION = "v1.10";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -604,7 +604,10 @@ function IgnMapPicker({ onCapture, onCancel }) {
     mapRef.current = map;
     baseRef.current = L.tileLayer(IGN_WMTS + "&LAYER=" + ORTHO.wmts + "&FORMAT=" + ORTHO.fmt, { maxZoom: 19, attribution: "© IGN" }).addTo(map);
     overRef.current = L.tileLayer(IGN_WMTS + "&LAYER=" + PLAN.wmts + "&FORMAT=" + PLAN.fmt, { maxZoom: 19, opacity: 0 }).addTo(map);
-    setTimeout(() => map.invalidateSize(), 200);
+    let okTile = false;
+    baseRef.current.on("tileload", () => { okTile = true; setErr(""); });
+    baseRef.current.on("tileerror", () => { if (!okTile) setErr("Les images IGN ne se chargent pas (connexion ?)."); });
+    [60, 250, 700, 1500].forEach((d) => setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, d));
     return () => { try { map.remove(); } catch (e) {} };
   }, []);
   useEffect(() => { if (overRef.current) overRef.current.setOpacity(opac / 100); }, [opac]);
