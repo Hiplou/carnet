@@ -25,7 +25,7 @@ window.addEventListener("unhandledrejection", function(ev){ if(window.__appReady
 <body>
 <div id="root"><div class="boot">Chargement du carnet…</div></div>
 <script type="text/plain" id="appsrc">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useMemo } = React;
 
 /* Stockage local durable (IndexedDB) — même API que window.storage */
 window.storage = (function () {
@@ -155,9 +155,12 @@ function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Tra
 function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
 function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
+function splitFullName(full) { const parts = (full || "").trim().split(/\s+/).filter(Boolean); if (!parts.length) return { prenom: "", nom: "" }; if (parts.length === 1) return { prenom: parts[0], nom: "" }; return { prenom: parts[0], nom: parts.slice(1).join(" ") }; }
+function fixPhone(raw) { const s = (raw || "").trim(); if (!s) return s; const d = s.replace(/\D/g, ""); if (d.length === 9 && (d[0] === "6" || d[0] === "7")) return "0" + d; return s; }
+function isValidFrPhone(raw) { const d = (raw || "").replace(/\D/g, ""); if (!d) return true; return d.length === 10 && (d.slice(0, 2) === "06" || d.slice(0, 2) === "07"); }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
-function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == null && nom == null) { const sp = splitFullName(p.name); prenom = sp.prenom; nom = sp.nom; } prenom = prenom || ""; nom = nom || ""; const name = (prenom + " " + nom).trim() || p.name || ""; return { id: p.id, prenom, nom, name, phone: fixPhone(p.phone || ""), email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
@@ -233,6 +236,8 @@ function rowsToGuests(rows) {
     let name = "";
     if (cPrenom || cNom) name = [g(r, cPrenom), g(r, cNom)].filter(Boolean).join(" ").trim();
     if (!name) { const first = headers.length ? g(r, headers[0]) : ""; if (/[a-zA-ZÀ-ÿ]/.test(first)) name = first; }
+    const prenom = cPrenom ? g(r, cPrenom) : "";
+    const nom = cNom ? g(r, cNom) : "";
     const email = g(r, cMail);
     let phone = g(r, cTel); if (phone) phone = phone.replace(/[ .\-]/g, "");
     const mobRaw = g(r, cMob).toLowerCase();
@@ -240,7 +245,7 @@ function rowsToGuests(rows) {
     const roleRaw = g(r, cRole).toLowerCase();
     const role = roleRaw.indexOf("rabatteur") >= 0 ? "rabatteur" : "chasseur";
     if (!name && !email && !phone) return;
-    out.push({ name, phone, email, permis: g(r, cPermis), validation: g(r, cValid), assurance: g(r, cAssur), role, mobility });
+    out.push({ name, prenom, nom, phone, email, permis: g(r, cPermis), validation: g(r, cValid), assurance: g(r, cAssur), role, mobility });
   });
   return out;
 }
@@ -558,16 +563,41 @@ function ParticipantsView({ participants, setParticipants }) {
   const [search, setSearch] = useState(""); const [selected, setSelected] = useState({}); const [dupPanel, setDupPanel] = useState(false); const [mergePanel, setMergePanel] = useState(false);
   const nrm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
   const dg = (s) => (s || "").replace(/\D/g, "");
-  const dupPairs = (() => { const out = []; for (let i = 0; i < participants.length; i++) for (let j = i + 1; j < participants.length; j++) { const a = participants[i], b = participants[j]; if ((a.dupIgnore || []).indexOf(b.id) >= 0 || (b.dupIgnore || []).indexOf(a.id) >= 0) continue; const na = foldName(a.name), nb = foldName(b.name); const pa = dg(a.phone), pb = dg(b.phone); const ea = nrm(a.email), eb = nrm(b.email); let reason = ""; if (na && na === nb) reason = "Même nom"; else if (pa && pa === pb) reason = "Même téléphone"; else if (ea && ea === eb) reason = "Même email"; else if (na && nb && na.length >= 3 && nb.length >= 3 && levDist(na, nb) <= 2) reason = "Noms très proches"; if (reason) out.push({ a, b, reason }); } return out; })();
+  const dupPairs = useMemo(() => {
+    const norm = participants.map((p) => {
+      const folded = foldName(p.name);
+      const tokens = folded.split(" ").filter(Boolean);
+      return { p, folded, swapKey: tokens.length > 1 ? tokens.slice().sort().join(" ") : folded, phone: dg(p.phone), email: nrm(p.email) };
+    });
+    const out = [];
+    for (let i = 0; i < norm.length; i++) {
+      for (let j = i + 1; j < norm.length; j++) {
+        const A = norm[i], B = norm[j], a = A.p, b = B.p;
+        if ((a.dupIgnore || []).indexOf(b.id) >= 0 || (b.dupIgnore || []).indexOf(a.id) >= 0) continue;
+        let reason = "";
+        if (A.folded && A.folded === B.folded) reason = "Même nom";
+        else if (A.phone && A.phone === B.phone) reason = "Même téléphone";
+        else if (A.email && A.email === B.email) reason = "Même email";
+        else if (A.swapKey && A.swapKey === B.swapKey) reason = "Prénom/nom inversés ?";
+        else if (A.folded.length >= 4 && B.folded.length >= 4 && Math.abs(A.folded.length - B.folded.length) <= 2) {
+          const maxLen = Math.max(A.folded.length, B.folded.length);
+          const tolerance = maxLen <= 6 ? 1 : 2;
+          if (levDist(A.folded, B.folded) <= tolerance) reason = "Noms très proches";
+        }
+        if (reason) out.push({ a, b, reason });
+      }
+    }
+    return out;
+  }, [participants]);
   const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; return true; }).sort((a, b) => byNom(a.name || "", b.name || ""));
   const selCount = Object.keys(selected).filter((id) => selected[id]).length;
   const toggleSel = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }));
   const deleteSelected = () => { const ids = Object.keys(selected).filter((id) => selected[id]); if (!ids.length) return; if (!window.confirm("Supprimer " + ids.length + " membre(s) sélectionné(s) ?")) return; setParticipants((prev) => prev.filter((p) => !ids.includes(p.id))); setSelected({}); };
-  const mergeMembers = (keepId, dropId) => { setParticipants((prev) => { const keep = prev.find((p) => p.id === keepId), drop = prev.find((p) => p.id === dropId); if (!keep || !drop) return prev; const merged = { ...keep }; ["name", "phone", "email", "permis", "validation", "assurance"].forEach((f) => { if (!(merged[f] || "").trim() && (drop[f] || "").trim()) merged[f] = drop[f]; }); if (!merged.mobility && drop.mobility) merged.mobility = drop.mobility; if (!merged.role && drop.role) merged.role = drop.role; return prev.filter((p) => p.id !== dropId).map((p) => (p.id === keepId ? merged : p)); }); };
+  const mergeMembers = (keepId, dropId) => { setParticipants((prev) => { const keep = prev.find((p) => p.id === keepId), drop = prev.find((p) => p.id === dropId); if (!keep || !drop) return prev; const merged = { ...keep }; ["prenom", "nom", "phone", "email", "permis", "validation", "assurance"].forEach((f) => { if (!(merged[f] || "").trim() && (drop[f] || "").trim()) merged[f] = drop[f]; }); merged.name = ((merged.prenom || "") + " " + (merged.nom || "")).trim() || merged.name; if (!merged.mobility && drop.mobility) merged.mobility = drop.mobility; if (!merged.role && drop.role) merged.role = drop.role; return prev.filter((p) => p.id !== dropId).map((p) => (p.id === keepId ? merged : p)); }); };
   const dismissPair = (aId, bId) => { setParticipants((prev) => prev.map((p) => { if (p.id === aId) return { ...p, dupIgnore: [...(p.dupIgnore || []), bId] }; if (p.id === bId) return { ...p, dupIgnore: [...(p.dupIgnore || []), aId] }; return p; })); };
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
-  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, prenom: "", nom: "", name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
   const [dinerPrint, setDinerPrint] = useState(null);
@@ -604,7 +634,8 @@ function ParticipantsView({ participants, setParticipants }) {
           const nk = norm(gs.name), pk = dig(gs.phone), mk = norm(gs.email);
           if ((nk && (existName.has(nk) || seen.has("n:" + nk))) || (pk && (existPhone.has(pk) || seen.has("p:" + pk))) || (mk && (existMail.has(mk) || seen.has("m:" + mk)))) { skipped++; return; }
           if (nk) seen.add("n:" + nk); if (pk) seen.add("p:" + pk); if (mk) seen.add("m:" + mk);
-          additions.push({ id: `p-imp-${Date.now()}-${i}`, name: gs.name || "", phone: gs.phone || "", email: gs.email || "", permis: gs.permis || "", validation: gs.validation || "", assurance: gs.assurance || "", participe: false, invitation: true, role: gs.role || "chasseur", mobility: gs.mobility || null, diner: { vient: false, invitesSupplementaires: 0 } });
+          const spn = (gs.prenom || gs.nom) ? { prenom: gs.prenom || "", nom: gs.nom || "" } : splitFullName(gs.name);
+          additions.push({ id: `p-imp-${Date.now()}-${i}`, prenom: spn.prenom, nom: spn.nom, name: gs.name || "", phone: fixPhone(gs.phone || ""), email: gs.email || "", permis: gs.permis || "", validation: gs.validation || "", assurance: gs.assurance || "", participe: false, invitation: true, role: gs.role || "chasseur", mobility: gs.mobility || null, diner: { vient: false, invitesSupplementaires: 0 } });
         });
         added = additions.length; return [...prev, ...additions];
       });
@@ -665,8 +696,16 @@ function ParticipantsView({ participants, setParticipants }) {
             <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0 flex-1">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button>
           </div>
           {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
-            <div><label className="text-xs uppercase tracking-wide text-stone-400">Prénom et nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
-            <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label><input value={p.phone || ""} onChange={(e) => update(p.id, { phone: e.target.value })} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="text-xs uppercase tracking-wide text-stone-400">Prénom</label><input value={p.prenom || ""} onChange={(e) => update(p.id, { prenom: e.target.value, name: (e.target.value + " " + (p.nom || "")).trim() })} placeholder="Prénom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+              <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom</label><input value={p.nom || ""} onChange={(e) => update(p.id, { nom: e.target.value, name: ((p.prenom || "") + " " + e.target.value).trim() })} placeholder="Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            </div>
+            <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label>
+              <div className="flex items-center gap-2 mt-1">
+                <input value={p.phone || ""} onChange={(e) => update(p.id, { phone: e.target.value })} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+                {!isValidFrPhone(p.phone) && <span title="Numéro non valide (attendu : 06 ou 07 + 8 chiffres)" className="shrink-0 w-6 h-6 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-xs font-bold">✕</span>}
+              </div>
+            </div>
             <div><label className="text-xs uppercase tracking-wide text-stone-400">Email (pour les invitations)</label><input value={p.email || ""} onChange={(e) => update(p.id, { email: e.target.value })} placeholder="prenom.nom@email.fr" inputMode="email" autoCapitalize="none" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
             <div className="grid grid-cols-2 gap-2">
               <div><label className="text-xs uppercase tracking-wide text-stone-400">N° de permis</label><input value={p.permis || ""} onChange={(e) => update(p.id, { permis: e.target.value })} placeholder="Permis de chasser" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
