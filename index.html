@@ -196,7 +196,64 @@ function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == 
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
-const ESPECES = [{ key: "chevreuil", label: "Chevreuil", emoji: "🦌" }, { key: "sanglier", label: "Sanglier", emoji: "🐗" }, { key: "renard", label: "Renard", emoji: "🦊" }, { key: "lievre", label: "Lièvre", emoji: "🐇" }, { key: "cerf", label: "Cerf indifférencié", emoji: "🦌" }, { key: "cerf_c1", label: "Cerf C1", emoji: "🦌" }, { key: "cerf_c2", label: "Cerf C2", emoji: "🦌" }, { key: "biche", label: "Biche", emoji: "🦌" }, { key: "faon", label: "Faon", emoji: "🦌" }, { key: "autre", label: "Autre", emoji: "🐾" }];
+const ESPECES = [
+  { key: "chevreuil", label: "Chevreuil", emoji: "🦌" },
+  { key: "sanglier", label: "Sanglier", emoji: "🐗" },
+  { key: "cerf", label: "Cerf indifférencié", emoji: "🦌" },
+  { key: "cerf_c1", label: "Cerf C1", emoji: "🦌" },
+  { key: "cerf_c2", label: "Cerf C2", emoji: "🦌" },
+  { key: "biche", label: "Biche", emoji: "🦌" },
+  { key: "faon", label: "Faon", emoji: "🦌" },
+  { key: "daim", label: "Daim", emoji: "🦌" },
+  { key: "lievre", label: "Lièvre d'Europe", emoji: "🐇" },
+  { key: "renard", label: "Renard", emoji: "🦊" },
+  { key: "faisan", label: "Faisan commun", emoji: "🐓" },
+  { key: "faisan_venere", label: "Faisan vénéré", emoji: "🐓" },
+  { key: "perdrix_grise", label: "Perdrix grise", emoji: "🐦" },
+  { key: "perdrix_rouge", label: "Perdrix rouge", emoji: "🐦" },
+  { key: "caille", label: "Caille des blés", emoji: "🐦" },
+  { key: "becasse", label: "Bécasse des bois", emoji: "🐦" },
+  { key: "merle", label: "Merle noir", emoji: "🐦" },
+  { key: "grive", label: "Grive", emoji: "🐦" },
+  { key: "pigeon", label: "Pigeon", emoji: "🕊️" },
+  { key: "alouette", label: "Alouette des champs", emoji: "🐦" },
+  { key: "canard_colvert", label: "Colvert", emoji: "🦆" },
+  { key: "canard_souchet", label: "Souchet", emoji: "🦆" },
+  { key: "canard_pilet", label: "Pilet", emoji: "🦆" },
+  { key: "canard_siffleur", label: "Siffleur", emoji: "🦆" },
+  { key: "canard_chipeau", label: "Chipeau", emoji: "🦆" },
+  { key: "sarcelle_hiver", label: "Sarcelle d'hiver", emoji: "🦆" },
+  { key: "sarcelle_ete", label: "Sarcelle d'été", emoji: "🦆" },
+  { key: "fuligule_milouin", label: "Fuligule milouin", emoji: "🦆" },
+  { key: "fuligule_morillon", label: "Fuligule morillon", emoji: "🦆" },
+  { key: "foulque", label: "Foulque macroule", emoji: "🦆" },
+  { key: "becassine", label: "Bécassine des marais", emoji: "🦆" },
+  { key: "oie", label: "Oie cendrée", emoji: "🦆" },
+  { key: "autre", label: "Autre", emoji: "🐾" }
+];
+const FAMILLES = [
+  { groupe: "Grand gibier", key: "f_chevreuil", label: "Chevreuil", emoji: "🦌", sous: ["chevreuil"] },
+  { groupe: "Grand gibier", key: "f_sanglier", label: "Sanglier", emoji: "🐗", sous: ["sanglier"] },
+  { groupe: "Grand gibier", key: "f_cerf", label: "Cerf", emoji: "🦌", sous: ["cerf", "cerf_c1", "cerf_c2", "biche", "faon"] },
+  { groupe: "Grand gibier", key: "f_daim", label: "Daim", emoji: "🦌", sous: ["daim"] },
+  { groupe: "Petit gibier", key: "f_lievre", label: "Lièvre d'Europe", emoji: "🐇", sous: ["lievre"] },
+  { groupe: "Petit gibier", key: "f_renard", label: "Renard", emoji: "🦊", sous: ["renard"] },
+  { groupe: "Petit gibier", key: "f_faisan", label: "Faisan", emoji: "🐓", sous: ["faisan", "faisan_venere"] },
+  { groupe: "Petit gibier", key: "f_perdrix", label: "Perdrix", emoji: "🐦", sous: ["perdrix_grise", "perdrix_rouge"] },
+  { groupe: "Petit gibier", key: "f_caille", label: "Caille des blés", emoji: "🐦", sous: ["caille"] },
+  { groupe: "Petit gibier", key: "f_becasse", label: "Bécasse des bois", emoji: "🐦", sous: ["becasse"] },
+  { groupe: "Petit gibier", key: "f_merle", label: "Merle noir", emoji: "🐦", sous: ["merle"] },
+  { groupe: "Petit gibier", key: "f_grive", label: "Grive", emoji: "🐦", sous: ["grive"] },
+  { groupe: "Petit gibier", key: "f_pigeon", label: "Pigeon", emoji: "🕊️", sous: ["pigeon"] },
+  { groupe: "Petit gibier", key: "f_alouette", label: "Alouette des champs", emoji: "🐦", sous: ["alouette"] },
+  { groupe: "Gibier d'eau", key: "f_canard", label: "Canard", emoji: "🦆", sous: ["canard_colvert", "canard_souchet", "canard_pilet", "canard_siffleur", "canard_chipeau"] },
+  { groupe: "Gibier d'eau", key: "f_sarcelle", label: "Sarcelle", emoji: "🦆", sous: ["sarcelle_hiver", "sarcelle_ete"] },
+  { groupe: "Gibier d'eau", key: "f_fuligule", label: "Fuligule", emoji: "🦆", sous: ["fuligule_milouin", "fuligule_morillon"] },
+  { groupe: "Gibier d'eau", key: "f_foulque", label: "Foulque macroule", emoji: "🦆", sous: ["foulque"] },
+  { groupe: "Gibier d'eau", key: "f_becassine", label: "Bécassine des marais", emoji: "🦆", sous: ["becassine"] },
+  { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
+];
+function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -544,29 +601,67 @@ function PlanImagePicker({ image, onChange }) {
 
 function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
   const curSeason = seasonOf(new Date().toISOString());
+  const [openFam, setOpenFam] = useState(null);
   const kills = {};
   (journees || []).filter((j) => j.terrainId === tid && seasonOf(j.date) === curSeason).forEach((j) => (j.tableau || []).forEach((k) => { kills[k.espece] = (kills[k.espece] || 0) + (Number(k.quantite) || 0); }));
   const chevCap = (planChasse.chevreuil && planChasse.chevreuil.enabled && planChasse.chevreuil.target) || 0;
   const setCfg = (key, patch) => setPlanChasse({ ...planChasse, [key]: { ...planChasse[key], ...patch } });
   const capOf = (cfg) => (cfg.mode === "proportionnel") ? chevCap : (cfg.target || 0);
-  return (<div className="space-y-2">
+  const isOn = (k) => !!(planChasse[k] && planChasse[k].enabled);
+  const nbOn = (fam) => fam.sous.filter(isOn).length;
+
+  const especeBlock = (k, compact) => {
+    const e = especeOf(k);
+    const cfg = planChasse[k] || { enabled: false, mode: "proportionnel", target: 0 };
+    const tue = kills[k] || 0; const cap = capOf(cfg);
+    const pct = cap > 0 ? Math.min(100, Math.round((tue / cap) * 100)) : (tue > 0 ? 100 : 0);
+    const over = cap > 0 && tue >= cap;
+    return (<div key={k} className={compact ? "border-t border-stone-100 pt-2 mt-2" : ""}>
+      <button onClick={() => setCfg(k, { enabled: !cfg.enabled })} className="flex items-center gap-2 text-sm font-medium text-stone-800"><span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${cfg.enabled ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{cfg.enabled ? "✓" : ""}</span>{compact ? e.label : (e.emoji + " " + e.label)}</button>
+      {cfg.enabled && (<div className="mt-2 space-y-2 pl-6">
+        <div className="flex gap-1.5">{[["bracelets", "Bracelets"], ["objectif", "Objectif"], ["proportionnel", "Proportionnel"]].map(([m, lbl]) => (<button key={m} onClick={() => setCfg(k, { mode: m })} className={`flex-1 px-2 py-1 rounded text-[11px] font-medium border ${cfg.mode === m ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{lbl}</button>))}</div>
+        {cfg.mode !== "proportionnel" ? (<div className="flex items-center gap-2 text-sm"><label className="text-xs text-stone-500">{cfg.mode === "bracelets" ? "Bracelets attribués" : "Objectif"} :</label><input type="number" inputMode="numeric" value={cfg.target || 0} onChange={(ev) => setCfg(k, { target: Math.max(0, parseInt(ev.target.value || "0", 10) || 0) })} onFocus={(ev) => ev.target.select()} className="w-20 border border-stone-300 rounded px-2 py-1 bg-white" /></div>)
+          : <p className="text-[11px] text-stone-400">Mesuré sur l'échelle du chevreuil (plafond {chevCap || "à définir"}).</p>}
+        <div><div className="flex justify-between text-[11px] mb-0.5"><span className="text-stone-500">Prélevés cette saison</span><span className={over ? "text-red-700 font-semibold" : "text-stone-700 font-semibold"}>{tue}{cap > 0 ? " / " + cap : ""}</span></div><div className="h-2.5 rounded-full bg-stone-200 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: pct + "%", background: over ? "#b91c1c" : "#166534" }} /></div></div>
+      </div>)}
+    </div>);
+  };
+
+  const groupes = ["Grand gibier", "Petit gibier", "Gibier d'eau"];
+  return (<div className="space-y-3">
     <p className="text-xs text-stone-500">Active les espèces présentes sur ce territoire : elles apparaîtront dans le tableau, les prélèvements des chasseurs et les stats. Les jauges cumulent la saison {curSeason}.</p>
-    {ESPECES.filter((e) => e.key !== "autre").map((e) => {
-      const cfg = planChasse[e.key] || { enabled: false, mode: "proportionnel", target: 0 };
-      const tue = kills[e.key] || 0;
-      const cap = capOf(cfg);
-      const pct = cap > 0 ? Math.min(100, Math.round((tue / cap) * 100)) : (tue > 0 ? 100 : 0);
-      const over = cap > 0 && tue >= cap;
-      return (<div key={e.key} className={`border rounded-lg p-2.5 ${cfg.enabled ? "bg-white border-stone-300" : "bg-stone-50 border-stone-200"}`}>
-        <button onClick={() => setCfg(e.key, { enabled: !cfg.enabled })} className="flex items-center gap-2 text-sm font-medium text-stone-800"><span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${cfg.enabled ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{cfg.enabled ? "✓" : ""}</span>{e.emoji} {e.label}</button>
-        {cfg.enabled && (<div className="mt-2 space-y-2">
-          <div className="flex gap-1.5">{[["bracelets", "Bracelets"], ["objectif", "Objectif"], ["proportionnel", "Proportionnel"]].map(([m, lbl]) => (<button key={m} onClick={() => setCfg(e.key, { mode: m })} className={`flex-1 px-2 py-1 rounded text-[11px] font-medium border ${cfg.mode === m ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{lbl}</button>))}</div>
-          {cfg.mode !== "proportionnel" ? (<div className="flex items-center gap-2 text-sm"><label className="text-xs text-stone-500">{cfg.mode === "bracelets" ? "Bracelets attribués" : "Objectif"} :</label><input type="number" inputMode="numeric" value={cfg.target || 0} onChange={(ev) => setCfg(e.key, { target: Math.max(0, parseInt(ev.target.value || "0", 10) || 0) })} onFocus={(ev) => ev.target.select()} className="w-20 border border-stone-300 rounded px-2 py-1 bg-white" /></div>)
-            : <p className="text-[11px] text-stone-400">Mesuré sur l'échelle du chevreuil (plafond {chevCap || "à définir"}).</p>}
-          <div><div className="flex justify-between text-[11px] mb-0.5"><span className="text-stone-500">Prélevés cette saison</span><span className={over ? "text-red-700 font-semibold" : "text-stone-700 font-semibold"}>{tue}{cap > 0 ? " / " + cap : ""}</span></div><div className="h-2.5 rounded-full bg-stone-200 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: pct + "%", background: over ? "#b91c1c" : "#166534" }} /></div></div>
-        </div>)}
-      </div>);
-    })}
+    {groupes.map((g) => (<div key={g}>
+      <p className="text-[11px] uppercase tracking-wide text-stone-400 font-semibold mb-1.5">{g}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {FAMILLES.filter((f) => f.groupe === g).map((fam) => {
+          const single = fam.sous.length === 1;
+          const on = nbOn(fam) > 0;
+          const open = openFam === fam.key;
+          if (single) {
+            const k = fam.sous[0];
+            const cfg = planChasse[k] || { enabled: false };
+            return (<button key={fam.key} onClick={() => setCfg(k, { enabled: !cfg.enabled })} className={`text-left rounded-lg p-2.5 border flex items-center gap-2 ${cfg.enabled ? "bg-white border-emerald-500" : "bg-stone-50 border-stone-200"}`}>
+              <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${cfg.enabled ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{cfg.enabled ? "✓" : ""}</span>
+              <span className="text-sm font-medium text-stone-800 leading-tight">{fam.emoji} {fam.label}</span>
+            </button>);
+          }
+          return (<button key={fam.key} onClick={() => setOpenFam(open ? null : fam.key)} className={`text-left rounded-lg p-2.5 border flex items-center gap-2 ${on ? "bg-white border-emerald-500" : "bg-stone-50 border-stone-200"}`}>
+            <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{on ? "✓" : ""}</span>
+            <span className="text-sm font-medium text-stone-800 leading-tight flex-1">{fam.emoji} {fam.label}{on ? <span className="text-[10px] text-emerald-700 font-normal"> · {nbOn(fam)}</span> : null}</span>
+            {open ? <ChevronDown size={14} className="text-stone-400 shrink-0" /> : <ChevronRight size={14} className="text-stone-400 shrink-0" />}
+          </button>);
+        })}
+      </div>
+      {FAMILLES.filter((f) => f.groupe === g && f.sous.length > 1 && openFam === f.key).map((fam) => (
+        <div key={fam.key + "-open"} className="mt-2 border border-emerald-300 bg-white rounded-lg p-2.5">
+          <p className="text-xs font-semibold text-emerald-800 mb-1">{fam.emoji} {fam.label} — choisis les espèces présentes</p>
+          {fam.sous.map((k, ix) => especeBlock(k, ix > 0 || true))}
+        </div>))}
+    </div>))}
+    {FAMILLES.filter((f) => f.sous.length === 1 && isOn(f.sous[0])).length > 0 && (<div className="border-t border-stone-200 pt-2">
+      <p className="text-[11px] uppercase tracking-wide text-stone-400 font-semibold mb-1.5">Réglages des espèces activées</p>
+      <div className="space-y-2">{FAMILLES.filter((f) => f.sous.length === 1 && isOn(f.sous[0])).map((f) => (<div key={f.key} className="border border-stone-200 rounded-lg p-2.5 bg-white">{especeBlock(f.sous[0], false)}</div>))}</div>
+    </div>)}
   </div>);
 }
 function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete, onLiveCommit }) {
