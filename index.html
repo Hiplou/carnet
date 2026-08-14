@@ -2050,7 +2050,28 @@ function CarnetDeBattue() {
   return <CarnetApp key={session.user.id} session={session} onSignOut={() => SB.auth.signOut()} />;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<CarnetDeBattue />);
+class __ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null, info: null }; }
+  static getDerivedStateFromError(err) { return { err: err }; }
+  componentDidCatch(err, info) { this.setState({ err: err, info: info }); try { console.error(err, info); } catch (e) {} }
+  render() {
+    if (this.state.err) {
+      var msg = String((this.state.err && this.state.err.message) || this.state.err);
+      var stack = (this.state.info && this.state.info.componentStack) ? String(this.state.info.componentStack).split("\n").slice(0, 6).join("\n") : "";
+      return React.createElement("div", { style: { padding: 16, fontFamily: "-apple-system,sans-serif" } },
+        React.createElement("div", { style: { background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: 16 } },
+          React.createElement("h2", { style: { margin: "0 0 8px", fontSize: 18, color: "#991b1b" } }, "⚠️ Une erreur est survenue"),
+          React.createElement("p", { style: { margin: "0 0 10px", fontSize: 14, color: "#7f1d1d" } }, "Envoie cette information pour qu'on corrige :"),
+          React.createElement("pre", { style: { background: "#fff", border: "1px solid #fecaca", borderRadius: 8, padding: 10, fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#b91c1c", margin: 0 } }, msg + (stack ? "\n\n" + stack : "")),
+          React.createElement("button", { onClick: function () { location.reload(); }, style: { marginTop: 12, width: "100%", background: "#166534", color: "#fff", border: "none", borderRadius: 10, padding: 12, fontSize: 15, fontWeight: 700 } }, "Recharger l'application")
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<__ErrorBoundary><CarnetDeBattue /></__ErrorBoundary>);
 </script>
 <script>
 (function () {
