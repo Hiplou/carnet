@@ -630,6 +630,7 @@ function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
 
   const groupes = ["Grand gibier", "Petit gibier", "Gibier d'eau"];
   return (<div className="space-y-3">
+    <p className="text-[10px] text-stone-300">version 2026-08-14-b</p>
     <p className="text-xs text-stone-500">Active les espèces présentes sur ce territoire : elles apparaîtront dans le tableau, les prélèvements des chasseurs et les stats. Les jauges cumulent la saison {curSeason}.</p>
     {groupes.map((g) => (<div key={g}>
       <p className="text-[11px] uppercase tracking-wide text-stone-400 font-semibold mb-1.5">{g}</p>
