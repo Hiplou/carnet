@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.12";
+const APP_VERSION = "v1.13";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -690,12 +690,32 @@ function IgnMapPicker({ onCapture, onCancel }) {
 
 function PlanImagePicker({ image, onChange }) {
   const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [ign, setIgn] = useState(false);
+  const [cropMode, setCropMode] = useState(false); const [crop, setCrop] = useState({ x: 0, y: 0, w: 100, h: 100 });
+  const applyCrop = async () => {
+    if (!image) return; setBusy(true); setErr("");
+    try {
+      const im = await new Promise((res, rej) => { const i2 = new Image(); i2.onload = () => res(i2); i2.onerror = () => rej(new Error("Image illisible.")); i2.src = image; });
+      const sx = Math.round(im.naturalWidth * crop.x / 100), sy = Math.round(im.naturalHeight * crop.y / 100);
+      const sw = Math.max(1, Math.round(im.naturalWidth * crop.w / 100)), sh = Math.max(1, Math.round(im.naturalHeight * crop.h / 100));
+      const cv = document.createElement("canvas"); cv.width = sw; cv.height = sh;
+      cv.getContext("2d").drawImage(im, sx, sy, sw, sh, 0, 0, sw, sh);
+      onChange(cv.toDataURL("image/jpeg", 0.85));
+      setCrop({ x: 0, y: 0, w: 100, h: 100 }); setCropMode(false);
+    } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+  };
   const onFile = async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); setErr(""); try { onChange(await downscaleImage(file)); } catch (ex) { setErr(ex.message); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } };
   if (ign) return <IgnMapPicker onCancel={() => setIgn(false)} onCapture={(d) => { onChange(d); setIgn(false); }} />;
   return (<div className="space-y-2"><input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
-    <div className="flex gap-2 items-center flex-wrap"><button onClick={() => setIgn(true)} className="flex items-center gap-2 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><MapPin size={16} /> Choisir sur la carte IGN</button><button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Upload size={16} /> {image ? "Changer la photo" : "Importer une image"}</button>{image && <button onClick={() => onChange(null)} className="text-sm text-red-700">Retirer</button>}</div>
+    <div className="flex gap-2 items-center flex-wrap"><button onClick={() => setIgn(true)} className="flex items-center gap-2 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><MapPin size={16} /> Choisir sur la carte IGN</button><button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Upload size={16} /> {image ? "Changer la photo" : "Importer une image"}</button>{image && <button onClick={() => { setCrop({ x: 0, y: 0, w: 100, h: 100 }); setCropMode(true); }} className="flex items-center gap-2 bg-stone-100 border border-stone-300 text-stone-700 text-sm font-medium px-3 py-2 rounded-md"><Crop size={16} /> Rogner</button>}{image && <button onClick={() => onChange(null)} className="text-sm text-red-700">Retirer</button>}</div>
     {busy && <p className="text-sm text-stone-500">Préparation…</p>}{err && <p className="text-sm text-red-700">{err}</p>}
-    {image ? <img src={image} alt="" className="w-full rounded-md border border-stone-300" /> : <MapNotice>Importe une seule photo (capture satellite d'ensemble). Chaque traque en sera un recadrage.</MapNotice>}</div>);
+    {cropMode && image ? (<div className="space-y-2">
+      <p className="text-xs text-stone-500">Déplace le rectangle et tire ses coins pour garder la zone utile. Le reste sera supprimé définitivement.</p>
+      <CropBox image={image} crop={crop} setCrop={setCrop} />
+      <div className="flex gap-2">
+        <button onClick={() => setCropMode(false)} className="flex-1 bg-stone-100 border border-stone-300 text-stone-700 text-sm font-medium px-3 py-2 rounded-md">Annuler</button>
+        <button onClick={applyCrop} disabled={busy} className="flex-1 bg-emerald-800 disabled:bg-stone-400 text-white text-sm font-semibold px-3 py-2 rounded-md">{busy ? "…" : "✓ Rogner"}</button>
+      </div>
+    </div>) : image ? <img src={image} alt="" className="w-full rounded-md border border-stone-300" /> : <MapNotice>Importe une seule photo (capture satellite d'ensemble). Chaque traque en sera un recadrage.</MapNotice>}</div>);
 }
 
 function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
