@@ -555,7 +555,7 @@ function PrintOverlay({ html, onClose }) {
 }
 function ParticipantsView({ participants, setParticipants }) {
   const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
-  const [search, setSearch] = useState(""); const [selected, setSelected] = useState({}); const [dupPanel, setDupPanel] = useState(false);
+  const [search, setSearch] = useState(""); const [selected, setSelected] = useState({}); const [dupPanel, setDupPanel] = useState(false); const [mergePanel, setMergePanel] = useState(false);
   const nrm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
   const dg = (s) => (s || "").replace(/\D/g, "");
   const dupPairs = (() => { const out = []; for (let i = 0; i < participants.length; i++) for (let j = i + 1; j < participants.length; j++) { const a = participants[i], b = participants[j]; if ((a.dupIgnore || []).indexOf(b.id) >= 0 || (b.dupIgnore || []).indexOf(a.id) >= 0) continue; const na = foldName(a.name), nb = foldName(b.name); const pa = dg(a.phone), pb = dg(b.phone); const ea = nrm(a.email), eb = nrm(b.email); let reason = ""; if (na && na === nb) reason = "Même nom"; else if (pa && pa === pb) reason = "Même téléphone"; else if (ea && ea === eb) reason = "Même email"; else if (na && nb && na.length >= 3 && nb.length >= 3 && levDist(na, nb) <= 2) reason = "Noms très proches"; if (reason) out.push({ a, b, reason }); } return out; })();
@@ -611,23 +611,34 @@ function ParticipantsView({ participants, setParticipants }) {
       window.alert(added + " membre(s) ajouté(s)." + (skipped ? " " + skipped + " doublon(s) ignoré(s)." : ""));
     } catch (ex) { setImportErr(ex.message || "Import impossible."); } finally { setImporting(false); if (listFileRef.current) listFileRef.current.value = ""; }
   };
-  if (dupPanel) { const col = (m, other) => (<div className="flex-1 min-w-0 bg-white border border-stone-200 rounded-md p-2.5 space-y-1 flex flex-col">
+  const col = (m, other, onKeep) => (<div className="flex-1 min-w-0 bg-white border border-stone-200 rounded-md p-2.5 space-y-1 flex flex-col">
       <p className="font-semibold text-stone-800 text-sm truncate">{m.name || <span className="italic text-stone-400">(sans nom)</span>}</p>
       <p className="text-xs text-stone-500 truncate">📞 {m.phone || "—"}</p>
       <p className="text-xs text-stone-500 break-all">✉️ {m.email || "—"}</p>
       <p className="text-xs text-stone-500 truncate">🎫 {m.permis || "—"}</p>
       <p className="text-xs text-stone-500 truncate">🛡️ {m.assurance || "—"}</p>
       <p className="text-xs text-stone-500">{m.role === "rabatteur" ? "🐇 Rabatteur" : "🦌 Chasseur"}{m.mobility ? " · " + (m.mobility === "fauteuil" ? "Fauteuil" : "Canne") : ""}</p>
-      <button onClick={() => mergeMembers(m.id, other.id)} className="mt-auto w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-2 py-2 rounded-md">✓ Garder celui-ci</button>
+      <button onClick={onKeep} className="mt-auto w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-2 py-2 rounded-md">✓ Garder celui-ci</button>
     </div>);
-    return (<div className="space-y-3">
+  if (dupPanel) { return (<div className="space-y-3">
       <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Doublons possibles</h2><button onClick={() => setDupPanel(false)} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button></div>
       {dupPairs.length === 0 && <SectionCard className="p-6 text-center"><p className="text-3xl mb-2">🎉</p><p className="text-sm text-stone-600">Aucun doublon détecté.</p></SectionCard>}
       {dupPairs.map((pr, i) => (<div key={pr.a.id + "-" + pr.b.id} className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 space-y-2">
         <p className="text-xs font-medium text-amber-800">⚠️ {pr.reason} — garde le bon (l'autre est fusionné puis supprimé)</p>
-        <div className="flex gap-2 items-stretch">{col(pr.a, pr.b)}{col(pr.b, pr.a)}</div>
+        <div className="flex gap-2 items-stretch">{col(pr.a, pr.b, () => mergeMembers(pr.a.id, pr.b.id))}{col(pr.b, pr.a, () => mergeMembers(pr.b.id, pr.a.id))}</div>
         <button onClick={() => dismissPair(pr.a.id, pr.b.id)} className="w-full text-xs text-stone-500 hover:text-stone-700 py-1.5 border border-stone-200 rounded-md bg-white">Ce ne sont pas des doublons</button>
       </div>))}
+    </div>);
+  }
+  if (mergePanel) { const ids = Object.keys(selected).filter((id) => selected[id]); const ma = participants.find((p) => p.id === ids[0]); const mb = participants.find((p) => p.id === ids[1]);
+    if (!ma || !mb) { setMergePanel(false); return null; }
+    const doMerge = (keepId, dropId) => { mergeMembers(keepId, dropId); setMergePanel(false); setSelected({}); };
+    return (<div className="space-y-3">
+      <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Fusionner 2 membres</h2><button onClick={() => setMergePanel(false)} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button></div>
+      <div className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 space-y-2">
+        <p className="text-xs font-medium text-amber-800">Choisis lequel garder — l'autre sera fusionné dedans puis supprimé</p>
+        <div className="flex gap-2 items-stretch">{col(ma, mb, () => doMerge(ma.id, mb.id))}{col(mb, ma, () => doMerge(mb.id, ma.id))}</div>
+      </div>
     </div>);
   }
   return (<div className="space-y-6">
@@ -640,7 +651,7 @@ function ParticipantsView({ participants, setParticipants }) {
         <div className="relative flex-1 min-w-[160px]"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded-md px-3 py-1.5 text-sm bg-white" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 text-sm">✕</button>}</div>
         <button onClick={() => setDupPanel(true)} className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-md border shrink-0 bg-white text-stone-600 border-stone-300">⚠️ Doublons{dupPairs.length ? " (" + dupPairs.length + ")" : ""}</button>
       </div>
-      {selCount > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2"><span className="text-sm text-red-800 font-medium">{selCount} sélectionné(s)</span><div className="flex gap-3 items-center"><button onClick={() => setSelected({})} className="text-xs text-stone-600">Annuler</button><button onClick={deleteSelected} className="flex items-center gap-1 bg-red-700 hover:bg-red-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Trash2 size={13} /> Supprimer la sélection</button></div></div>}
+      {selCount > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2"><span className="text-sm text-red-800 font-medium">{selCount} sélectionné(s)</span><div className="flex gap-3 items-center">{selCount === 2 && <button onClick={() => setMergePanel(true)} className="flex items-center gap-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Merge size={13} /> Fusionner</button>}<button onClick={() => setSelected({})} className="text-xs text-stone-600">Annuler</button><button onClick={deleteSelected} className="flex items-center gap-1 bg-red-700 hover:bg-red-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Trash2 size={13} /> Supprimer la sélection</button></div></div>}
       {importErr && <p className="text-sm text-red-700">{importErr}</p>}
       <p className="text-xs text-stone-400">Import : Excel (.xlsx), CSV, Word (.docx), PDF ou texte. Colonnes reconnues : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
       {participants.length === 0 && <p className="text-sm text-stone-500 italic">Aucun membre. Clique « Ajouter » ou importe ta liste.</p>}
