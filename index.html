@@ -149,19 +149,24 @@ function Grip({ size = 16, className = "" }) {
     React.createElement("circle", { cx: 9, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 19, r: 1.4 }),
     React.createElement("circle", { cx: 15, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 19, r: 1.4 }));
 }
-function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, canal: j.canal || "" }; }
+function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, armes: j.armes || {}, canal: j.canal || "" }; }
 function normTirZone(z) { z = z || {}; return { dir: ((Number(z.dir) || 0) % 360 + 360) % 360, width: Math.max(10, Math.min(360, Number(z.width) || 60)) }; }
-function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, tir: { zones: tz } }; }
+function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, arme: m.arme || "indifferent", tir: { zones: tz } }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
 function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
 function splitFullName(full) { const parts = (full || "").trim().split(/\s+/).filter(Boolean); if (!parts.length) return { prenom: "", nom: "" }; if (parts.length === 1) return { prenom: parts[0], nom: "" }; return { prenom: parts[0], nom: parts.slice(1).join(" ") }; }
-function fixPhone(raw) { const s = (raw || "").trim(); if (!s) return s; const d = s.replace(/\D/g, ""); if (d.length === 9 && (d[0] === "6" || d[0] === "7")) return "0" + d; return s; }
+function formatPhone(raw) { let d = (raw || "").replace(/\D/g, ""); if (d.length > 10 && d.slice(0, 2) === "33") d = "0" + d.slice(2); if (d.length === 9 && (d[0] === "6" || d[0] === "7")) d = "0" + d; d = d.slice(0, 10); return d.replace(/(\d{2})(?=\d)/g, "$1 ").trim(); }
+function fixPhone(raw) { const s = (raw || "").trim(); if (!s) return s; return formatPhone(s); }
 function isValidFrPhone(raw) { const d = (raw || "").replace(/\D/g, ""); if (!d) return true; return d.length === 10 && (d.slice(0, 2) === "06" || d.slice(0, 2) === "07"); }
+const ARMES = [{ key: "rayee", label: "Rayée", short: "R", emoji: "🎯" }, { key: "lisse", label: "Lisse", short: "L", emoji: "🔫" }, { key: "arc", label: "Arc", short: "A", emoji: "🏹" }];
+function armeLabel(k) { const f = ARMES.find((a) => a.key === k); return f ? f.label : ""; }
+function armeShort(k) { const f = ARMES.find((a) => a.key === k); return f ? f.short : ""; }
+function armeOk(posteArme, hunterArme) { const p = posteArme || "indifferent"; if (p === "indifferent") return true; if (!hunterArme) return true; if (p === "arc") return hunterArme === "arc"; if (p === "rayee") return hunterArme === "rayee"; if (p === "lisse") return hunterArme === "lisse" || hunterArme === "rayee"; return true; }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
-function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == null && nom == null) { const sp = splitFullName(p.name); prenom = sp.prenom; nom = sp.nom; } prenom = prenom || ""; nom = nom || ""; const name = (prenom + " " + nom).trim() || p.name || ""; return { id: p.id, prenom, nom, name, phone: fixPhone(p.phone || ""), email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == null && nom == null) { const sp = splitFullName(p.name); prenom = sp.prenom; nom = sp.nom; } prenom = prenom || ""; nom = nom || ""; const name = (prenom + " " + nom).trim() || p.name || ""; return { id: p.id, prenom, nom, name, phone: fixPhone(p.phone || ""), email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, arme: p.arme || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
@@ -217,6 +222,38 @@ function extractRowsFromExcel(arrayBuffer) {
   const wb = XLSX.read(arrayBuffer, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws, { defval: "" });
+}
+function parseVCards(text) {
+  const out = [];
+  const raw = String(text || "").replace(/\r\n[ \t]/g, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const blocks = raw.split(/BEGIN:VCARD/i).slice(1);
+  const decode = (v, params) => {
+    let s = String(v || "");
+    const p = (params || "").toUpperCase();
+    if (p.indexOf("ENCODING=QUOTED-PRINTABLE") >= 0) { s = s.replace(/=\n/g, "").replace(/=([0-9A-F]{2})/gi, (m, h) => String.fromCharCode(parseInt(h, 16))); try { s = decodeURIComponent(escape(s)); } catch (e) {} }
+    return s.replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\n/gi, " ").trim();
+  };
+  blocks.forEach((blk) => {
+    const body = blk.split(/END:VCARD/i)[0];
+    let prenom = "", nom = "", fullName = "", phone = "", email = "";
+    body.split("\n").forEach((line) => {
+      if (!line.trim()) return;
+      const idx = line.indexOf(":"); if (idx < 0) return;
+      const left = line.slice(0, idx), value = line.slice(idx + 1);
+      const parts = left.split(";"); const key = (parts[0] || "").toUpperCase().replace(/^ITEM\d+\./, "");
+      const params = parts.slice(1).join(";");
+      const val = decode(value, params);
+      if (key === "N" && !nom && !prenom) { const seg = val.split(";"); nom = (seg[0] || "").trim(); prenom = (seg[1] || "").trim(); }
+      else if (key === "FN" && !fullName) fullName = val;
+      else if (key === "TEL" && !phone) phone = val;
+      else if (key === "EMAIL" && !email) email = val;
+    });
+    if (!prenom && !nom && fullName) { const sp = splitFullName(fullName); prenom = sp.prenom; nom = sp.nom; }
+    const name = (prenom + " " + nom).trim() || fullName;
+    if (!name && !phone && !email) return;
+    out.push({ name, prenom, nom, phone, email, permis: "", validation: "", assurance: "", role: "chasseur", mobility: null });
+  });
+  return out;
 }
 function rowsToGuests(rows) {
   if (!rows.length) return [];
@@ -403,6 +440,11 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
           <button onClick={() => patch({ accCanne: !m.accCanne })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${m.accCanne ? "bg-emerald-100 text-emerald-800 border-emerald-500" : "bg-white text-stone-500 border-stone-300"}`}>{m.accCanne ? "✓ " : ""}🦯 Canne</button>
         </div>
         <p className="text-[10px] text-stone-400 mt-1">Un poste fauteuil accepte aussi une canne. Visible par toi seulement (jamais côté chasseur).</p></div>
+      <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Arme idéale du poste</label>
+        <div className="flex gap-1.5 mt-1 flex-wrap">
+          {[{ v: "indifferent", l: "Indifférent" }].concat(ARMES.map((a) => ({ v: a.key, l: a.emoji + " " + a.label }))).map((o) => (<button key={o.v} onClick={() => patch({ arme: o.v })} className={`flex-1 min-w-[70px] px-2 py-2 rounded-md text-xs font-medium border ${(m.arme || "indifferent") === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.l}</button>))}
+        </div>
+        <p className="text-[10px] text-stone-400 mt-1">Rayée = carabine uniquement · Lisse = fusil, carabine tolérée · Arc = arc uniquement.</p></div>
       <div className="border-t border-stone-100 pt-2"><label className="text-[10px] uppercase tracking-wide text-stone-400">🎯 Zones de tir interdites (affichées au chasseur)</label>
         {image && <div className="mt-1"><TirPreview image={image} crop={crop} m={m} miradors={track.miradors} /></div>}
         <p className="text-[10px] text-stone-400 mt-1">Dessine les zones interdites (rouge). Le reste devient autorisé (vert) automatiquement, avec une marge de 30° hachurée de chaque côté.</p>
@@ -598,7 +640,7 @@ function ParticipantsView({ participants, setParticipants }) {
   const dismissPair = (aId, bId) => { setParticipants((prev) => prev.map((p) => { if (p.id === aId) return { ...p, dupIgnore: [...(p.dupIgnore || []), bId] }; if (p.id === bId) return { ...p, dupIgnore: [...(p.dupIgnore || []), aId] }; return p; })); };
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
-  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, prenom: "", nom: "", name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, prenom: "", nom: "", name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, arme: null, diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
   const [dinerPrint, setDinerPrint] = useState(null);
@@ -621,7 +663,8 @@ function ParticipantsView({ participants, setParticipants }) {
       else if (n.endsWith(".docx")) guests = parseGuestList(await extractDocxText(await file.arrayBuffer()));
       else if (n.endsWith(".pdf")) guests = parseGuestList(await extractPdfText(new Uint8Array(await file.arrayBuffer())));
       else if (n.endsWith(".txt")) guests = parseGuestList(await file.text());
-      else throw new Error("Format non reconnu. Utilise Excel (.xlsx), CSV, Word (.docx), PDF ou texte (.txt).");
+      else if (n.endsWith(".vcf") || n.endsWith(".vcard")) guests = parseVCards(await file.text());
+      else throw new Error("Format non reconnu. Utilise Excel (.xlsx), CSV, Word (.docx), PDF, texte (.txt) ou fiche contact (.vcf).");
       if (!guests.length) throw new Error("Aucun membre détecté dans le fichier.");
       let added = 0, skipped = 0;
       const norm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -678,7 +721,7 @@ function ParticipantsView({ participants, setParticipants }) {
   return (<div className="space-y-6">
     {dinerPrint && <PrintOverlay html={dinerPrint} onClose={() => setDinerPrint(null)} />}    <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Membres <span className="text-sm font-sans text-stone-400">({participants.length})</span></h2>
-        <div className="flex gap-2 flex-wrap"><input ref={listFileRef} type="file" accept=".xlsx,.xls,.csv,.docx,.pdf,.txt" onChange={onImportList} className="hidden" />
+        <div className="flex gap-2 flex-wrap"><input ref={listFileRef} type="file" accept=".xlsx,.xls,.csv,.docx,.pdf,.txt,.vcf,.vcard,text/vcard" onChange={onImportList} className="hidden" />
           <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer"}</button>
           <button onClick={addParticipant} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Ajouter</button></div></div>
       <div className="flex items-center gap-2 flex-wrap">
@@ -687,7 +730,8 @@ function ParticipantsView({ participants, setParticipants }) {
       </div>
       {selCount > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2"><span className="text-sm text-red-800 font-medium">{selCount} sélectionné(s)</span><div className="flex gap-3 items-center">{selCount === 2 && <button onClick={() => setMergePanel(true)} className="flex items-center gap-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Merge size={13} /> Fusionner</button>}<button onClick={() => setSelected({})} className="text-xs text-stone-600">Annuler</button><button onClick={deleteSelected} className="flex items-center gap-1 bg-red-700 hover:bg-red-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Trash2 size={13} /> Supprimer la sélection</button></div></div>}
       {importErr && <p className="text-sm text-red-700">{importErr}</p>}
-      <p className="text-xs text-stone-400">Import : Excel (.xlsx), CSV, Word (.docx), PDF ou texte. Colonnes reconnues : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
+      <p className="text-xs text-stone-400">Import : Excel (.xlsx), CSV, Word (.docx), PDF, texte ou fiche contact (.vcf). Colonnes reconnues : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
+      <p className="text-xs text-stone-400">📇 Depuis un contact iPhone : Contacts → la fiche → <b>Partager le contact</b> → <b>Enregistrer dans Fichiers</b>, puis « Importer » ici. (Tu peux en partager plusieurs d'un coup.)</p>
       {participants.length === 0 && <p className="text-sm text-stone-500 italic">Aucun membre. Clique « Ajouter » ou importe ta liste.</p>}
       {participants.length > 0 && filtered.length === 0 && <p className="text-sm text-stone-500 italic">Aucun résultat.</p>}
       {filtered.map((p) => { const isOpen = expanded === p.id;
@@ -703,7 +747,7 @@ function ParticipantsView({ participants, setParticipants }) {
             </div>
             <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label>
               <div className="flex items-center gap-2 mt-1">
-                <input value={p.phone || ""} onChange={(e) => update(p.id, { phone: e.target.value })} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+                <input value={p.phone || ""} onChange={(e) => { const raw = e.target.value; const prev = p.phone || ""; const endsWithSpace = /\s$/.test(raw); const isDeleting = raw.length < prev.length; update(p.id, { phone: isDeleting && endsWithSpace ? raw.replace(/\s+$/, "") : formatPhone(raw) }); }} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
                 {!isValidFrPhone(p.phone) && <span title="Numéro non valide (attendu : 06 ou 07 + 8 chiffres)" className="shrink-0 w-6 h-6 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-xs font-bold">✕</span>}
               </div>
             </div>
@@ -717,6 +761,9 @@ function ParticipantsView({ participants, setParticipants }) {
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Mobilité réduite (placement adapté)</p><div className="flex gap-2">
               {[{ v: null, l: "Aucune" }, { v: "canne", l: "🦯 Canne", ic: "c" }, { v: "fauteuil", l: "Fauteuil", ic: "f" }].map((o) => (<button key={o.l} onClick={() => update(p.id, { mobility: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.mobility || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.ic === "f" ? <Fauteuil size={13} color={(p.mobility || null) === o.v ? "#fff" : "#166534"} /> : null} {o.l}</button>))}
             </div><p className="text-[11px] text-stone-400 mt-1">Fauteuil = accès aux postes fauteuil. Canne = postes canne ou fauteuil.</p></div>
+            <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Arme habituelle</p><div className="flex gap-2">
+              {[{ v: null, l: "Non renseignée" }].concat(ARMES.map((a) => ({ v: a.key, l: a.emoji + " " + a.label }))).map((o) => (<button key={o.l} onClick={() => update(p.id, { arme: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.arme || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.l}</button>))}
+            </div><p className="text-[11px] text-stone-400 mt-1">Sert au placement : une carabine (rayée) peut aller sur un poste lisse, l'inverse est interdit.</p></div>
             <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
           </div>)}
         </SectionCard>); })}
@@ -771,10 +818,20 @@ function SafetyGate({ safety, onAccept }) {
 }
 
 // ---------- Poster les fusils ----------
-function HunterList({ pending, selectedHunter, setSelectedHunter }) {
+function HunterList({ pending, selectedHunter, setSelectedHunter, armeOf, onSetArme }) {
+  const [armeEdit, setArmeEdit] = useState(null);
   return (<SectionCard className="p-3 sm:col-span-1"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Fusils à placer</p>
     <div className="space-y-1.5">{pending.length === 0 && <p className="text-sm text-stone-400 italic">Tous les fusils sont placés 🎯</p>}
-      {pending.map((p) => (<button key={p.id} onClick={() => setSelectedHunter(p.id)} className={`w-full text-left px-2.5 py-1.5 rounded text-sm flex items-center gap-2 border ${selectedHunter === p.id ? "bg-amber-800 text-stone-50 border-amber-800" : "bg-white border-stone-300 text-stone-700"}`}>🦌 {p.name}</button>))}</div>
+      {pending.map((p) => { const a = armeOf ? armeOf(p) : (p.arme || null); const isEdit = armeEdit === p.id;
+        return (<div key={p.id}>
+          <div className={`w-full rounded border flex items-center gap-1 ${selectedHunter === p.id ? "bg-amber-800 border-amber-800" : "bg-white border-stone-300"}`}>
+            <button onClick={() => setSelectedHunter(p.id)} className={`flex-1 text-left px-2.5 py-1.5 text-sm ${selectedHunter === p.id ? "text-stone-50" : "text-stone-700"}`}>🦌 {p.name}</button>
+            <button onClick={() => setArmeEdit(isEdit ? null : p.id)} title="Arme du jour" className={`shrink-0 mr-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${a ? (selectedHunter === p.id ? "bg-white/20 text-stone-50 border-white/40" : "bg-stone-100 text-stone-600 border-stone-300") : (selectedHunter === p.id ? "bg-white/10 text-stone-200 border-white/30" : "bg-white text-stone-400 border-stone-200")}`}>{a ? armeShort(a) : "—"}</button>
+          </div>
+          {isEdit && onSetArme && (<div className="flex gap-1 mt-1 mb-1.5 flex-wrap">
+            {[{ v: null, l: "—" }].concat(ARMES.map((x) => ({ v: x.key, l: x.label }))).map((o) => (<button key={o.l} onClick={() => { onSetArme(p.id, o.v); setArmeEdit(null); }} className={`px-2 py-1 rounded text-[11px] font-medium border ${a === o.v ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.l}</button>))}
+          </div>)}
+        </div>); })}</div>
     {selectedHunter && <p className="text-xs text-amber-800 mt-2">Clique un poste pour l'y placer.</p>}</SectionCard>);
 }
 const ARROW_COLORS = ["#2563eb", "#dc2626", "#ea580c", "#7c3aed", "#059669", "#111827", "#f59e0b"];
@@ -834,8 +891,10 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
     </div>
   </div>);
 }
-function PosterFusils({ terrain, track, placements, participants, presentIds, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
+function PosterFusils({ terrain, track, placements, participants, presentIds, journeeArmes, onSetArme, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const [selectedHunter, setSelectedHunter] = useState(null);
+  const armeOfHunter = (h) => ((journeeArmes && journeeArmes[h.id]) || h.arme || null);
+  const assignWithCheck = (hid, mid) => { const h = participants.find((x) => x.id === hid); const m = track.miradors.find((x) => x.id === mid); if (h && m && !armeOk(m.arme, armeOfHunter(h))) { if (!window.confirm("⚠️ " + (h.name || "Ce chasseur") + " est en " + (armeLabel(armeOfHunter(h)) || "arme non renseignée") + " et le poste " + m.label + " est réservé « " + armeLabel(m.arme) + " ».\n\nPlacer quand même ?")) return; } onAssign(hid, mid); };
   const assignedIds = Object.keys(placements);
   const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id)).sort((a, b) => byNom(a.name || "", b.name || ""));
   const freeMiradors = track.miradors.filter((m) => !Object.values(placements).includes(m.id));
@@ -848,12 +907,12 @@ function PosterFusils({ terrain, track, placements, participants, presentIds, on
   const hasPlacements = Object.keys(placements).length > 0;
   return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={14} /> Retour à la journée</button>
     <h3 className="font-serif text-lg text-stone-800">Poster les fusils — {track.name}</h3>
-    <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} />
+    <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} armeOf={armeOfHunter} onSetArme={onSetArme} />
       <SectionCard className="p-3 sm:col-span-2">
         <div className="flex items-center justify-between mb-2 gap-2 flex-wrap"><p className="text-xs uppercase tracking-wide text-stone-400">Le chiffre = priorité · liseré vert = à utiliser</p><div className="flex gap-1.5">{pending.length > 0 && freeMiradors.length > 0 && <button onClick={() => onAutoFill(track, pending, sortedFree)} className="text-xs font-medium bg-emerald-700 text-stone-50 px-2.5 py-1 rounded">Remplir par priorité</button>}{hasPlacements && <button onClick={() => onClearAll(track)} className="text-xs font-medium bg-stone-200 hover:bg-stone-300 text-stone-700 px-2.5 py-1 rounded">Décocher tous</button>}</div></div>
         {!terrain.planImage ? <MapNotice>Photo manquante. Importe ta sauvegarde ou rajoute la photo (onglet Territoires).</MapNotice>
           : track.miradors.length === 0 ? <MapNotice>Cette traque n'a pas de miradors (onglet Territoires).</MapNotice>
-          : <AssignSurface image={terrain.planImage} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={onAssign} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} />}</SectionCard></div>
+          : <AssignSurface image={terrain.planImage} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={assignWithCheck} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} />}</SectionCard></div>
   </div>);
 }
 
@@ -1428,6 +1487,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const setAttribution = (jid, key, patch) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const a = { ...(j.attributions || {}) }; a[key] = { ...(a[key] || { mode: "libre", count: 1, note: "" }), ...patch }; return { ...j, attributions: a }; }));
   const toggleChef = (jid, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const chefs = j.chefs || []; const on = chefs.indexOf(hid) >= 0; if (on) { const cl = { ...(j.chefLignes || {}) }; Object.keys(cl).forEach((mid) => { if (cl[mid] === hid) delete cl[mid]; }); return { ...j, chefs: chefs.filter((x) => x !== hid), chefLignes: cl }; } return { ...j, chefs: [...chefs, hid] }; }));
   const setChefLigne = (jid, mid, chefId) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const cl = { ...(j.chefLignes || {}) }; if (!chefId) delete cl[mid]; else cl[mid] = chefId; return { ...j, chefLignes: cl }; }));
+  const setArmeJour = (jid, hid, arme) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const am = { ...(j.armes || {}) }; if (!arme) delete am[hid]; else am[hid] = arme; return { ...j, armes: am }; }));
   const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...(j.placements || {}), [trackId]: { ...((j.placements || {})[trackId] || {}), [hid]: mid } } })));
   const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...((j.placements || {})[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...(j.placements || {}), [trackId]: t } }; }));
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
@@ -1436,9 +1496,10 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     const okFauteuil = (m) => !!m.accFauteuil;
     const okCanne = (m) => !!m.accCanne || !!m.accFauteuil;
     const jCur = journees.find((j) => j.id === jid);
+    const armeOf = (h) => ((jCur && jCur.armes && jCur.armes[h.id]) || h.arme || null);
     let free = sortedFree.slice();
     const cur = { ...((jCur && jCur.placements && jCur.placements[track.id]) || {}) };
-    const place = (hunters, ok) => { shuffle(hunters.slice()).forEach((h) => { const ordered = tierOrder(free.filter(ok)); if (!ordered.length) return; const post = ordered[0]; cur[h.id] = post.id; free = free.filter((m) => m.id !== post.id); }); };
+    const place = (hunters, ok) => { shuffle(hunters.slice()).forEach((h) => { const a = armeOf(h); const cands = free.filter(ok); const ordered = tierOrder(cands.filter((m) => armeOk(m.arme, a))); const fallback = tierOrder(cands); const post = ordered[0] || fallback[0]; if (!post) return; cur[h.id] = post.id; free = free.filter((m) => m.id !== post.id); }); };
     place(pending.filter((h) => h.mobility === "fauteuil"), okFauteuil);
     place(pending.filter((h) => h.mobility === "canne"), okCanne);
     place(pending.filter((h) => h.mobility !== "fauteuil" && h.mobility !== "canne"), () => true);
@@ -1457,7 +1518,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
 
   if (chefView) { const journee = journees.find((j) => j.id === chefView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const chef = participants.find((p) => p.id === chefView.chefId); if (!journee || !terrain || !chef) { setChefView(null); return null; } return <ChefAssign terrain={terrain} journee={journee} chefId={chefView.chefId} chefName={chef.name} participants={participants} onToggle={(mid, chefId) => setChefLigne(journee.id, mid, chefId)} onBack={() => setChefView(null)} />; }
   if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
-    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
+    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} journeeArmes={journee.armes || {}} onSetArme={(hid, arme) => setArmeJour(journee.id, hid, arme)} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
   if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
     return <EnvoiChasseurs journee={journee} terrain={terrain} participants={participants} safety={safety} onBack={() => setShareView(null)} />; }
 
@@ -1860,11 +1921,11 @@ function CarnetApp({ session, onSignOut }) {
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
     const add = (rows, fb, name) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [fb]), name);
-    add(participants.map((p) => ({ Nom: p.name, Téléphone: p.phone || "", Participe: yn(p.participe), Invité: yn(p.invitation), Rôle: p.role || "", Dîner: yn(p.diner?.vient), Invités_sup: p.diner?.invitesSupplementaires || 0, id: p.id })), { Nom: "" }, "Participants");
+    add(participants.map((p) => ({ Nom: p.name, Prénom_: p.prenom || "", Nom_: p.nom || "", Téléphone: p.phone || "", Participe: yn(p.participe), Invité: yn(p.invitation), Rôle: p.role || "", Arme: p.arme || "", Mobilité: p.mobility || "", Dîner: yn(p.diner?.vient), Invités_sup: p.diner?.invitesSupplementaires || 0, id: p.id })), { Nom: "" }, "Participants");
     add(terrains.map((t) => ({ Territoire: t.name, id: t.id })), { Territoire: "" }, "Territoires");
     const trk = []; terrains.forEach((t) => t.tracks.forEach((k) => trk.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Couleur: k.color, crop_x: k.crop?.x ?? 0, crop_y: k.crop?.y ?? 0, crop_w: k.crop?.w ?? 100, crop_h: k.crop?.h ?? 100 })));
     add(trk, { Traque: "" }, "Traques");
-    const mir = []; terrains.forEach((t) => t.tracks.forEach((k) => k.miradors.forEach((m) => mir.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Mirador: m.label, MiradorId: m.id, gx: m.gx, gy: m.gy, Priorite: m.priority || 1, Consignes: m.consignes || "" }))));
+    const mir = []; terrains.forEach((t) => t.tracks.forEach((k) => k.miradors.forEach((m) => mir.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Mirador: m.label, MiradorId: m.id, gx: m.gx, gy: m.gy, Priorite: m.priority || 1, Arme: m.arme || "indifferent", Consignes: m.consignes || "" }))));
     add(mir, { Mirador: "" }, "Miradors");
     const tab = []; journees.forEach((j) => (j.tableau || []).forEach((k) => tab.push({ JourneeId: j.id, Date: j.date, Espece: k.espece, EspeceLibre: k.especeLabel || "", Quantite: k.quantite || 0, TireurId: k.tireurId || "" })));
     add(tab, { JourneeId: "" }, "Tableau");
@@ -1903,12 +1964,12 @@ function CarnetApp({ session, onSignOut }) {
     const P = sh("Participants"), T = sh("Territoires"), TRK = sh("Traques"), M = sh("Miradors"), J = sh("Journées"), PL = sh("Placements"), PH = sh("_Photos"), CO = sh("Consignes"), SO = sh("Sonneries");
     const photoMap = {}; PH.forEach((r) => { if (!r.Kind) return; const key = `${r.Kind}|${r.OwnerId}|${r.PhotoIndex || 0}`; (photoMap[key] = photoMap[key] || []).push({ c: Number(r.Chunk) || 0, d: String(r.Data || "") }); });
     const blob = (key) => (photoMap[key] ? photoMap[key].sort((a, b) => a.c - b.c).map((x) => x.d).join("") : null);
-    const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: (function(){ var rr = String(r.Rôle || r.Role || "").toLowerCase(); return rr.indexOf("rab") >= 0 ? "rabatteur" : (rr ? "chasseur" : null); })(), mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })() }));
+    const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: (function(){ var rr = String(r.Rôle || r.Role || "").toLowerCase(); return rr.indexOf("rab") >= 0 ? "rabatteur" : (rr ? "chasseur" : null); })(), mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })(), arme: (function(){ var a=String(r.Arme||"").toLowerCase(); return a.indexOf("ray")>=0?"rayee":(a.indexOf("liss")>=0?"lisse":(a.indexOf("arc")>=0?"arc":null)); })(), prenom: r["Prénom_"]!=null?String(r["Prénom_"]):undefined, nom: r["Nom_"]!=null?String(r["Nom_"]):undefined }));
     const terrs = T.filter((r) => r.Territoire || r.id).map((r) => ({ id: r.id || `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: r.Territoire || "Territoire", planImage: blob(`plan|${r.id}|0`), tracks: [] }));
     const terrById = Object.fromEntries(terrs.map((t) => [t.id, t]));
     TRK.filter((r) => r.TraqueId).forEach((r) => { const t = terrById[r.TerritoireId]; if (!t) return; t.tracks.push({ id: r.TraqueId, name: r.Traque || "Traque", color: r.Couleur || "#dc2626", crop: { x: Number(r.crop_x) || 0, y: Number(r.crop_y) || 0, w: Number(r.crop_w) || 100, h: Number(r.crop_h) || 100 }, miradors: [] }); });
     const trkById = {}; terrs.forEach((t) => t.tracks.forEach((k) => { trkById[k.id] = k; }));
-    M.filter((r) => r.MiradorId).forEach((r) => { const k = trkById[r.TraqueId]; if (!k) return; const photos = []; for (let pi = 0; ; pi++) { const b = blob(`mirador|${r.MiradorId}|${pi}`); if (!b) break; photos.push(b); } k.miradors.push({ id: r.MiradorId, label: r.Mirador || "Poste", gx: Number(r.gx) || 50, gy: Number(r.gy) || 50, priority: Number(r.Priorite) || 1, consignes: r.Consignes || "", photos }); });
+    M.filter((r) => r.MiradorId).forEach((r) => { const k = trkById[r.TraqueId]; if (!k) return; const photos = []; for (let pi = 0; ; pi++) { const b = blob(`mirador|${r.MiradorId}|${pi}`); if (!b) break; photos.push(b); } k.miradors.push({ id: r.MiradorId, label: r.Mirador || "Poste", gx: Number(r.gx) || 50, gy: Number(r.gy) || 50, priority: Number(r.Priorite) || 1, arme: r.Arme || "indifferent", consignes: r.Consignes || "", photos }); });
     terrs.forEach((t) => { if (!t.tracks.length) t.tracks.push({ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }); });
     const jours = J.filter((r) => r.Date || r.id).map((r, i) => ({ id: r.id || `j-${Date.now()}-${i}`, date: excelDate(r.Date), terrainId: r.TerritoireId || null, placements: {}, tableau: [] }));
     const jourById = Object.fromEntries(jours.map((j) => [j.id, j]));
