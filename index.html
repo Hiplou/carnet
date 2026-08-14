@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.7";
+const APP_VERSION = "v1.8";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -2061,8 +2061,10 @@ function CarnetApp({ session, onSignOut }) {
     (async () => {
       try {
         const getLS = async (key, fb) => { try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
-        const gh = await getLS(K.github, DEFAULT_GITHUB);
+        const ghKey = K.github + ":" + session.user.id;
+        const gh = await getLS(ghKey, null);
         setGithub({ ...DEFAULT_GITHUB, ...(gh || {}) });
+        try { await window.storage.delete(K.github); } catch (e) {}
         const uid = session.user.id; const cacheKey = "cb_supa_" + uid;
         let d = null;
         if (SB) {
@@ -2150,7 +2152,7 @@ function CarnetApp({ session, onSignOut }) {
   }, [loaded]);
 
   // Reglages GitHub (publication) gardes par appareil, en local
-  useEffect(() => { if (!loaded) return; try { window.storage.set(K.github, JSON.stringify(github)); } catch (e) {} }, [github, loaded]);
+  useEffect(() => { if (!loaded || !session) return; try { window.storage.set(K.github + ":" + session.user.id, JSON.stringify(github)); } catch (e) {} }, [github, loaded]);
 
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
