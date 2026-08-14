@@ -1,0 +1,1932 @@
+import React, { useState, useEffect, useRef } from "react";
+import mammoth from "mammoth";
+import * as XLSX from "xlsx";
+import {
+  Users, MapPin, CalendarDays, ChevronDown, ChevronRight, Plus, Check, X,
+  Crosshair, ArrowLeft, Target, Trash2, Upload, Download, FolderOpen,
+  AlertTriangle, Crop, FileText, Shield, Bell, Phone, Send, Share2, Image as ImageIcon, BookOpen, Merge
+} from "lucide-react";
+
+// ============================================================
+//  CARNET DE BATTUE — v4
+//  Nouveautés : téléphone des invités · photos + consignes par poste ·
+//  onglet Sécurité éditable + pop-up d'accueil · partage WhatsApp des
+//  postes aux chasseurs (texte + image, poste mis en évidence) ·
+//  bouton Partager (feuille iOS) pour la sauvegarde Excel.
+// ============================================================
+
+const FULL_CROP = { x: 0, y: 0, w: 100, h: 100 };
+const DEFAULT_CROP = { x: 12, y: 12, w: 76, h: 76 };
+const PALETTE = ["#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#2563eb", "#7c3aed", "#db2777", "#57534e", "#000000"];
+
+const DEFAULT_SAFETY = {
+  consignes: [
+    "Angle de sécurité 30° : repérer ses voisins de poste dès l'arrivée et se signaler.",
+    "Identifier formellement le gibier avant de tirer ; jamais sur un bruit ou un mouvement.",
+    "Tir fichant (vers le sol), jamais à hauteur d'homme.",
+    "Interdiction de tirer vers routes, habitations, chemins publics, traqueurs et postes voisins.",
+    "Interdiction de tirer un animal qui entre dans la traque (sauf consigne du chef de battue).",
+    "Effet fluo orange obligatoire.",
+    "Arme déchargée et ouverte pour tout déplacement, sous étui en voiture.",
+    "Rester à son poste tant que la fin de traque n'est pas sonnée.",
+    "Alcool zéro pendant l'action de chasse.",
+  ],
+  sonneries: [
+    { evenement: "Début de traque", signal: "1 coup long" },
+    { evenement: "Fin de traque", signal: "1 coup long + rigodon" },
+    { evenement: "Renard", signal: "3 coups" },
+    { evenement: "Chevreuil", signal: "4 coups" },
+    { evenement: "Sanglier", signal: "5 coups" },
+    { evenement: "Animal mort", signal: "sonnerie de la vue + rigodon" },
+    { evenement: "Arrêt de sécurité", signal: "on cesse le tir, on NE BOUGE PAS de son poste, reprise annoncée par 1 coup long" },
+  ],
+};
+
+const initialParticipants = [];
+const initialTerrains = [
+  { id: "t1", name: "Bois de l'Île (Mareil-en-Champagne)", planImage: null, tracks: [
+    { id: "trk1", name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] },
+    { id: "trk2", name: "Traque 2", color: "#2563eb", crop: { ...DEFAULT_CROP }, miradors: [] },
+    { id: "trk3", name: "Traque 3", color: "#ca8a04", crop: { ...DEFAULT_CROP }, miradors: [] },
+  ] },
+];
+const initialJournees = [{ id: "j1", date: "2026-11-08", terrainId: "t1", placements: {} }];
+
+// ---------- Normalisation ----------
+function Fauteuil({ size = 15, color = "#166534" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
+    React.createElement("circle", { cx: 16, cy: 4, r: 1 }),
+    React.createElement("path", { d: "m18 19 1-7-6 1" }),
+    React.createElement("path", { d: "m5 8 3-3 5.5 3-2.36 3.5" }),
+    React.createElement("path", { d: "M4.24 14.5a5 5 0 0 0 6.88 6" }),
+    React.createElement("path", { d: "M13.76 17.5a5 5 0 0 0-6.88-6" }));
+}
+function Pencil({ size = 14, className = "" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", className: className },
+    React.createElement("path", { d: "M12 20h9" }),
+    React.createElement("path", { d: "M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" }));
+}
+function Grip({ size = 16, className = "" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "currentColor", stroke: "none", className: className },
+    React.createElement("circle", { cx: 9, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 19, r: 1.4 }),
+    React.createElement("circle", { cx: 15, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 19, r: 1.4 }));
+}
+function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, canal: j.canal || "" }; }
+function normTirZone(z) { z = z || {}; return { dir: ((Number(z.dir) || 0) % 360 + 360) % 360, width: Math.max(10, Math.min(360, Number(z.width) || 60)) }; }
+function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, tir: { zones: tz } }; }
+function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
+function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
+function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
+function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
+function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
+function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
+function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
+
+function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
+const ESPECES = [{ key: "chevreuil", label: "Chevreuil", emoji: "🦌" }, { key: "sanglier", label: "Sanglier", emoji: "🐗" }, { key: "renard", label: "Renard", emoji: "🦊" }, { key: "lievre", label: "Lièvre", emoji: "🐇" }, { key: "cerf", label: "Cerf indifférencié", emoji: "🦌" }, { key: "cerf_c1", label: "Cerf C1", emoji: "🦌" }, { key: "cerf_c2", label: "Cerf C2", emoji: "🦌" }, { key: "biche", label: "Biche", emoji: "🦌" }, { key: "faon", label: "Faon", emoji: "🦌" }, { key: "autre", label: "Autre", emoji: "🐾" }];
+const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
+function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
+function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
+function especeEmoji(esp) { const f = ESPECES.find((x) => x.key === esp); return f ? f.emoji : "🐾"; }
+
+// ---------- Utils ----------
+const PHOTO_CHUNK = 30000;
+const yn = (b) => (b ? "oui" : "non");
+const isYes = (v) => String(v).trim().toLowerCase() === "oui";
+function excelDate(v) { if (v == null || v === "") return new Date().toISOString().slice(0, 10); if (typeof v === "number") { try { const d = XLSX.SSF.parse_date_code(v); if (d) return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`; } catch {} } return String(v).slice(0, 10); }
+function chunkStr(s) { const out = []; for (let i = 0; i < s.length; i += PHOTO_CHUNK) out.push(s.slice(i, i + PHOTO_CHUNK)); return out; }
+function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+function dataUrlToFile(dataUrl, name) { const parts = dataUrl.split(","); const mime = (parts[0].match(/:(.*?);/) || [])[1] || "image/jpeg"; const bin = atob(parts[1]); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return new File([arr], name, { type: mime }); }
+function waPhone(phone) { let d = String(phone || "").replace(/[^\d]/g, ""); if (d.length === 10 && d.startsWith("0")) d = "33" + d.slice(1); return d; }
+
+function downscaleImage(file, maxDim = 1500, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => { const img = new Image(); img.onload = () => { try { let { width, height } = img; if (width > maxDim || height > maxDim) { const r = Math.min(maxDim / width, maxDim / height); width = Math.round(width * r); height = Math.round(height * r); } const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height; canvas.getContext("2d").drawImage(img, 0, 0, width, height); resolve(canvas.toDataURL("image/jpeg", quality)); } catch { reject(new Error("Traitement de l'image impossible")); } }; img.onerror = () => reject(new Error("Image illisible (format non supporté ?)")); img.src = reader.result; };
+    reader.onerror = () => reject(new Error("Lecture du fichier impossible"));
+    reader.readAsDataURL(file);
+  });
+}
+
+// PDF / Word
+let pdfPromise = null;
+function loadPdfJs() { if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib); if (pdfPromise) return pdfPromise; pdfPromise = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; s.onload = () => { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); } catch (e) { rej(e); } }; s.onerror = () => rej(new Error("Lecteur PDF indisponible (connexion ?)")); document.head.appendChild(s); }); return pdfPromise; }
+async function extractPdfText(data) { const lib = await loadPdfJs(); const pdf = await lib.getDocument({ data }).promise; const lines = []; for (let p = 1; p <= pdf.numPages; p++) { const page = await pdf.getPage(p); const content = await page.getTextContent(); const rows = {}; content.items.forEach((it) => { const y = Math.round(it.transform[5]); (rows[y] = rows[y] || []).push(it); }); Object.keys(rows).map(Number).sort((a, b) => b - a).forEach((y) => { lines.push(rows[y].sort((a, b) => a.transform[4] - b.transform[4]).map((i) => i.str).join(" ")); }); } return lines.join("\n"); }
+async function extractDocxText(arrayBuffer) { const r = await mammoth.extractRawText({ arrayBuffer }); return r.value || ""; }
+function parseGuestList(text) {
+  const out = [];
+  text.split(/\r?\n/).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean).forEach((l) => {
+    const em = l.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+    const email = em ? em[0] : "";
+    let rest = em ? l.replace(em[0], " ") : l;
+    const pm = rest.match(/(\+?\d[\d .\-]{7,}\d)/);
+    const phone = pm ? pm[1].replace(/[ .\-]/g, "") : "";
+    let name = (pm ? rest.replace(pm[1], " ") : rest).replace(/[:;,|\t]+/g, " ").replace(/\s+/g, " ").replace(/[:;,\-]+$/, "").trim();
+    if (name && !/[a-zA-ZÀ-ÿ]/.test(name)) name = "";
+    if (/^(liste|invit|nom\b|pr[ée]nom|adresse|t[ée]l|email|e-mail|date|convives?|d[îi]ner|membres?)/i.test(name)) return;
+    if (name.length > 60) name = name.slice(0, 60);
+    if (!name && !email && !phone) return;
+    if (!name && (email || phone)) return; // ligne orpheline (email/tel sans nom) : ignorée
+    out.push({ name, phone, email });
+  });
+  return out;
+}
+function extractRowsFromExcel(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { defval: "" });
+}
+function rowsToGuests(rows) {
+  if (!rows.length) return [];
+  const headers = Object.keys(rows[0]);
+  const findCol = (matchers, exclude) => headers.find((h) => { const hn = String(h).toLowerCase().trim(); if (exclude && exclude.some((e) => hn.includes(e))) return false; return matchers.some((m) => hn.includes(m)); });
+  const cPrenom = findCol(["prénom", "prenom"]);
+  const cNom = findCol(["nom"], ["prénom", "prenom"]);
+  const cTel = findCol(["tél", "tel", "phone", "portable", "mobile", "gsm", "numéro", "numero"]);
+  const cMail = findCol(["mail", "courriel"]);
+  const cPermis = findCol(["permis"]);
+  const cValid = findCol(["validation", "valid"]);
+  const cAssur = findCol(["assurance", "assur"]);
+  const cRole = findCol(["rôle", "role"]);
+  const cMob = findCol(["mobilité", "mobilite", "mobil"]);
+  const g = (r, c) => (c ? String(r[c] == null ? "" : r[c]).trim() : "");
+  const out = [];
+  rows.forEach((r) => {
+    let name = "";
+    if (cPrenom || cNom) name = [g(r, cPrenom), g(r, cNom)].filter(Boolean).join(" ").trim();
+    if (!name) { const first = headers.length ? g(r, headers[0]) : ""; if (/[a-zA-ZÀ-ÿ]/.test(first)) name = first; }
+    const email = g(r, cMail);
+    let phone = g(r, cTel); if (phone) phone = phone.replace(/[ .\-]/g, "");
+    const mobRaw = g(r, cMob).toLowerCase();
+    const mobility = mobRaw.indexOf("fauteuil") >= 0 ? "fauteuil" : (mobRaw.indexOf("canne") >= 0 ? "canne" : null);
+    const roleRaw = g(r, cRole).toLowerCase();
+    const role = roleRaw.indexOf("rabatteur") >= 0 ? "rabatteur" : "chasseur";
+    if (!name && !email && !phone) return;
+    out.push({ name, phone, email, permis: g(r, cPermis), validation: g(r, cValid), assurance: g(r, cAssur), role, mobility });
+  });
+  return out;
+}
+
+// Image de partage (traque recadrée, poste en évidence)
+async function buildTrackImage(planImage, track, targetMiradorId, title, subtitle) {
+  const img = await loadImg(planImage);
+  const W = img.naturalWidth, H = img.naturalHeight, crop = track.crop || FULL_CROP;
+  const sx = crop.x / 100 * W, sy = crop.y / 100 * H, sw = crop.w / 100 * W, sh = crop.h / 100 * H;
+  const scale = Math.min(1, 1400 / sw), cw = Math.round(sw * scale), ch = Math.round(sh * scale);
+  const head = Math.round(cw * 0.09) + 44;
+  const canvas = document.createElement("canvas"); canvas.width = cw; canvas.height = ch + head;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#1c1917"; ctx.fillRect(0, 0, cw, head);
+  ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  ctx.fillStyle = "#fafaf9"; ctx.font = `bold ${Math.round(head * 0.32)}px sans-serif`; ctx.fillText(title, 16, head * 0.36);
+  ctx.fillStyle = "#d6d3d1"; ctx.font = `${Math.round(head * 0.24)}px sans-serif`; ctx.fillText(subtitle, 16, head * 0.72);
+  ctx.drawImage(img, sx, sy, sw, sh, 0, head, cw, ch);
+  (track.miradors || []).forEach((m) => {
+    const lx = (m.gx - crop.x) / crop.w * cw, ly = (m.gy - crop.y) / crop.h * ch + head;
+    if (lx < 0 || lx > cw || ly < head || ly > ch + head) return;
+    const target = m.id === targetMiradorId;
+    ctx.beginPath(); ctx.arc(lx, ly, target ? 17 : 9, 0, Math.PI * 2);
+    ctx.fillStyle = target ? "#b45309" : (track.color || "#dc2626"); ctx.fill();
+    ctx.lineWidth = target ? 5 : 2; ctx.strokeStyle = "#fff"; ctx.stroke();
+    const label = m.label || ""; const fs = Math.round(cw * 0.02) + 6;
+    ctx.font = `${target ? "bold " : ""}${fs}px sans-serif`; ctx.textAlign = "center";
+    const tw = ctx.measureText(label).width; const by = ly + (target ? 22 : 13);
+    ctx.fillStyle = "rgba(28,25,23,.82)"; ctx.fillRect(lx - tw / 2 - 5, by, tw + 10, fs + 8);
+    ctx.fillStyle = "#fff"; ctx.fillText(label, lx, by + (fs + 8) / 2); ctx.textAlign = "left";
+  });
+  return await new Promise((res) => canvas.toBlob((b) => res(new File([b], "poste.png", { type: "image/png" })), "image/png", 0.85));
+}
+
+// ---------- Petits composants ----------
+function Toggle({ value, onChange, labelOn = "Oui", labelOff = "Non" }) {
+  return (<button onClick={() => onChange(!value)} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium border transition-colors ${value ? "bg-emerald-800 border-emerald-800 text-stone-50" : "bg-stone-100 border-stone-300 text-stone-500"}`}>{value ? <Check size={14} /> : <X size={14} />}{value ? labelOn : labelOff}</button>);
+}
+function SectionCard({ children, className = "", onClick }) { return <div onClick={onClick} className={`bg-stone-50 border border-stone-300 rounded-lg shadow-sm ${className}`}>{children}</div>; }
+function RoleSelector({ value, onChange }) {
+  const options = [{ key: "chasseur", label: "🦌 Chasseur" }, { key: "rabatteur", label: "🐇 Rabatteur" }];
+  return (<div className="inline-flex rounded-full border border-stone-300 overflow-hidden">{options.map((o) => (<button key={o.key} onClick={() => onChange(value === o.key ? null : o.key)} className={`px-3 py-1 text-sm font-medium ${value === o.key ? "bg-emerald-800 text-stone-50" : "bg-stone-100 text-stone-500 hover:bg-stone-200"}`}>{o.label}</button>))}</div>);
+}
+function MapNotice({ children }) { return <div className="min-h-32 py-6 rounded-md bg-gradient-to-br from-emerald-900 via-emerald-800 to-stone-700 flex items-center justify-center text-center text-stone-200 text-sm px-4">{children}</div>; }
+function ColorPicker({ value, onChange }) {
+  return (<div className="flex items-center gap-1.5 flex-wrap">{PALETTE.map((c) => (<button key={c} onClick={() => onChange(c)} className={`w-6 h-6 rounded-full border-2 ${value === c ? "border-stone-800" : "border-stone-300"}`} style={{ backgroundColor: c }} />))}<label className="w-6 h-6 rounded-full border-2 border-stone-300 overflow-hidden relative cursor-pointer"><span className="absolute inset-0 bg-gradient-to-br from-red-500 via-green-500 to-blue-500" /><input type="color" value={value || "#dc2626"} onChange={(e) => onChange(e.target.value)} className="opacity-0 w-full h-full cursor-pointer" /></label></div>);
+}
+function useImageAR(src) { const [ar, setAr] = useState(0); useEffect(() => { if (!src) { setAr(0); return; } let ok = true; const im = new Image(); im.onload = () => ok && setAr(im.naturalWidth / im.naturalHeight); im.src = src; return () => { ok = false; }; }, [src]); return ar; }
+function cropWrapperStyle(crop, ar) { const pb = ar > 0 ? (crop.h / crop.w) / ar * 100 : (crop.h / crop.w) * 100; return { position: "relative", width: "100%", height: 0, paddingBottom: `${pb}%`, overflow: "hidden", borderRadius: 6 }; }
+function cropBgStyle(image, crop) { const fw = crop.w / 100, fh = crop.h / 100, fx = crop.x / 100, fy = crop.y / 100; return { position: "absolute", inset: 0, backgroundImage: `url(${image})`, backgroundRepeat: "no-repeat", backgroundSize: `${100 / fw}% ${100 / fh}%`, backgroundPosition: `${fw < 1 ? (fx / (1 - fw)) * 100 : 0}% ${fh < 1 ? (fy / (1 - fh)) * 100 : 0}%` }; }
+
+// ---------- Recadrage ----------
+function CropBox({ image, crop, setCrop }) {
+  const boxRef = useRef(null); const drag = useRef(null); const cropRef = useRef(crop); cropRef.current = crop; const MIN = 8;
+  const pct = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); return { x: Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)), y: Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)) }; };
+  useEffect(() => {
+    const onMove = (e) => { if (!drag.current || !boxRef.current) return; e.preventDefault(); const p = pct(e.clientX, e.clientY); const c = { ...cropRef.current }; const d = drag.current;
+      if (d.type === "move") { c.x = Math.max(0, Math.min(100 - c.w, d.ox + (p.x - d.px))); c.y = Math.max(0, Math.min(100 - c.h, d.oy + (p.y - d.py))); }
+      else { let x1 = c.x, y1 = c.y, x2 = c.x + c.w, y2 = c.y + c.h; if (d.type.includes("l")) x1 = Math.min(p.x, x2 - MIN); if (d.type.includes("r")) x2 = Math.max(p.x, x1 + MIN); if (d.type.includes("t")) y1 = Math.min(p.y, y2 - MIN); if (d.type.includes("b")) y2 = Math.max(p.y, y1 + MIN); c.x = x1; c.y = y1; c.w = x2 - x1; c.h = y2 - y1; }
+      setCrop({ x: +c.x.toFixed(2), y: +c.y.toFixed(2), w: +c.w.toFixed(2), h: +c.h.toFixed(2) }); };
+    const onUp = () => { drag.current = null; };
+    window.addEventListener("pointermove", onMove, { passive: false }); window.addEventListener("pointerup", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+  }, [setCrop]);
+  const startMove = (e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} const p = pct(e.clientX, e.clientY); drag.current = { type: "move", ox: crop.x, oy: crop.y, px: p.x, py: p.y }; };
+  const startHandle = (type) => (e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} drag.current = { type }; };
+  const handle = (pos, style) => (<div onPointerDown={startHandle(pos)} style={{ position: "absolute", width: 22, height: 22, touchAction: "none", ...style }} className="rounded-full bg-white border-2 border-emerald-700 shadow -translate-x-1/2 -translate-y-1/2" />);
+  return (<div ref={boxRef} className="relative select-none rounded-md overflow-hidden border border-stone-300" style={{ touchAction: "none" }}>
+    <img src={image} alt="" className="w-full block" draggable={false} style={{ pointerEvents: "none" }} />
+    <div onPointerDown={startMove} style={{ position: "absolute", left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.w}%`, height: `${crop.h}%`, boxShadow: "0 0 0 9999px rgba(0,0,0,.45)", touchAction: "none" }} className="border-2 border-emerald-400 cursor-move">
+      {handle("tl", { left: 0, top: 0 })}{handle("tr", { left: "100%", top: 0 })}{handle("bl", { left: 0, top: "100%" })}{handle("br", { left: "100%", top: "100%" })}
+    </div></div>);
+}
+
+function PlaceMiradors({ image, track, updateTrack }) {
+  const crop = track.crop || FULL_CROP; const ar = useImageAR(image);
+  const boxRef = useRef(null); const drag = useRef(null); const moved = useRef(false); const mRef = useRef(track.miradors); mRef.current = track.miradors; const [sel, setSel] = useState(null);
+  const toGlobal = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); const lx = Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)); const ly = Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)); return { gx: crop.x + (lx / 100) * crop.w, gy: crop.y + (ly / 100) * crop.h }; };
+  useEffect(() => {
+    const onMove = (e) => { if (!drag.current || !boxRef.current) return; e.preventDefault(); const { gx, gy } = toGlobal(e.clientX, e.clientY); moved.current = true; updateTrack({ miradors: mRef.current.map((m) => (m.id === drag.current ? { ...m, gx: +gx.toFixed(2), gy: +gy.toFixed(2) } : m)) }); };
+    const onUp = () => { drag.current = null; };
+    window.addEventListener("pointermove", onMove, { passive: false }); window.addEventListener("pointerup", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+  }, [updateTrack, crop.x, crop.y, crop.w, crop.h]);
+  const onClick = (e) => { if (moved.current) { moved.current = false; return; } const { gx, gy } = toGlobal(e.clientX, e.clientY); const id = `m-${Date.now()}`; updateTrack({ miradors: [...track.miradors, { id, label: `Poste ${track.miradors.length + 1}`, gx: +gx.toFixed(2), gy: +gy.toFixed(2), photos: [], consignes: "" }] }); setSel(id); };
+  return (<div>
+    <p className="text-xs uppercase tracking-wide text-stone-400 mb-1.5">Clique pour poser un mirador · glisse une pastille pour la déplacer</p>
+    <div ref={boxRef} onClick={onClick} style={{ ...cropWrapperStyle(crop, ar), touchAction: "none" }} className="border border-stone-300 cursor-crosshair select-none">
+      <div style={cropBgStyle(image, crop)} />
+      {track.miradors.map((m) => { const lx = ((m.gx - crop.x) / crop.w) * 100, ly = ((m.gy - crop.y) / crop.h) * 100; if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null; const s = sel === m.id;
+        return (<div key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none" }} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5" onClick={(e) => { e.stopPropagation(); setSel(m.id); }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSel(m.id); drag.current = m.id; moved.current = false; }}>
+          <span className={`rounded-full border-2 shadow ${s ? "border-stone-900 w-4 h-4" : "border-white w-3.5 h-3.5"}`} style={{ backgroundColor: track.color }} />
+          <span className="text-[9px] leading-tight bg-stone-900/70 text-stone-50 px-1 rounded whitespace-nowrap">{m.label}{(m.photos && m.photos.length) ? " 📷" : ""}</span>
+        </div>); })}
+    </div></div>);
+}
+
+// Editeur d'un mirador (nom, consignes, photos)
+function tirRender(zones) {
+  var n = zones.length; if (!n) return { reds: [], bands: [] };
+  var Z = zones.map(function (z) { return { l: ((z.dir - z.width / 2) % 360 + 360) % 360, r: ((z.dir + z.width / 2) % 360 + 360) % 360, w: z.width, dir: z.dir }; });
+  Z.sort(function (a, b) { return a.dir - b.dir; });
+  var ml = [], mr = [];
+  for (var i = 0; i < n; i++) { var j = (i + 1) % n; var g = ((Z[j].l - Z[i].r) % 360 + 360) % 360; var me = Math.min(30, Math.max(0, (g - 12) / 2)); mr[i] = me; ml[j] = me; }
+  var reds = [], bands = [];
+  for (var k = 0; k < n; k++) { reds.push({ start: Z[k].l, width: Z[k].w }); if (ml[k] > 0.5) bands.push({ start: Z[k].l - ml[k], width: ml[k] }); if (mr[k] > 0.5) bands.push({ start: Z[k].r, width: mr[k] }); }
+  return { reds: reds, bands: bands };
+}
+function TirPreview({ image, crop, m, miradors }) {
+  if (!image) return null;
+  const c = crop || { x: 0, y: 0, w: 100, h: 100 };
+  const lx = (m.gx - c.x) / c.w * 100, ly = (m.gy - c.y) / c.h * 100;
+  const fw = c.w / 100, fh = c.h / 100, fx = c.x / 100, fy = c.y / 100;
+  const disk = { position: "absolute", left: lx + "%", top: ly + "%", width: "2400px", height: "2400px", transform: "translate(-50%,-50%)", borderRadius: "50%", pointerEvents: "none" };
+  const zones = (m.tir && m.tir.zones) || [];
+  const tr = tirRender(zones);
+  const band = (b, k) => <div key={k} style={{ ...disk, background: "repeating-linear-gradient(45deg, rgba(248,113,113,.55) 0 6px, rgba(255,255,255,.9) 6px 12px)", WebkitMaskImage: `conic-gradient(from ${b.start}deg, #000 0deg ${b.width}deg, transparent ${b.width}deg 360deg)`, maskImage: `conic-gradient(from ${b.start}deg, #000 0deg ${b.width}deg, transparent ${b.width}deg 360deg)` }} />;
+  return (<div style={{ position: "relative", width: "100%", paddingBottom: "68%", overflow: "hidden", borderRadius: 8, border: "1px solid #d6d3d1" }}>
+    <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${image})`, backgroundSize: `${100 / fw}% ${100 / fh}%`, backgroundPosition: `${fw < 1 ? fx / (1 - fw) * 100 : 0}% ${fh < 1 ? fy / (1 - fh) * 100 : 0}%` }} />
+    {zones.length ? <div style={{ ...disk, background: "rgba(134,239,172,0.28)" }} /> : null}
+    {tr.bands.map((b, i) => band(b, "bd" + i))}
+    {tr.reds.map((r, i) => <div key={"r" + i} style={{ ...disk, background: `conic-gradient(from ${r.start}deg, rgba(252,165,165,0.55) 0deg ${r.width}deg, transparent ${r.width}deg 360deg)` }} />)}
+    {(miradors || []).filter((nm) => nm.id !== m.id).map((nm) => { const nx = (nm.gx - c.x) / c.w * 100, ny = (nm.gy - c.y) / c.h * 100; if (nx < -3 || nx > 103 || ny < -3 || ny > 103) return null; return (<div key={nm.id} style={{ position: "absolute", left: nx + "%", top: ny + "%", transform: "translate(-50%,-50%)", pointerEvents: "none" }}><div style={{ width: 9, height: 9, borderRadius: "50%", background: "#fff", border: "2px solid #78716c", margin: "0 auto" }} /><div style={{ fontSize: 8, background: "rgba(255,255,255,.85)", borderRadius: 3, padding: "0 2px", color: "#57534e", whiteSpace: "nowrap", marginTop: 1 }}>{nm.label}</div></div>); })}
+    <div style={{ position: "absolute", left: lx + "%", top: ly + "%", width: 13, height: 13, borderRadius: "50%", background: "#1c1917", border: "2px solid #fff", transform: "translate(-50%,-50%)", boxShadow: "0 0 0 1px rgba(0,0,0,.4)" }} />
+  </div>);
+}
+function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, image, crop }) {
+  const [open, setOpen] = useState(false); const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [renaming, setRenaming] = useState(false);
+  const patch = (p) => updateTrack({ miradors: track.miradors.map((x) => (x.id === m.id ? { ...x, ...p } : x)) });
+  const del = () => updateTrack({ miradors: track.miradors.filter((x) => x.id !== m.id) });
+  const addPhoto = async (e) => { const f = e.target.files?.[0]; if (!f) return; setBusy(true); try { const d = await downscaleImage(f, 1100, 0.55); patch({ photos: [...(m.photos || []), d] }); } catch {} finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } };
+  const rmPhoto = (i) => patch({ photos: (m.photos || []).filter((_, k) => k !== i) });
+  return (<div data-mid={m.id} className={`border rounded ${isDragging ? "opacity-60 ring-2 ring-amber-400 " : ""}${(m.accFauteuil || m.accCanne) ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
+    <div className="flex items-center gap-1.5 px-2 py-1.5">
+      <button onPointerDown={(e) => { e.preventDefault(); onDragStart && onDragStart(m.id); }} title="Glisser pour réordonner" className="shrink-0 text-stone-300 hover:text-stone-500 touch-none px-0.5"><Grip size={16} /></button>
+      {renaming ? (
+        <input value={m.label} autoFocus onChange={(e) => patch({ label: e.target.value })} onBlur={() => setRenaming(false)} onKeyDown={(e) => { if (e.key === "Enter") setRenaming(false); }} className="flex-1 text-sm border border-amber-300 rounded px-1.5 py-0.5 bg-white outline-none" />
+      ) : (
+        <button onClick={() => setOpen((o) => !o)} className="flex-1 text-left text-sm text-stone-800 min-w-0 flex items-center gap-1.5"><Target size={12} className="text-amber-800 shrink-0" /><span className="truncate">{m.label}</span>{open ? <ChevronDown size={13} className="text-stone-400 shrink-0" /> : <ChevronRight size={13} className="text-stone-400 shrink-0" />}</button>
+      )}
+      {(m.accFauteuil || m.accCanne) ? <span className="text-[11px] shrink-0" title="Accessible mobilité réduite">{m.accFauteuil ? <Fauteuil size={13} /> : "🦯"}</span> : null}
+      {(m.photos && m.photos.length) ? <span className="text-[10px] text-stone-400 shrink-0">📷{m.photos.length}</span> : null}
+      {inCommon ? <span className="text-[10px] shrink-0" title="Reçoit une consigne commune">🔗</span> : null}
+      <button onClick={() => setRenaming((r) => !r)} title="Renommer" className="shrink-0 text-stone-400 hover:text-amber-700 p-0.5"><Pencil size={14} /></button>
+      <button onClick={() => { if (window.confirm("Supprimer « " + (m.label || "ce poste") + " » ?")) del(); }} title="Supprimer" className="shrink-0 text-stone-400 hover:text-red-700 p-0.5"><Trash2 size={14} /></button>
+    </div>
+    {open && (<div className="border-t border-stone-100 px-2 py-2 space-y-2">
+      <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Priorité d'attribution</label>
+        <div className="flex gap-1.5 mt-1">{[1, 2, 3, 4].map((n) => (<button key={n} onClick={() => patch({ priority: n })} className={`w-9 h-8 rounded text-sm font-bold border ${(m.priority || 1) === n ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-white text-stone-600 border-stone-300"}`}>{n}</button>))}</div>
+        <p className="text-[10px] text-stone-400 mt-1">1 = poste rempli en priorité quand il y a peu de chasseurs.</p></div>
+      <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Accessibilité (mobilité réduite)</label>
+        <div className="flex gap-2 mt-1">
+          <button onClick={() => patch({ accFauteuil: !m.accFauteuil })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${m.accFauteuil ? "bg-emerald-100 text-emerald-800 border-emerald-500" : "bg-white text-stone-500 border-stone-300"}`}>{m.accFauteuil ? "✓ " : ""}<Fauteuil size={13} /> Fauteuil</button>
+          <button onClick={() => patch({ accCanne: !m.accCanne })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${m.accCanne ? "bg-emerald-100 text-emerald-800 border-emerald-500" : "bg-white text-stone-500 border-stone-300"}`}>{m.accCanne ? "✓ " : ""}🦯 Canne</button>
+        </div>
+        <p className="text-[10px] text-stone-400 mt-1">Un poste fauteuil accepte aussi une canne. Visible par toi seulement (jamais côté chasseur).</p></div>
+      <div className="border-t border-stone-100 pt-2"><label className="text-[10px] uppercase tracking-wide text-stone-400">🎯 Zones de tir interdites (affichées au chasseur)</label>
+        {image && <div className="mt-1"><TirPreview image={image} crop={crop} m={m} miradors={track.miradors} /></div>}
+        <p className="text-[10px] text-stone-400 mt-1">Dessine les zones interdites (rouge). Le reste devient autorisé (vert) automatiquement, avec une marge de 30° hachurée de chaque côté.</p>
+        {(m.tir.zones || []).map((z, zi) => (<div key={zi} className="bg-red-50 border border-red-200 rounded p-2 mt-1.5 space-y-1">
+          <div className="flex items-center justify-between"><span className="text-xs font-semibold text-red-800">Zone interdite {zi + 1}</span><button onClick={() => patch({ tir: { zones: m.tir.zones.filter((_, k) => k !== zi) } })} className="text-stone-400 hover:text-red-700"><Trash2 size={13} /></button></div>
+          <div className="flex items-center gap-2 text-xs text-stone-600"><span className="w-16">Direction</span><input type="range" min="0" max="359" value={z.dir} onChange={(e) => patch({ tir: { zones: m.tir.zones.map((zz, k) => k === zi ? { ...zz, dir: Number(e.target.value) } : zz) } })} className="flex-1" /><span className="w-9 text-right">{z.dir}°</span></div>
+          <div className="flex items-center gap-2 text-xs text-stone-600"><span className="w-16">Angle</span><input type="range" min="10" max="360" value={z.width} onChange={(e) => patch({ tir: { zones: m.tir.zones.map((zz, k) => k === zi ? { ...zz, width: Number(e.target.value) } : zz) } })} className="flex-1" /><span className="w-9 text-right">{z.width}°</span></div>
+        </div>))}
+        <button onClick={() => patch({ tir: { zones: [...(m.tir.zones || []), { dir: 180, width: 60 }] } })} className="mt-1.5 text-xs font-medium text-red-800 border border-red-300 bg-white rounded px-2 py-1 flex items-center gap-1"><Plus size={13} /> Ajouter une zone interdite</button>
+      </div>
+      <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Consignes du poste (envoyées au chasseur)</label>
+        <textarea value={m.consignes || ""} onChange={(e) => patch({ consignes: e.target.value })} rows={2} placeholder="Ex. Ne pas tirer vers le chemin à droite. Voisin à 40 m." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mt-1" />
+</div>
+      <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Photos du poste</label>
+        <div className="flex gap-2 flex-wrap mt-1">
+          {(m.photos || []).map((ph, i) => (<div key={i} className="relative"><img src={ph} alt="" className="w-16 h-16 object-cover rounded border border-stone-300" /><button onClick={() => rmPhoto(i)} className="absolute -top-1.5 -right-1.5 bg-red-700 text-white rounded-full p-0.5"><X size={11} /></button></div>))}
+          <input ref={fileRef} type="file" accept="image/*" onChange={addPhoto} className="hidden" />
+          <button onClick={() => fileRef.current?.click()} disabled={busy} className="w-16 h-16 rounded border-2 border-dashed border-stone-300 text-stone-400 flex items-center justify-center"><Plus size={18} /></button>
+        </div>{busy && <p className="text-xs text-stone-400 mt-1">Préparation…</p>}</div>
+    </div>)}
+  </div>);
+}
+
+function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsignesCommunes }) {
+  const [showCrop, setShowCrop] = useState(false); const crop = track.crop || DEFAULT_CROP;
+  const [dragId, setDragId] = useState(null);
+  const groups = consignesCommunes || [];
+  const commonMids = new Set(); groups.forEach((g) => (g.miradorIds || []).forEach((id) => commonMids.add(id)));
+  const reorder = (fromId, toId) => { if (fromId === toId) return; const arr = track.miradors.slice(); const fi = arr.findIndex((x) => x.id === fromId), ti = arr.findIndex((x) => x.id === toId); if (fi < 0 || ti < 0) return; const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv); updateTrack({ miradors: arr }); };
+  useEffect(() => { if (!dragId) return; const mv = (e) => { const el = document.elementFromPoint(e.clientX, e.clientY); const row = el && el.closest ? el.closest("[data-mid]") : null; if (row) { const over = row.getAttribute("data-mid"); if (over && over !== dragId) reorder(dragId, over); } }; const up = () => setDragId(null); window.addEventListener("pointermove", mv, { passive: false }); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up); return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); }; }, [dragId, track.miradors]);
+  const setGroups = setConsignesCommunes;
+  const addGroup = () => setGroups && setGroups((prev) => [...(prev || []), { id: "cc-" + Date.now(), text: "", miradorIds: [] }]);
+  const updGroup = (gid, patch) => setGroups && setGroups((prev) => (prev || []).map((g) => (g.id === gid ? { ...g, ...patch } : g)));
+  const rmGroup = (gid) => setGroups && setGroups((prev) => (prev || []).filter((g) => g.id !== gid));
+  const toggleMid = (gid, mid) => setGroups && setGroups((prev) => (prev || []).map((g) => (g.id === gid ? { ...g, miradorIds: (g.miradorIds || []).indexOf(mid) >= 0 ? (g.miradorIds || []).filter((x) => x !== mid) : [...(g.miradorIds || []), mid] } : g)));
+  const allInTraque = (g) => track.miradors.length > 0 && track.miradors.every((m) => (g.miradorIds || []).indexOf(m.id) >= 0);
+  const toggleAllTraque = (g) => { const on = allInTraque(g); const tids = track.miradors.map((m) => m.id); updGroup(g.id, { miradorIds: on ? (g.miradorIds || []).filter((id) => tids.indexOf(id) < 0) : Array.from(new Set([...(g.miradorIds || []), ...tids])) }); };
+  if (!image) return <MapNotice>Importe d'abord la photo du territoire dans l'onglet « 🗺️ Cartes », puis reviens ici pour recadrer la traque.</MapNotice>;
+  return (<div className="space-y-3">
+    <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom de la traque</label>
+      <input value={track.name} onChange={(e) => updateTrack({ name: e.target.value })} placeholder="Ex. La Mare, Le Grand Layon…" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+    <div><label className="text-xs uppercase tracking-wide text-stone-400 block mb-1.5">Couleur des pastilles</label><ColorPicker value={track.color || "#dc2626"} onChange={(c) => updateTrack({ color: c })} /></div>
+    <button onClick={() => setShowCrop((s) => !s)} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Crop size={15} /> {showCrop ? "Terminer le cadrage" : "Choisir le cadrage de la traque"}</button>
+    {showCrop && (<div className="space-y-1.5"><p className="text-xs text-stone-500">Déplace le rectangle (au centre) et tire ses 4 coins pour délimiter la zone de cette traque.</p><CropBox image={image} crop={crop} setCrop={(c) => updateTrack({ crop: c })} /></div>)}
+    <PlaceMiradors image={image} track={{ ...track, crop }} updateTrack={updateTrack} />
+    {setGroups && (<div className="bg-stone-50 border border-stone-200 rounded-md p-2.5 space-y-2">
+      <div className="flex items-center justify-between"><label className="text-[10px] uppercase tracking-wide text-stone-400">🔗 Consignes communes du territoire</label><button onClick={addGroup} className="text-xs font-medium text-emerald-800 flex items-center gap-1"><Plus size={13} /> Ajouter</button></div>
+      {groups.length === 0 && <p className="text-[11px] text-stone-400 italic">Aucune consigne commune. « Ajouter » pour en créer (ex. une pour les postes 1-4, une autre pour les autres).</p>}
+      {groups.map((g, gi) => (<div key={g.id} className="bg-white border border-stone-200 rounded-md p-2 space-y-1.5">
+        <div className="flex items-center justify-between"><span className="text-[10px] font-semibold text-stone-500 uppercase tracking-wide">Consigne {gi + 1}</span><button onClick={() => rmGroup(g.id)} className="text-stone-400 hover:text-red-700"><Trash2 size={13} /></button></div>
+        <textarea value={g.text || ""} onChange={(e) => updGroup(g.id, { text: e.target.value })} rows={2} placeholder="Ex. Gilet fluo obligatoire. Fin de battue : 3 sonneries." className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white" />
+        {track.miradors.length > 0 && (<div><div className="flex items-center justify-between mb-1"><span className="text-[10px] uppercase tracking-wide text-stone-400">Postes concernés (cette traque)</span><button onClick={() => toggleAllTraque(g)} className="text-xs font-medium text-emerald-800">{allInTraque(g) ? "Tout retirer" : "Tout cocher"}</button></div>
+          <div className="flex flex-wrap gap-1.5">{track.miradors.map((m) => { const on = (g.miradorIds || []).indexOf(m.id) >= 0; return (<button key={m.id} onClick={() => toggleMid(g.id, m.id)} className={`text-xs px-2 py-1 rounded-full border ${on ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{on ? "✓ " : ""}{m.label}</button>); })}</div></div>)}
+      </div>))}
+      {groups.length > 0 && <p className="text-[10px] text-stone-400">Chaque poste affichera sa consigne propre + toutes les consignes communes qui le concernent.</p>}</div>)}
+    {(() => { const seen = {}; const dups = []; track.miradors.forEach((m) => { const k = (m.label || "").trim().toLowerCase(); if (!k) return; seen[k] = (seen[k] || 0) + 1; if (seen[k] === 2) dups.push((m.label || "").trim()); }); return dups.length ? (<div className="bg-red-50 border border-red-300 rounded-md p-2.5 text-sm text-red-800">⚠️ Attention : plusieurs postes portent le même nom sur cette traque ({dups.join(", ")}). Renomme-les distinctement (✏️) — sinon impossible de les distinguer (photos/consignes pourraient sembler manquantes).</div>) : null; })()}
+    {track.miradors.length > 0 && (<div><p className="text-xs uppercase tracking-wide text-stone-400 mb-1.5">Miradors ({track.miradors.length}) — glisse ≡ pour réordonner · clic sur le nom = fiche</p>
+      <div className="space-y-1">{track.miradors.map((m) => (<MiradorRow key={m.id} m={m} track={track} updateTrack={updateTrack} onDragStart={setDragId} isDragging={dragId === m.id} inCommon={commonMids.has(m.id)} image={image} crop={crop} />))}</div></div>)}
+  </div>);
+}
+
+function PlanImagePicker({ image, onChange }) {
+  const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const onFile = async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); setErr(""); try { onChange(await downscaleImage(file)); } catch (ex) { setErr(ex.message); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } };
+  return (<div className="space-y-2"><input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
+    <div className="flex gap-2 items-center"><button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Upload size={16} /> {image ? "Changer la photo" : "Importer la photo du territoire"}</button>{image && <button onClick={() => onChange(null)} className="text-sm text-red-700">Retirer</button>}</div>
+    {busy && <p className="text-sm text-stone-500">Préparation…</p>}{err && <p className="text-sm text-red-700">{err}</p>}
+    {image ? <img src={image} alt="" className="w-full rounded-md border border-stone-300" /> : <MapNotice>Importe une seule photo (capture satellite d'ensemble). Chaque traque en sera un recadrage.</MapNotice>}</div>);
+}
+
+function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
+  const curSeason = seasonOf(new Date().toISOString());
+  const kills = {};
+  (journees || []).filter((j) => j.terrainId === tid && seasonOf(j.date) === curSeason).forEach((j) => (j.tableau || []).forEach((k) => { kills[k.espece] = (kills[k.espece] || 0) + (Number(k.quantite) || 0); }));
+  const chevCap = (planChasse.chevreuil && planChasse.chevreuil.enabled && planChasse.chevreuil.target) || 0;
+  const setCfg = (key, patch) => setPlanChasse({ ...planChasse, [key]: { ...planChasse[key], ...patch } });
+  const capOf = (cfg) => (cfg.mode === "proportionnel") ? chevCap : (cfg.target || 0);
+  return (<div className="space-y-2">
+    <p className="text-xs text-stone-500">Active les espèces présentes sur ce territoire : elles apparaîtront dans le tableau, les prélèvements des chasseurs et les stats. Les jauges cumulent la saison {curSeason}.</p>
+    {ESPECES.filter((e) => e.key !== "autre").map((e) => {
+      const cfg = planChasse[e.key] || { enabled: false, mode: "proportionnel", target: 0 };
+      const tue = kills[e.key] || 0;
+      const cap = capOf(cfg);
+      const pct = cap > 0 ? Math.min(100, Math.round((tue / cap) * 100)) : (tue > 0 ? 100 : 0);
+      const over = cap > 0 && tue >= cap;
+      return (<div key={e.key} className={`border rounded-lg p-2.5 ${cfg.enabled ? "bg-white border-stone-300" : "bg-stone-50 border-stone-200"}`}>
+        <button onClick={() => setCfg(e.key, { enabled: !cfg.enabled })} className="flex items-center gap-2 text-sm font-medium text-stone-800"><span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${cfg.enabled ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{cfg.enabled ? "✓" : ""}</span>{e.emoji} {e.label}</button>
+        {cfg.enabled && (<div className="mt-2 space-y-2">
+          <div className="flex gap-1.5">{[["bracelets", "Bracelets"], ["objectif", "Objectif"], ["proportionnel", "Proportionnel"]].map(([m, lbl]) => (<button key={m} onClick={() => setCfg(e.key, { mode: m })} className={`flex-1 px-2 py-1 rounded text-[11px] font-medium border ${cfg.mode === m ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{lbl}</button>))}</div>
+          {cfg.mode !== "proportionnel" ? (<div className="flex items-center gap-2 text-sm"><label className="text-xs text-stone-500">{cfg.mode === "bracelets" ? "Bracelets attribués" : "Objectif"} :</label><input type="number" inputMode="numeric" value={cfg.target || 0} onChange={(ev) => setCfg(e.key, { target: Math.max(0, parseInt(ev.target.value || "0", 10) || 0) })} onFocus={(ev) => ev.target.select()} className="w-20 border border-stone-300 rounded px-2 py-1 bg-white" /></div>)
+            : <p className="text-[11px] text-stone-400">Mesuré sur l'échelle du chevreuil (plafond {chevCap || "à définir"}).</p>}
+          <div><div className="flex justify-between text-[11px] mb-0.5"><span className="text-stone-500">Prélevés cette saison</span><span className={over ? "text-red-700 font-semibold" : "text-stone-700 font-semibold"}>{tue}{cap > 0 ? " / " + cap : ""}</span></div><div className="h-2.5 rounded-full bg-stone-200 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: pct + "%", background: over ? "#b91c1c" : "#166534" }} /></div></div>
+        </div>)}
+      </div>);
+    })}
+  </div>);
+}
+function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete, onLiveCommit }) {
+  const [tid] = useState(initialTerrain?.id || `t-${Date.now()}`);
+  const [name, setName] = useState(initialTerrain?.name || "");
+  const [planImage, setPlanImage] = useState(initialTerrain?.planImage || null);
+  const [planChasse, setPlanChasse] = useState(normPlan(initialTerrain?.planChasse));
+  const [tracks, setTracks] = useState(initialTerrain?.tracks?.length ? initialTerrain.tracks.map(normTrack) : [{ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }]);
+  const [tab, setTab] = useState("plan");
+  const [consignesCommunes, setConsignesCommunes] = useState(initialTerrain?.consignesCommunes || []);
+  const firstRun = useRef(true);
+  // Auto-enregistrement en direct : dès qu'on change photo / traque / mirador, on l'enregistre sans attendre le bouton
+  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consignesCommunes }); }, [name, planImage, tracks, planChasse, consignesCommunes]);
+  const updateTrack = (id, patch) => setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  const addTrack = () => { const id = `trk-${Date.now()}`; setTracks((prev) => [...prev, { id, name: `Traque ${prev.length + 1}`, color: PALETTE[prev.length % PALETTE.length], crop: { ...DEFAULT_CROP }, miradors: [] }]); setTab(id); };
+  const deleteTrack = (id) => { if (tracks.length === 1) { alert("Il faut au moins une traque."); return; } if (!window.confirm("Supprimer cette traque ?")) return; setTracks((prev) => { const next = prev.filter((t) => t.id !== id); if (tab === id) setTab("plan"); return next; }); };
+  const current = tracks.find((t) => t.id === tab);
+  return (<SectionCard className="p-4 space-y-4">
+    <div className="flex items-center justify-between"><button onClick={onCancel} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={15} /> Retour</button>{initialTerrain && <button onClick={onDelete} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer le territoire</button>}</div>
+    <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom du territoire</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Bois de l'Île" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+    <div className="flex flex-wrap gap-1 border-b border-stone-200 pb-2">
+      <button onClick={() => setTab("chasse")} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === "chasse" ? "bg-amber-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>🎯 Plan de chasse</button>
+      <button onClick={() => setTab("plan")} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === "plan" ? "bg-amber-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>🗺️ Cartes</button>
+      {tracks.map((t) => (<button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === t.id ? "bg-emerald-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>{t.name}</button>))}
+      <button onClick={addTrack} className="px-2.5 py-1.5 text-sm font-medium rounded-md bg-stone-100 text-amber-800 flex items-center gap-1"><Plus size={14} /> Traque</button>
+    </div>
+    {tab === "plan" ? (<div className="space-y-2"><p className="text-xs uppercase tracking-wide text-stone-400">Photo du territoire (une seule pour tout)</p><PlanImagePicker image={planImage} onChange={setPlanImage} /></div>)
+      : tab === "chasse" ? (<PlanChasseEditor planChasse={planChasse} setPlanChasse={setPlanChasse} journees={journees} tid={tid} />)
+      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} /></div>) : null}
+    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consignesCommunes })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
+  </SectionCard>);
+}
+
+function TerrainsView({ terrains, setTerrains, journees }) {
+  const [editorState, setEditorState] = useState(null);
+  const commitTerrain = (terrain) => setTerrains((prev) => { const exists = prev.some((t) => t.id === terrain.id); return exists ? prev.map((t) => (t.id === terrain.id ? terrain : t)) : [...prev, terrain]; });
+  const saveTerrain = (terrain) => { commitTerrain(terrain); setEditorState(null); };
+  const deleteTerrain = (id) => { if (window.confirm("Supprimer ce territoire ?")) { setTerrains((prev) => prev.filter((t) => t.id !== id)); setEditorState(null); } };
+  return (<div className="space-y-3">
+    <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Territoires</h2>{!editorState && <button onClick={() => setEditorState("new")} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouveau territoire</button>}</div>
+    {editorState ? (<TerritoryEditor initialTerrain={editorState === "new" ? null : editorState} journees={journees} onSave={saveTerrain} onCancel={() => setEditorState(null)} onDelete={() => deleteTerrain(editorState.id)} onLiveCommit={commitTerrain} />)
+      : (<div className="grid sm:grid-cols-2 gap-3">{terrains.length === 0 && <p className="text-sm text-stone-500 italic sm:col-span-2">Aucun territoire. Clique « Nouveau territoire ».</p>}
+        {[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
+          {t.planImage ? <img src={t.planImage} alt={t.name} className="h-28 w-full object-cover" /> : <div className="h-28 bg-gradient-to-br from-emerald-900 via-emerald-800 to-stone-700 flex items-center justify-center text-stone-300"><MapPin size={20} /></div>}
+          <div className="p-3"><p className="font-medium text-stone-800 truncate">{t.name}</p><p className="text-xs text-stone-500">{t.tracks.length} traque(s) · appuie pour ouvrir</p></div></SectionCard>))}
+      </div>)}
+  </div>);
+}
+
+// ---------- Participants ----------
+function PrintOverlay({ html, onClose }) {
+  const ref = useRef(null);
+  const doPrint = () => { try { ref.current.contentWindow.focus(); ref.current.contentWindow.print(); } catch (e) { try { window.print(); } catch (e2) {} } };
+  return (<div className="fixed inset-0 z-50 bg-white flex flex-col">
+    <div className="flex items-center justify-between px-3 py-2 border-b border-stone-200 bg-stone-50 shrink-0">
+      <button onClick={onClose} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button>
+      <button onClick={doPrint} className="flex items-center gap-1.5 bg-emerald-800 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={15} /> Imprimer / PDF</button>
+    </div>
+    <iframe ref={ref} srcDoc={html} title="Aperçu" className="flex-1 w-full border-0" />
+  </div>);
+}
+function ParticipantsView({ participants, setParticipants }) {
+  const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
+  const [search, setSearch] = useState(""); const [selected, setSelected] = useState({}); const [dupPanel, setDupPanel] = useState(false); const [mergePanel, setMergePanel] = useState(false);
+  const nrm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const dg = (s) => (s || "").replace(/\D/g, "");
+  const dupPairs = (() => { const out = []; for (let i = 0; i < participants.length; i++) for (let j = i + 1; j < participants.length; j++) { const a = participants[i], b = participants[j]; if ((a.dupIgnore || []).indexOf(b.id) >= 0 || (b.dupIgnore || []).indexOf(a.id) >= 0) continue; const na = foldName(a.name), nb = foldName(b.name); const pa = dg(a.phone), pb = dg(b.phone); const ea = nrm(a.email), eb = nrm(b.email); let reason = ""; if (na && na === nb) reason = "Même nom"; else if (pa && pa === pb) reason = "Même téléphone"; else if (ea && ea === eb) reason = "Même email"; else if (na && nb && na.length >= 3 && nb.length >= 3 && levDist(na, nb) <= 2) reason = "Noms très proches"; if (reason) out.push({ a, b, reason }); } return out; })();
+  const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; return true; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const selCount = Object.keys(selected).filter((id) => selected[id]).length;
+  const toggleSel = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }));
+  const deleteSelected = () => { const ids = Object.keys(selected).filter((id) => selected[id]); if (!ids.length) return; if (!window.confirm("Supprimer " + ids.length + " membre(s) sélectionné(s) ?")) return; setParticipants((prev) => prev.filter((p) => !ids.includes(p.id))); setSelected({}); };
+  const mergeMembers = (keepId, dropId) => { setParticipants((prev) => { const keep = prev.find((p) => p.id === keepId), drop = prev.find((p) => p.id === dropId); if (!keep || !drop) return prev; const merged = { ...keep }; ["name", "phone", "email", "permis", "validation", "assurance"].forEach((f) => { if (!(merged[f] || "").trim() && (drop[f] || "").trim()) merged[f] = drop[f]; }); if (!merged.mobility && drop.mobility) merged.mobility = drop.mobility; if (!merged.role && drop.role) merged.role = drop.role; return prev.filter((p) => p.id !== dropId).map((p) => (p.id === keepId ? merged : p)); }); };
+  const dismissPair = (aId, bId) => { setParticipants((prev) => prev.map((p) => { if (p.id === aId) return { ...p, dupIgnore: [...(p.dupIgnore || []), bId] }; if (p.id === bId) return { ...p, dupIgnore: [...(p.dupIgnore || []), aId] }; return p; })); };
+  const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
+  const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
+  const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
+  const [dinerPrint, setDinerPrint] = useState(null);
+  const printDiner = () => { setDinerPrint(buildDinnerPrintHtml(participants)); };
+  const exportDinerExcel = () => {
+    try {
+      const rows = participants.map((p) => ({ Nom: p.name || "Sans nom", Vient: p.diner?.vient ? "oui" : "non", Invités_sup: p.diner?.invitesSupplementaires || 0, Total: p.diner?.vient ? (1 + Number(p.diner.invitesSupplementaires || 0)) : 0 }));
+      rows.push({ Nom: "TOTAL CONVIVES", Vient: "", Invités_sup: "", Total: totalConvives });
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Nom: "" }]), "Diner");
+      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }); const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const fn = "recap-diner-" + new Date().toISOString().slice(0, 10) + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: fn }).catch(() => {}); }
+      else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
+  };
+  const onImportList = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return; setImporting(true); setImportErr("");
+    try { const n = file.name.toLowerCase(); let guests = [];
+      if (n.endsWith(".xlsx") || n.endsWith(".xls") || n.endsWith(".csv")) guests = rowsToGuests(extractRowsFromExcel(await file.arrayBuffer()));
+      else if (n.endsWith(".docx")) guests = parseGuestList(await extractDocxText(await file.arrayBuffer()));
+      else if (n.endsWith(".pdf")) guests = parseGuestList(await extractPdfText(new Uint8Array(await file.arrayBuffer())));
+      else if (n.endsWith(".txt")) guests = parseGuestList(await file.text());
+      else throw new Error("Format non reconnu. Utilise Excel (.xlsx), CSV, Word (.docx), PDF ou texte (.txt).");
+      if (!guests.length) throw new Error("Aucun membre détecté dans le fichier.");
+      let added = 0, skipped = 0;
+      const norm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+      const dig = (s) => (s || "").replace(/\D/g, "");
+      setParticipants((prev) => {
+        const existName = new Set(prev.map((p) => norm(p.name)).filter(Boolean));
+        const existPhone = new Set(prev.map((p) => dig(p.phone)).filter(Boolean));
+        const existMail = new Set(prev.map((p) => norm(p.email)).filter(Boolean));
+        const seen = new Set(); const additions = [];
+        guests.forEach((gs, i) => {
+          const nk = norm(gs.name), pk = dig(gs.phone), mk = norm(gs.email);
+          if ((nk && (existName.has(nk) || seen.has("n:" + nk))) || (pk && (existPhone.has(pk) || seen.has("p:" + pk))) || (mk && (existMail.has(mk) || seen.has("m:" + mk)))) { skipped++; return; }
+          if (nk) seen.add("n:" + nk); if (pk) seen.add("p:" + pk); if (mk) seen.add("m:" + mk);
+          additions.push({ id: `p-imp-${Date.now()}-${i}`, name: gs.name || "", phone: gs.phone || "", email: gs.email || "", permis: gs.permis || "", validation: gs.validation || "", assurance: gs.assurance || "", participe: false, invitation: true, role: gs.role || "chasseur", mobility: gs.mobility || null, diner: { vient: false, invitesSupplementaires: 0 } });
+        });
+        added = additions.length; return [...prev, ...additions];
+      });
+      window.alert(added + " membre(s) ajouté(s)." + (skipped ? " " + skipped + " doublon(s) ignoré(s)." : ""));
+    } catch (ex) { setImportErr(ex.message || "Import impossible."); } finally { setImporting(false); if (listFileRef.current) listFileRef.current.value = ""; }
+  };
+  const col = (m, other, onKeep) => (<div className="flex-1 min-w-0 bg-white border border-stone-200 rounded-md p-2.5 space-y-1 flex flex-col">
+      <p className="font-semibold text-stone-800 text-sm truncate">{m.name || <span className="italic text-stone-400">(sans nom)</span>}</p>
+      <p className="text-xs text-stone-500 truncate">📞 {m.phone || "—"}</p>
+      <p className="text-xs text-stone-500 break-all">✉️ {m.email || "—"}</p>
+      <p className="text-xs text-stone-500 truncate">🎫 {m.permis || "—"}</p>
+      <p className="text-xs text-stone-500 truncate">🛡️ {m.assurance || "—"}</p>
+      <p className="text-xs text-stone-500">{m.role === "rabatteur" ? "🐇 Rabatteur" : "🦌 Chasseur"}{m.mobility ? " · " + (m.mobility === "fauteuil" ? "Fauteuil" : "Canne") : ""}</p>
+      <button onClick={onKeep} className="mt-auto w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-2 py-2 rounded-md">✓ Garder celui-ci</button>
+    </div>);
+  if (dupPanel) { return (<div className="space-y-3">
+      <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Doublons possibles</h2><button onClick={() => setDupPanel(false)} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button></div>
+      {dupPairs.length === 0 && <SectionCard className="p-6 text-center"><p className="text-3xl mb-2">🎉</p><p className="text-sm text-stone-600">Aucun doublon détecté.</p></SectionCard>}
+      {dupPairs.map((pr, i) => (<div key={pr.a.id + "-" + pr.b.id} className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 space-y-2">
+        <p className="text-xs font-medium text-amber-800">⚠️ {pr.reason} — garde le bon (l'autre est fusionné puis supprimé)</p>
+        <div className="flex gap-2 items-stretch">{col(pr.a, pr.b, () => mergeMembers(pr.a.id, pr.b.id))}{col(pr.b, pr.a, () => mergeMembers(pr.b.id, pr.a.id))}</div>
+        <button onClick={() => dismissPair(pr.a.id, pr.b.id)} className="w-full text-xs text-stone-500 hover:text-stone-700 py-1.5 border border-stone-200 rounded-md bg-white">Ce ne sont pas des doublons</button>
+      </div>))}
+    </div>);
+  }
+  if (mergePanel) { const ids = Object.keys(selected).filter((id) => selected[id]); const ma = participants.find((p) => p.id === ids[0]); const mb = participants.find((p) => p.id === ids[1]);
+    if (!ma || !mb) { setMergePanel(false); return null; }
+    const doMerge = (keepId, dropId) => { mergeMembers(keepId, dropId); setMergePanel(false); setSelected({}); };
+    return (<div className="space-y-3">
+      <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Fusionner 2 membres</h2><button onClick={() => setMergePanel(false)} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button></div>
+      <div className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 space-y-2">
+        <p className="text-xs font-medium text-amber-800">Choisis lequel garder — l'autre sera fusionné dedans puis supprimé</p>
+        <div className="flex gap-2 items-stretch">{col(ma, mb, () => doMerge(ma.id, mb.id))}{col(mb, ma, () => doMerge(mb.id, ma.id))}</div>
+      </div>
+    </div>);
+  }
+  return (<div className="space-y-6">
+    {dinerPrint && <PrintOverlay html={dinerPrint} onClose={() => setDinerPrint(null)} />}    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Membres <span className="text-sm font-sans text-stone-400">({participants.length})</span></h2>
+        <div className="flex gap-2 flex-wrap"><input ref={listFileRef} type="file" accept=".xlsx,.xls,.csv,.docx,.pdf,.txt" onChange={onImportList} className="hidden" />
+          <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer"}</button>
+          <button onClick={addParticipant} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Ajouter</button></div></div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[160px]"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded-md px-3 py-1.5 text-sm bg-white" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 text-sm">✕</button>}</div>
+        <button onClick={() => setDupPanel(true)} className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-md border shrink-0 bg-white text-stone-600 border-stone-300">⚠️ Doublons{dupPairs.length ? " (" + dupPairs.length + ")" : ""}</button>
+      </div>
+      {selCount > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2"><span className="text-sm text-red-800 font-medium">{selCount} sélectionné(s)</span><div className="flex gap-3 items-center">{selCount === 2 && <button onClick={() => setMergePanel(true)} className="flex items-center gap-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Merge size={13} /> Fusionner</button>}<button onClick={() => setSelected({})} className="text-xs text-stone-600">Annuler</button><button onClick={deleteSelected} className="flex items-center gap-1 bg-red-700 hover:bg-red-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Trash2 size={13} /> Supprimer la sélection</button></div></div>}
+      {importErr && <p className="text-sm text-red-700">{importErr}</p>}
+      <p className="text-xs text-stone-400">Import : Excel (.xlsx), CSV, Word (.docx), PDF ou texte. Colonnes reconnues : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
+      {participants.length === 0 && <p className="text-sm text-stone-500 italic">Aucun membre. Clique « Ajouter » ou importe ta liste.</p>}
+      {participants.length > 0 && filtered.length === 0 && <p className="text-sm text-stone-500 italic">Aucun résultat.</p>}
+      {filtered.map((p) => { const isOpen = expanded === p.id;
+        return (<SectionCard key={p.id}>
+          <div className="flex items-center px-4 py-3 gap-2">
+            <input type="checkbox" checked={!!selected[p.id]} onChange={() => toggleSel(p.id)} className="w-4 h-4 shrink-0 accent-red-700" />
+            <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0 flex-1">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button>
+          </div>
+          {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
+            <div><label className="text-xs uppercase tracking-wide text-stone-400">Prénom et nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label><input value={p.phone || ""} onChange={(e) => update(p.id, { phone: e.target.value })} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div><label className="text-xs uppercase tracking-wide text-stone-400">Email (pour les invitations)</label><input value={p.email || ""} onChange={(e) => update(p.id, { email: e.target.value })} placeholder="prenom.nom@email.fr" inputMode="email" autoCapitalize="none" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="text-xs uppercase tracking-wide text-stone-400">N° de permis</label><input value={p.permis || ""} onChange={(e) => update(p.id, { permis: e.target.value })} placeholder="Permis de chasser" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+              <div><label className="text-xs uppercase tracking-wide text-stone-400">N° de validation (saison)</label><input value={p.validation || ""} onChange={(e) => update(p.id, { validation: e.target.value })} placeholder="Validation annuelle" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            </div>
+            <div><label className="text-xs uppercase tracking-wide text-stone-400">Assurance (compagnie + n° de police)</label><input value={p.assurance || ""} onChange={(e) => update(p.id, { assurance: e.target.value })} placeholder="ex : Groupama — n° 12345678" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Rôle (seuls les chasseurs sont placés sur les miradors)</p><RoleSelector value={p.role} onChange={(v) => update(p.id, { role: v })} /></div>
+            <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Mobilité réduite (placement adapté)</p><div className="flex gap-2">
+              {[{ v: null, l: "Aucune" }, { v: "canne", l: "🦯 Canne", ic: "c" }, { v: "fauteuil", l: "Fauteuil", ic: "f" }].map((o) => (<button key={o.l} onClick={() => update(p.id, { mobility: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.mobility || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.ic === "f" ? <Fauteuil size={13} color={(p.mobility || null) === o.v ? "#fff" : "#166534"} /> : null} {o.l}</button>))}
+            </div><p className="text-[11px] text-stone-400 mt-1">Fauteuil = accès aux postes fauteuil. Canne = postes canne ou fauteuil.</p></div>
+            <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
+          </div>)}
+        </SectionCard>); })}
+    </div>
+  </div>);
+}
+
+// ---------- Sécurité ----------
+function SecurityView({ safety, setSafety }) {
+  const setConsigne = (i, v) => setSafety((s) => ({ ...s, consignes: s.consignes.map((c, k) => (k === i ? v : c)) }));
+  const addConsigne = () => setSafety((s) => ({ ...s, consignes: [...s.consignes, ""] }));
+  const rmConsigne = (i) => setSafety((s) => ({ ...s, consignes: s.consignes.filter((_, k) => k !== i) }));
+  const setSonnerie = (i, key, v) => setSafety((s) => ({ ...s, sonneries: s.sonneries.map((x, k) => (k === i ? { ...x, [key]: v } : x)) }));
+  const addSonnerie = () => setSafety((s) => ({ ...s, sonneries: [...s.sonneries, { evenement: "", signal: "" }] }));
+  const rmSonnerie = (i) => setSafety((s) => ({ ...s, sonneries: s.sonneries.filter((_, k) => k !== i) }));
+  const reset = () => { if (window.confirm("Rétablir les consignes et sonneries par défaut ?")) setSafety(DEFAULT_SAFETY); };
+  return (<div className="space-y-5">
+    <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800 flex items-center gap-2"><Shield size={20} className="text-emerald-800" /> Sécurité</h2><button onClick={reset} className="text-xs text-stone-500 underline hover:text-stone-700">Valeurs par défaut</button></div>
+    <p className="text-xs text-stone-400">Code standard modifiable. Ajuste les sonneries au code exact de ta société / FDC72.</p>
+    <SectionCard className="p-4 space-y-2">
+      <h3 className="font-serif text-lg text-stone-800 flex items-center gap-2"><Bell size={17} className="text-amber-800" /> Sonneries & annonces</h3>
+      <div className="space-y-1.5">{safety.sonneries.map((s, i) => (<div key={i} className="flex items-center gap-2">
+        <input value={s.evenement} onChange={(e) => setSonnerie(i, "evenement", e.target.value)} placeholder="Événement" className="w-2/5 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+        <input value={s.signal} onChange={(e) => setSonnerie(i, "signal", e.target.value)} placeholder="Signal" className="flex-1 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+        <button onClick={() => rmSonnerie(i)} className="text-stone-400 hover:text-red-700"><X size={15} /></button></div>))}</div>
+      <button onClick={addSonnerie} className="flex items-center gap-1 text-sm text-amber-800 mt-1"><Plus size={14} /> Ajouter une sonnerie</button>
+    </SectionCard>
+    <SectionCard className="p-4 space-y-2">
+      <h3 className="font-serif text-lg text-stone-800 flex items-center gap-2"><Shield size={17} className="text-emerald-800" /> Consignes de sécurité</h3>
+      <div className="space-y-1.5">{safety.consignes.map((c, i) => (<div key={i} className="flex items-start gap-2">
+        <span className="text-emerald-800 mt-2">•</span>
+        <textarea value={c} onChange={(e) => setConsigne(i, e.target.value)} rows={1} className="flex-1 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+        <button onClick={() => rmConsigne(i)} className="text-stone-400 hover:text-red-700 mt-2"><X size={15} /></button></div>))}</div>
+      <button onClick={addConsigne} className="flex items-center gap-1 text-sm text-emerald-800 mt-1"><Plus size={14} /> Ajouter une consigne</button>
+    </SectionCard>
+  </div>);
+}
+
+function SafetyGate({ safety, onAccept }) {
+  return (<div className="fixed inset-0 z-50 bg-stone-900/95 flex items-center justify-center p-4 overflow-auto">
+    <div className="bg-stone-50 rounded-xl max-w-lg w-full my-6 shadow-2xl overflow-hidden">
+      <div className="bg-stone-900 text-stone-50 px-5 py-4 flex items-center gap-3"><Shield size={26} className="text-amber-400" /><div><h2 className="font-serif text-xl">Consignes de sécurité</h2><p className="text-stone-400 text-xs">À lire avant chaque battue</p></div></div>
+      <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-auto">
+        <div><h3 className="font-medium text-stone-800 flex items-center gap-2 mb-2"><Bell size={16} className="text-amber-800" /> Annonces / sonneries</h3>
+          <div className="space-y-1">{safety.sonneries.map((s, i) => (<div key={i} className="flex gap-2 text-sm"><span className="font-medium text-stone-800 w-1/3 shrink-0">{s.evenement}</span><span className="text-stone-600">{s.signal}</span></div>))}</div></div>
+        <div><h3 className="font-medium text-stone-800 flex items-center gap-2 mb-2"><Shield size={16} className="text-emerald-800" /> Règles</h3>
+          <ul className="space-y-1 text-sm text-stone-600 list-disc pl-5">{safety.consignes.map((c, i) => (<li key={i}>{c}</li>))}</ul></div>
+      </div>
+      <div className="px-5 py-4 border-t border-stone-200"><button onClick={onAccept} className="w-full bg-emerald-800 hover:bg-emerald-900 text-stone-50 font-medium py-3 rounded-lg flex items-center justify-center gap-2"><Check size={18} /> J'ai compris les consignes de sécurité</button></div>
+    </div>
+  </div>);
+}
+
+// ---------- Poster les fusils ----------
+function HunterList({ pending, selectedHunter, setSelectedHunter }) {
+  return (<SectionCard className="p-3 sm:col-span-1"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Fusils à placer</p>
+    <div className="space-y-1.5">{pending.length === 0 && <p className="text-sm text-stone-400 italic">Tous les fusils sont placés 🎯</p>}
+      {pending.map((p) => (<button key={p.id} onClick={() => setSelectedHunter(p.id)} className={`w-full text-left px-2.5 py-1.5 rounded text-sm flex items-center gap-2 border ${selectedHunter === p.id ? "bg-amber-800 text-stone-50 border-amber-800" : "bg-white border-stone-300 text-stone-700"}`}>🦌 {p.name}</button>))}</div>
+    {selectedHunter && <p className="text-xs text-amber-800 mt-2">Clique un poste pour l'y placer.</p>}</SectionCard>);
+}
+const ARROW_COLORS = ["#2563eb", "#dc2626", "#ea580c", "#7c3aed", "#059669", "#111827", "#f59e0b"];
+function ChefAssign({ terrain, journee, chefId, chefName, participants, onToggle, onBack }) {
+  const [tab, setTab] = useState(0);
+  const track = terrain.tracks[tab] || terrain.tracks[0];
+  const image = terrain.planImage; const ar = useImageAR(image);
+  if (!track) return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button><p className="text-sm text-stone-500">Aucune traque.</p></div>);
+  const crop = track.crop || FULL_CROP;
+  const placements = journee.placements[track.id] || {};
+  const cl = journee.chefLignes || {};
+  const myCount = Object.keys(cl).filter((mid) => cl[mid] === chefId).length;
+  return (<div className="space-y-3">
+    <div className="flex items-center justify-between gap-2"><button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button><span className="text-sm font-semibold text-stone-800">👨‍✈️ {chefName} <span className="font-normal text-stone-400">· {myCount} poste(s)</span></span></div>
+    <p className="text-xs text-stone-500">Tape les postes dont <b>{chefName}</b> est responsable (traque par traque). Les postes surlignés en vert sont les siens.</p>
+    <div className="flex gap-1.5 flex-wrap">{terrain.tracks.map((t, i) => <button key={t.id} onClick={() => setTab(i)} className={`text-xs font-medium px-2.5 py-1 rounded ${tab === i ? "bg-stone-800 text-stone-50" : "bg-stone-200 text-stone-700"}`}>{t.name}</button>)}</div>
+    <div style={cropWrapperStyle(crop, ar)} className="border border-stone-300 select-none"><div style={cropBgStyle(image, crop)} />
+      {track.miradors.map((m) => { const hid = Object.entries(placements).find(([, mid2]) => mid2 === m.id)?.[0]; if (!hid) return null; const hunter = participants.find((p) => p.id === hid); const lx = ((m.gx - crop.x) / crop.w) * 100, ly = ((m.gy - crop.y) / crop.h) * 100; if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null; const mine = cl[m.id] === chefId; const other = cl[m.id] && cl[m.id] !== chefId;
+        return (<button key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, opacity: other ? 0.5 : 1 }} onClick={() => onToggle(m.id, mine ? null : chefId)} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
+          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] border-2 shadow text-white" style={{ backgroundColor: mine ? "#166534" : other ? "#a8a29e" : "#78716c", borderColor: mine ? "#4ade80" : "#fff" }}>{mine ? "✓" : ""}</span>
+          <span className={`text-[9px] px-1 rounded leading-tight text-center max-w-[92px] break-words ${mine ? "bg-emerald-700 text-white ring-1 ring-emerald-300" : "bg-stone-900/70 text-stone-50"}`}>{hunter ? hunter.name : "?"}</span></button>); })}
+    </div>
+  </div>);
+}
+function AssignSurface({ image, track, placements, participants, selectedHunter, setSelectedHunter, onAssign, onUnassign, recommendedIds, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
+  const crop = track.crop || FULL_CROP; const ar = useImageAR(image);
+  const [draw, setDraw] = useState(false); const [draft, setDraft] = useState(null); const mapRef = useRef(null);
+  const [dims, setDims] = useState({ w: 0, h: 0 });
+  const [selArrow, setSelArrow] = useState(null);
+  const [arrowColor, setArrowColor] = useState(ARROW_COLORS[0]);
+  const dragH = useRef(null);
+  useEffect(() => { const el = mapRef.current; if (!el) return; const upd = () => setDims({ w: el.clientWidth, h: el.clientHeight }); upd(); let ro; try { ro = new ResizeObserver(upd); ro.observe(el); } catch (e) {} return () => { try { ro && ro.disconnect(); } catch (e) {} }; }, [crop, ar]);
+  const arr = arrows || [];
+  const toG = (cx, cy) => { const r = mapRef.current.getBoundingClientRect(); const lx = Math.max(0, Math.min(100, (cx - r.left) / r.width * 100)); const ly = Math.max(0, Math.min(100, (cy - r.top) / r.height * 100)); return { gx: crop.x + lx / 100 * crop.w, gy: crop.y + ly / 100 * crop.h }; };
+  const down = (e) => { if (!draw) return; e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSelArrow(null); const g = toG(e.clientX, e.clientY); setDraft({ x1: g.gx, y1: g.gy, x2: g.gx, y2: g.gy, color: arrowColor }); };
+  const move = (e) => { if (!draw) return; const g = toG(e.clientX, e.clientY); if (dragH.current) { const h = dragH.current; onUpdateArrow(h.i, h.which === 1 ? { x1: g.gx, y1: g.gy } : { x2: g.gx, y2: g.gy }); return; } if (draft) setDraft((d) => ({ ...d, x2: g.gx, y2: g.gy })); };
+  const up = () => { if (dragH.current) { dragH.current = null; return; } if (draft) { if (Math.abs(draft.x2 - draft.x1) + Math.abs(draft.y2 - draft.y1) > 2) onAddArrow({ ...draft }); setDraft(null); } };
+  const selectArrow = (i) => (e) => { e.stopPropagation(); e.preventDefault(); setSelArrow(i); };
+  const startHandle = (i, which) => (e) => { e.stopPropagation(); e.preventDefault(); try { mapRef.current.setPointerCapture(e.pointerId); } catch {} dragH.current = { i, which }; setSelArrow(i); };
+  const clickPost = (m) => { const occ = Object.entries(placements).find(([, mid]) => mid === m.id)?.[0]; if (occ) onUnassign(occ); else if (selectedHunter) { onAssign(selectedHunter, m.id); setSelectedHunter(null); } };
+  const gl = (x, y) => ({ x: (x - crop.x) / crop.w * dims.w, y: (y - crop.y) / crop.h * dims.h });
+  const allArrows = draft ? [...arr, draft] : arr;
+  const selA = (draw && selArrow != null && arr[selArrow]) ? arr[selArrow] : null;
+  const mid = (c) => "ah" + String(c || "#2563eb").replace("#", "");
+  return (<div>
+    <div className="flex items-center gap-2 mb-2 flex-wrap"><button onClick={() => { setDraw((d) => !d); setSelArrow(null); }} className={`text-xs font-medium px-2.5 py-1 rounded ${draw ? "bg-blue-700 text-stone-50" : "bg-stone-200 text-stone-700"}`}>✏️ Sens de traque</button>{arr.length > 0 && <button onClick={() => { onClearArrows(); setSelArrow(null); }} className="text-xs font-medium px-2.5 py-1 rounded bg-stone-200 text-stone-700">Tout effacer</button>}{draw && selArrow != null && <button onClick={() => { onDeleteArrow(selArrow); setSelArrow(null); }} className="text-xs font-medium px-2.5 py-1 rounded bg-red-100 text-red-700">Supprimer la flèche</button>}</div>
+    {draw && <div className="flex items-center gap-1.5 mb-2 flex-wrap"><span className="text-[11px] text-stone-500">Couleur :</span>{ARROW_COLORS.map((c) => <button key={c} onClick={() => { setArrowColor(c); if (selArrow != null) onUpdateArrow(selArrow, { color: c }); }} style={{ background: c }} className={`w-6 h-6 rounded-full ${arrowColor === c ? "ring-2 ring-offset-1 ring-stone-800" : ""}`} />)}<span className="text-[11px] text-blue-700 ml-1">{selArrow != null ? "Déplace les bouts • recolorie • supprime" : "Trace du départ vers l'arrivée"}</span></div>}
+    <div ref={mapRef} style={cropWrapperStyle(crop, ar)} className="border border-stone-300 select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}><div style={cropBgStyle(image, crop)} />
+    {track.miradors.map((m) => { const lx = ((m.gx - crop.x) / crop.w) * 100, ly = ((m.gy - crop.y) / crop.h) * 100; if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null;
+      const hid = Object.entries(placements).find(([, mid2]) => mid2 === m.id)?.[0]; const hunter = hid ? participants.find((p) => p.id === hid) : null;
+      const reco = recommendedIds && recommendedIds.has(m.id) && !hunter;
+      const dim = recommendedIds && !recommendedIds.has(m.id) && !hunter;
+      return (<button key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, opacity: dim ? 0.4 : 1, pointerEvents: draw ? "none" : "auto" }} onClick={() => clickPost(m)} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
+        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border-2 shadow ${reco ? "border-emerald-400 ring-2 ring-emerald-400" : (m.accFauteuil || m.accCanne) ? "border-emerald-500" : "border-white"}`} style={{ backgroundColor: hunter ? "#b45309" : track.color }}>{hunter ? "🦌" : (m.priority || 1)}</span>
+        <span className="text-[9px] bg-stone-900/70 text-stone-50 px-1 rounded leading-tight text-center max-w-[92px] break-words">{(m.accFauteuil || m.accCanne) ? (m.accFauteuil ? <Fauteuil size={9} color="#fff" /> : "🦯") : null}{(m.accFauteuil || m.accCanne) ? " " : ""}{hunter ? hunter.name : m.label}</span></button>); })}
+    {dims.w > 0 && allArrows.length > 0 && <svg viewBox={`0 0 ${dims.w} ${dims.h}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}><defs>{ARROW_COLORS.map((c) => <marker key={c} id={mid(c)} markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="13" refY="9" orient="auto"><path d="M1,1 L17,9 L1,17 Z" fill={c} stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" /></marker>)}</defs>{allArrows.map((a, i) => { const p1 = gl(a.x1, a.y1), p2 = gl(a.x2, a.y2); const col = a.color || "#2563eb"; const isSel = draw && i === selArrow; return (<g key={i}><line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#fff" strokeWidth={isSel ? 12 : 9} strokeLinecap="round" /><line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={col} strokeWidth={isSel ? 6.5 : 5} strokeLinecap="round" markerEnd={`url(#${mid(col)})`} />{draw && i < arr.length && <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth="24" style={{ pointerEvents: "stroke", cursor: "pointer" }} onPointerDown={selectArrow(i)} />}</g>); })}{selA && (() => { const p1 = gl(selA.x1, selA.y1), p2 = gl(selA.x2, selA.y2); return (<g><circle cx={p1.x} cy={p1.y} r="10" fill="#fff" stroke={selA.color || "#2563eb"} strokeWidth="3" style={{ pointerEvents: "auto", cursor: "move" }} onPointerDown={startHandle(selArrow, 1)} /><circle cx={p2.x} cy={p2.y} r="10" fill="#fff" stroke={selA.color || "#2563eb"} strokeWidth="3" style={{ pointerEvents: "auto", cursor: "move" }} onPointerDown={startHandle(selArrow, 2)} /></g>); })()}</svg>}
+    </div>
+  </div>);
+}
+function PosterFusils({ terrain, track, placements, participants, presentIds, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
+  const [selectedHunter, setSelectedHunter] = useState(null);
+  const assignedIds = Object.keys(placements);
+  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id)).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const freeMiradors = track.miradors.filter((m) => !Object.values(placements).includes(m.id));
+  const sortedFree = [...freeMiradors].sort((a, b) => (a.priority || 1) - (b.priority || 1) || a.label.localeCompare(b.label));
+  // Surbrillance par PALIER de priorité : toute la priorité 1, puis 2, etc. jusqu'à couvrir le nb de chasseurs
+  const freeByPrio = {}; sortedFree.forEach((m) => { const pr = m.priority || 1; (freeByPrio[pr] = freeByPrio[pr] || []).push(m); });
+  const prios = Object.keys(freeByPrio).map(Number).sort((a, b) => a - b);
+  const recommendedIds = new Set(); let acc = 0;
+  for (const pr of prios) { freeByPrio[pr].forEach((m) => recommendedIds.add(m.id)); acc += freeByPrio[pr].length; if (acc >= pending.length) break; }
+  const hasPlacements = Object.keys(placements).length > 0;
+  return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={14} /> Retour à la journée</button>
+    <h3 className="font-serif text-lg text-stone-800">Poster les fusils — {track.name}</h3>
+    <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} />
+      <SectionCard className="p-3 sm:col-span-2">
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap"><p className="text-xs uppercase tracking-wide text-stone-400">Le chiffre = priorité · liseré vert = à utiliser</p><div className="flex gap-1.5">{pending.length > 0 && freeMiradors.length > 0 && <button onClick={() => onAutoFill(track, pending, sortedFree)} className="text-xs font-medium bg-emerald-700 text-stone-50 px-2.5 py-1 rounded">Remplir par priorité</button>}{hasPlacements && <button onClick={() => onClearAll(track)} className="text-xs font-medium bg-stone-200 hover:bg-stone-300 text-stone-700 px-2.5 py-1 rounded">Décocher tous</button>}</div></div>
+        {!terrain.planImage ? <MapNotice>Photo manquante. Importe ta sauvegarde ou rajoute la photo (onglet Territoires).</MapNotice>
+          : track.miradors.length === 0 ? <MapNotice>Cette traque n'a pas de miradors (onglet Territoires).</MapNotice>
+          : <AssignSurface image={terrain.planImage} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={onAssign} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} />}</SectionCard></div>
+  </div>);
+}
+
+// ---------- Envoi WhatsApp aux chasseurs ----------
+function buildHunterText(p, terrain, assigns, journee, safety) {
+  const d = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const prenom = p.name.split(" ")[0];
+  let t = `🦌 Battue du ${d} — ${terrain.name}\n\nBonjour ${prenom}, voici ${assigns.length > 1 ? "tes postes" : "ton poste"} :`;
+  assigns.forEach((a) => { t += `\n• ${a.track.name} → ${a.mirador.label}`; if (a.mirador.consignes) t += `\n   ⚠️ ${a.mirador.consignes}`; });
+  t += `\n\n🔔 Sonneries :`; safety.sonneries.forEach((s) => { t += `\n• ${s.evenement} : ${s.signal}`; });
+  t += `\n\n🛡️ Sécurité :`; safety.consignes.forEach((c) => { t += `\n• ${c}`; });
+  return t;
+}
+function getAssignments(journee, terrain, hunterId) {
+  const res = [];
+  (terrain.tracks || []).forEach((track) => { const pl = journee.placements[track.id] || {}; const mid = pl[hunterId]; if (mid) { const mirador = track.miradors.find((m) => m.id === mid); if (mirador) res.push({ track, mirador }); } });
+  return res;
+}
+function EnvoiChasseurs({ journee, terrain, participants, safety, onBack }) {
+  const [busy, setBusy] = useState(null);
+  const hunterIds = new Set(); Object.values(journee.placements || {}).forEach((pl) => Object.keys(pl).forEach((hid) => hunterIds.add(hid)));
+  const hunters = [...hunterIds].map((id) => participants.find((p) => p.id === id)).filter(Boolean);
+  const sendText = (p) => { const assigns = getAssignments(journee, terrain, p.id); const text = buildHunterText(p, terrain, assigns, journee, safety); const ph = waPhone(p.phone); window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, "_blank"); };
+  const sendVisual = async (p) => {
+    setBusy(p.id);
+    try {
+      const assigns = getAssignments(journee, terrain, p.id); const files = [];
+      for (const a of assigns) { if (terrain.planImage) files.push(await buildTrackImage(terrain.planImage, a.track, a.mirador.id, `${p.name.split(" ")[0]} — ${a.mirador.label}`, `${a.track.name} · ${terrain.name}`)); (a.mirador.photos || []).forEach((ph, i) => files.push(dataUrlToFile(ph, `poste-photo-${i + 1}.jpg`))); }
+      const text = buildHunterText(p, terrain, assigns, journee, safety);
+      if (navigator.canShare && files.length && navigator.canShare({ files })) { await navigator.share({ text, files }); }
+      else { files.forEach((f) => { const u = URL.createObjectURL(f); const a = document.createElement("a"); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000); }); const ph = waPhone(p.phone); window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, "_blank"); }
+    } catch (e) { if (e && e.name !== "AbortError") window.alert("Partage impossible : " + (e.message || e)); } finally { setBusy(null); }
+  };
+  return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={14} /> Retour à la journée</button>
+    <h3 className="font-serif text-lg text-stone-800 flex items-center gap-2"><Send size={18} className="text-emerald-800" /> Envoyer les postes aux chasseurs</h3>
+    <p className="text-xs text-stone-500">Chaque chasseur reçoit son poste, le territoire et les consignes. Jamais les invités, le dîner ni les rabatteurs.</p>
+    {hunters.length === 0 && <SectionCard className="p-4"><p className="text-sm text-stone-500 italic">Aucun chasseur posté. Va d'abord « Poster les fusils ».</p></SectionCard>}
+    {hunters.map((p) => { const assigns = getAssignments(journee, terrain, p.id);
+      return (<SectionCard key={p.id} className="p-3">
+        <div className="flex items-center justify-between gap-2 mb-2"><div className="min-w-0"><p className="font-medium text-stone-800 truncate">🦌 {p.name}</p><p className="text-xs text-stone-500 truncate">{assigns.map((a) => `${a.track.name}: ${a.mirador.label}`).join(" · ") || "non posté"}</p>{!p.phone && <p className="text-[11px] text-amber-700">Pas de téléphone — WhatsApp ouvrira sans destinataire.</p>}</div></div>
+        <div className="flex gap-2"><button onClick={() => sendText(p)} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Send size={15} /> Message</button>
+          <button onClick={() => sendVisual(p)} disabled={busy === p.id} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Share2 size={15} /> {busy === p.id ? "…" : "Image du poste"}</button></div>
+      </SectionCard>); })}
+  </div>);
+}
+
+// ---------- Publication en ligne (page chasseurs) ----------
+function toBase64Utf8(str) { const bytes = new TextEncoder().encode(str); let bin = ""; bytes.forEach((b) => (bin += String.fromCharCode(b))); return btoa(bin); }
+function fromBase64Utf8(b64) { const bin = atob(String(b64).replace(/\s/g, "")); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
+async function githubPutFile(opts) {
+  const base = "https://api.github.com/repos/" + opts.owner + "/" + opts.repo + "/contents/" + opts.path;
+  const H = { Authorization: "Bearer " + opts.token, Accept: "application/vnd.github+json" };
+  const getSha = async () => { try { const r = await fetch(base + "?ref=main&t=" + Date.now(), { headers: H, cache: "no-store" }); if (r.ok) { const j = await r.json(); return j.sha; } } catch (e) {} return undefined; };
+  const put = async (sha) => { const body = { message: opts.message, content: opts.content, branch: "main" }; if (sha) body.sha = sha; return fetch(base, { method: "PUT", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify(body) }); };
+  let res = await put(await getSha());
+  if (res.status === 409 || res.status === 422) { res = await put(await getSha()); }
+  if (!res.ok) { const t = await res.text(); throw new Error("Code " + res.status + " — " + t.slice(0, 180)); }
+  return true;
+}
+
+const SHARED_HEAD = `<!doctype html><html lang="fr"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Postes — Battue</title><style>
+:root{--stone-900:#1c1917;--stone-700:#44403c;--stone-500:#78716c;--stone-400:#a8a29e;--stone-200:#e7e5e4;--stone-100:#f5f5f4;--paper:#faf9f7;--emerald:#166534;--emerald-d:#14532d;--amber-l:#b45309}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--stone-100);color:var(--stone-900);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+.wrap{max-width:640px;margin:0 auto;padding-bottom:40px}
+header{background:var(--stone-900);color:#fafaf9;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+header .k{display:flex;align-items:center;gap:12px;min-width:0}
+.emo{font-size:28px}
+header h1{font-family:Georgia,serif;font-size:20px;margin:0}
+header p{margin:2px 0 0;color:var(--stone-400);font-size:12px}
+.back{background:#292524;color:#e7e5e4;border:none;font-size:12px;padding:7px 10px;border-radius:8px;white-space:nowrap}
+main{padding:16px}
+.card{background:var(--paper);border:1px solid var(--stone-200);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);margin-bottom:16px;overflow:hidden}
+.card .pad{padding:14px 16px}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--stone-400);margin:0 0 6px}
+.hero .pad{background:linear-gradient(180deg,#f0f7f1,var(--paper))}
+.hero h2{font-family:Georgia,serif;margin:0;font-size:20px;color:var(--emerald-d)}
+.hero .post{font-size:26px;font-weight:700;margin:2px 0 0}
+.extra{margin-top:6px;color:var(--stone-700);font-size:14px}
+.consigne{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 12px;margin-top:12px;font-size:14px;color:#7c2d12;display:flex;gap:8px}
+.consigne b{white-space:nowrap}
+.postphoto{width:100%;border-radius:10px;border:1px solid var(--stone-200);margin-top:12px;display:block}
+.feedback{margin-top:14px;border-top:1px dashed var(--stone-200);padding-top:12px}
+.fbintro{font-size:13px;color:var(--stone-500);margin:0 0 10px}
+.fbblock{border:1px solid var(--stone-200);border-radius:14px;padding:14px;margin-bottom:14px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.fbblock:last-of-type{margin-bottom:16px}
+.fbhd{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.fbdot{width:13px;height:13px;border-radius:50%;flex:0 0 auto}
+.fbtt{font-weight:700;font-size:16px;line-height:1.15}
+.fbtt small{display:block;font-weight:500;color:var(--stone-500);font-size:12px}
+.fblab{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--stone-400);margin:12px 0 6px}
+.counter{display:flex;align-items:center;gap:16px}
+.cbtn{width:48px;height:48px;border-radius:50%;border:2px solid var(--stone-200);background:#fff;font-size:26px;line-height:1;color:var(--stone-700);display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+.cbtn:active{background:var(--stone-100);transform:scale(.94)}
+.cval{font-size:30px;font-weight:800;min-width:44px;text-align:center;color:var(--stone-900)}
+input.cval{width:56px;border:none;background:transparent;padding:0;-webkit-appearance:none;appearance:none}
+input.cval:focus{outline:none;background:#f5f5f4;border-radius:8px}
+.counter.sm{gap:10px}
+.counter.sm .cbtn{width:38px;height:38px;font-size:20px}
+.counter.sm input.cval{font-size:20px;width:42px;min-width:42px}
+.preleve{display:flex;flex-direction:column;gap:8px}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--stone-200);border-radius:10px;padding:6px 8px 6px 12px}
+.pemo{font-size:14px;font-weight:600;color:var(--stone-700)}
+.pills{display:flex;gap:8px}
+.pill{flex:1;padding:12px 4px;border-radius:11px;border:2px solid var(--stone-200);background:#fff;font-size:14px;font-weight:700;color:var(--stone-500);-webkit-tap-highlight-color:transparent}
+.pill.on-bon{background:#dcfce7;border-color:#16a34a;color:#15803d}
+.pill.on-rep{background:#fef3c7;border-color:#d97706;color:#b45309}
+.pill.on-dng{background:#fee2e2;border-color:#dc2626;color:#b91c1c}
+.fbcom{width:100%;border:1px solid var(--stone-200);border-radius:11px;padding:11px;font-size:15px;font-family:inherit;box-sizing:border-box}
+.fbsend{width:100%;background:var(--emerald);color:#fff;border:none;border-radius:13px;padding:16px;font-size:17px;font-weight:800;letter-spacing:.01em}
+.fbsend:disabled{opacity:1}
+.fbov{position:fixed;inset:0;background:rgba(28,25,23,.55);display:flex;align-items:flex-end;justify-content:center;z-index:60;animation:fade .15s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.fbsheet{background:#fff;width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:20px;max-height:85vh;overflow:auto;box-shadow:0 -8px 30px rgba(0,0,0,.2)}
+.fbsheet h3{margin:0 0 3px;font-family:Georgia,serif;font-size:21px}
+.fbsheet .sub{color:var(--stone-500);font-size:13px;margin:0 0 14px}
+.recap{border:1px solid var(--stone-200);border-radius:12px;padding:12px 13px;margin-bottom:9px}
+.recap b{display:block;font-size:14px;color:var(--stone-900)}
+.recap span{font-size:13px;color:var(--stone-600)}
+.fbov .row{display:flex;gap:10px;margin-top:14px}
+.fbov .row button{flex:1;padding:15px;border-radius:13px;font-size:15px;font-weight:800;border:none;-webkit-tap-highlight-color:transparent}
+.bmod{background:var(--stone-200);color:var(--stone-700)}
+.bcon{background:var(--emerald);color:#fff}
+.fbrow{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.fbrow label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--stone-400)}
+.fbrow input,.fbrow select{border:1px solid var(--stone-200);border-radius:8px;padding:9px 10px;font-size:15px;background:#fff;font-family:inherit}
+.fbbtn{width:100%;background:var(--emerald);color:#fff;border:none;border-radius:9px;padding:11px;font-size:15px;font-weight:600;margin-top:2px}
+.fbbtn:disabled{background:var(--stone-400)}
+.fbmsg{font-size:13px;margin:8px 0 0;text-align:center}
+h3.sec{font-family:Georgia,serif;font-size:17px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tab{border:1px solid var(--stone-200);background:#fff;color:var(--stone-700);font-size:14px;font-weight:600;padding:7px 14px;border-radius:8px}
+.tab.active{background:var(--emerald);border-color:var(--emerald);color:#fff}
+.maphint{font-size:11px;color:var(--stone-400);text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px}
+.map{position:relative;width:100%;height:0;overflow:hidden;border-radius:10px;border:1px solid var(--stone-200);background:#ddd}
+.map-bg{position:absolute;inset:0;background-repeat:no-repeat}
+.marker{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px}
+.marker .dot{width:14px;height:14px;border-radius:50%;background:var(--c,#dc2626);border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)}
+.marker .lbl{font-size:10px;line-height:1.1;background:rgba(28,25,23,.78);color:#fff;padding:1px 5px;border-radius:4px;white-space:nowrap}
+.marker.mine .dot{width:22px;height:22px;background:var(--amber-l);border-width:3px;box-shadow:0 0 0 6px rgba(180,83,9,.28)}
+.marker.mine .lbl{background:var(--amber-l);font-weight:700}
+.marker.mine{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{filter:none}50%{filter:drop-shadow(0 0 6px rgba(180,83,9,.65))}}
+ul.list{margin:6px 0 0;padding-left:0;list-style:none}
+ul.list li{display:flex;gap:8px;font-size:14px;color:var(--stone-700);padding:5px 0;border-bottom:1px solid var(--stone-200)}
+ul.list li:last-child{border-bottom:none}
+.son .ev{font-weight:600;color:var(--stone-900);min-width:42%}
+.rule{display:flex;gap:8px}.rule .p{color:var(--emerald)}
+footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 0}
+.pickwrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:18px;background:linear-gradient(160deg,#14532d,#1c1917)}
+.pickcard{background:var(--paper);border-radius:16px;max-width:460px;width:100%;padding:22px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.pickhead{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.pickhead h1{font-family:Georgia,serif;font-size:22px;margin:0}
+.pickhead p{margin:2px 0 0;color:var(--stone-500);font-size:13px}
+.pickq{font-weight:600;margin:16px 0 10px}
+.names{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow:auto}
+.namebtn{text-align:left;background:#fff;border:1px solid var(--stone-200);border-radius:10px;padding:13px 14px;font-size:16px;font-weight:600;color:var(--stone-900)}
+.namebtn:active{background:#ecfdf5;border-color:var(--emerald)}
+.empty{color:var(--stone-500);font-style:italic}
+.role{border-radius:12px;padding:14px;margin-top:14px}
+.role-c{background:#f0fdf4;border:1px solid #bbf7d0}
+.role-r{background:#eff6ff;border:1px solid #bfdbfe}
+.rolehd{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+.rolehd h2{font-family:Georgia,serif;font-size:19px;margin:0;color:var(--stone-900)}
+.rolico{font-size:22px}
+.rolesub{font-size:13px;color:var(--stone-500);margin:0 0 10px}
+.rolebtn{width:100%;margin-top:4px;background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:600}
+.rolebtn:active{background:#1d4ed8}
+.ro2{margin-top:14px;text-align:center;color:var(--stone-400);font-size:12px}
+.modal{position:fixed;inset:0;background:rgba(28,25,23,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px}.modalcard{background:#fff;border-radius:18px;max-width:340px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}.modalemo{font-size:44px;margin-bottom:6px}.modalcard h2{font-family:Georgia,serif;font-size:22px;margin:0 0 8px;color:#1c1917}.modalcard p{color:#57534e;font-size:15px;line-height:1.5;margin:0 0 18px}.modalbtn{background:#166534;color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:16px;font-weight:700;width:100%}.banner{background:#fffbeb;border:1px solid #fde68a}.banner .sec{color:#b45309}.tilegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.tile{text-align:left;background:#fff;border:1px solid #e7e5e4;border-radius:16px;padding:15px 14px;display:flex;flex-direction:column;gap:7px;min-height:104px;box-shadow:0 1px 2px rgba(0,0,0,.04);cursor:pointer;font-family:inherit;color:#1c1917}.tile:active{transform:scale(.97)}.tile .ico{font-size:27px;line-height:1}.tile .tl{font-size:16px;font-weight:800}.tile .hint{font-size:12px;color:#78716c;line-height:1.3}.tile.wide{flex-direction:row;align-items:center;min-height:auto;gap:12px;width:100%;margin-bottom:12px}.tile.wide .ico{font-size:25px}.tile.wide .txt{flex:1}.tile.wide .go{margin-left:auto;color:#a8a29e;font-size:20px}.tile.ret{background:linear-gradient(180deg,#fff,#f0fdf4);border-color:#a7f3d0}.sheet-back{position:fixed;inset:0;background:rgba(28,25,23,.5);display:none;align-items:flex-end;justify-content:center;z-index:45}.sheet-back.open{display:flex}.sheet{background:#fff;width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:8px 18px 26px;max-height:88vh;overflow:auto;animation:sheetup .22s ease}@keyframes sheetup{from{transform:translateY(28px)}to{transform:translateY(0)}}.grab{width:40px;height:5px;border-radius:999px;background:#e7e5e4;margin:8px auto 14px}.sheeth{font-size:22px;margin:0 0 12px}.close{width:100%;margin-top:18px;background:#166534;color:#fff;border:none;border-radius:13px;padding:14px;font-size:16px;font-weight:800}.hownote{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px 14px;font-size:14px;color:#14532d;line-height:1.5;margin-bottom:14px}.priv{font-size:12.5px;color:#78716c;display:flex;align-items:center;gap:6px;margin-top:12px}.conetoggle{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:15px;font-weight:700;color:#1c1917;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:10px 12px}.conetoggle input{width:20px;height:20px;accent-color:#166534}.conelegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12.5px;color:#57534e}.conelegend .lg{display:inline-flex;align-items:center;gap:6px}.conelegend .sw{width:15px;height:15px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15);flex-shrink:0}.conelegend .sw.green{background:rgba(134,239,172,.75)}.conelegend .sw.red{background:rgba(252,165,165,.85)}.conelegend .sw.hatch{background:repeating-linear-gradient(45deg,rgba(248,113,113,.6) 0 3px,#fff 3px 6px)}.talkiepill{margin-top:12px;font-size:14px;font-weight:800;color:#166534;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:7px 14px;align-items:center;gap:6px}.fbtraque{border:1px solid #e7e5e4;border-radius:12px;padding:12px;margin-bottom:12px;background:#fff}.fbtraque.fbdone{background:#f0fdf4;border-color:#a7f3d0}.fbtraque.fbediting{border-color:#fca5a5}.fbsentrow{display:flex;align-items:center;justify-content:space-between;margin-top:8px}.fbok{color:#166534;font-weight:800;font-size:15px}.fbmod{background:#fff;border:1px solid #d6d3d1;border-radius:9px;padding:8px 14px;font-size:14px;font-weight:700;color:#57534e}.fbwarn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;margin:8px 0}.fbsendall{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:800;margin:4px 0 8px}.fbpost{border-top:1px dashed #e7e5e4;margin-top:10px;padding-top:10px}.fbpost-t{font-weight:800;color:#1c1917;font-size:14px;margin:0 0 6px}.fbtraque .fbsend{width:100%;margin-top:10px}.fbrien{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:16px;font-size:17px;font-weight:800;margin:6px 0 14px}.fbmini{background:none;border:none;color:#b45309;font-size:14px;font-weight:700;text-decoration:underline;padding:8px 0;margin-top:4px}.fbadv{margin-top:6px}.fbwarnov{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;margin-bottom:12px}.counter{gap:12px;touch-action:manipulation}.cbtn{min-width:54px;min-height:54px;font-size:26px;touch-action:manipulation}.cval{min-height:54px;font-size:22px;min-width:66px;border:2px solid #d6d3d1;border-radius:10px;text-align:center;font-weight:800;touch-action:manipulation}.counter.sm .cbtn{min-width:44px;min-height:44px;font-size:22px}.counter.sm .cval{min-height:44px;font-size:19px;min-width:54px}.fbtqhead{width:100%;display:flex;align-items:center;gap:10px;background:transparent;border:none;padding:10px 2px;font-size:17px;font-weight:800;color:#1c1917;text-align:left}.fbhname{flex:1}.fbbadge{font-size:12px;font-weight:800;border-radius:999px;padding:3px 9px;white-space:nowrap}.fbbadge.todo{background:#f5f5f4;color:#78716c}.fbbadge.done{background:#dcfce7;color:#166534}.fbchev{font-size:13px;color:#a8a29e}.fbtqbody{padding:2px 0 4px}.fbgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.fbsq{aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fff;border:2px solid #e7e5e4;border-radius:16px;padding:12px;text-align:center;cursor:pointer;font-family:inherit}.fbsq.done{background:#f0fdf4;border-color:#a7f3d0}.fbsqdot{width:16px;height:16px;border-radius:50%}.fbsqname{font-size:17px;font-weight:800;color:#1c1917;line-height:1.15}.fbsqbadge{font-size:12px;font-weight:700;color:#78716c}.fbsq.done .fbsqbadge{color:#166534}.fbback{background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:11px 15px;font-size:15px;font-weight:700;color:#57534e;margin-bottom:12px}.fbformhd{display:flex;align-items:center;gap:8px;font-family:Georgia,serif;font-size:20px;font-weight:700;margin-bottom:10px;color:#1c1917}</style></head><body>
+<div id="welcome" class="modal"><div class="modalcard"><div class="modalemo">👋</div><h2>Bienvenue !</h2><p>Pour voir <b>ton poste</b>, <b>ta traque</b> et tes consignes, appuie sur <b>ton prénom</b> dans la liste ci-dessous.</p><button id="welcomeBtn" class="modalbtn">👍 J'ai compris</button></div></div><div id="retourHelp" class="modal" style="display:none"><div class="modalcard"><div class="modalemo">📋</div><h2>Comment faire ton retour</h2><p>Pour réaliser ton retour : <b>sélectionne la traque</b>. Si tu as tiré, indique le <b>nombre de balles par poste</b>. Et si tu as <b>prélevé un animal</b>, indique-le.</p><button id="retourHelpBtn" class="modalbtn">👍 J'ai compris</button></div></div>
+<div id="pick" class="pickwrap"><div class="pickcard">
+<div class="pickhead"><span class="emo">🦌</span><div><h1 id="pickTitle">Carnet de Battue</h1><p id="subpick"></p></div></div>
+<div class="role role-c"><div class="rolehd"><span class="rolico">🦌</span><h2>Chasseurs</h2></div><p class="rolesub">Choisis ton nom pour voir ton poste :</p><div id="names" class="names"></div></div>
+<div class="role role-r"><div class="rolehd"><span class="rolico">🥁</span><h2>Rabatteurs</h2></div><p class="rolesub">Traques, annonces et consignes de sécurité.</p><div id="rabnames" class="names"></div><button class="rolebtn" onclick="enterRabatteurs()">Voir les traques &amp; consignes</button></div><div id="talkiePill" class="talkiepill" style="display:none"></div>
+<p class="ro2">🔒 Lecture seule — tu ne peux rien modifier</p></div></div>
+<div id="appview" class="wrap" style="display:none">
+<header><div class="k"><span class="emo">🦌</span><div><h1 id="myName">—</h1><p id="subapp"></p></div></div><button id="back" class="back" onclick="backToPick()">Changer de nom</button></header>
+<main>
+<div class="card hero"><div class="pad"><h3 class="sec">📍 Ton poste</h3><div id="extra" class="extra"></div><div id="myTraque" style="display:none"></div><div id="myPost" style="display:none"></div></div></div>
+<div class="card banner" id="attribsCard" style="display:none"><div class="pad"><h3 class="sec">🎯 Attributions du jour</h3><div id="attribs"></div></div></div>
+<div class="tilegrid"><button class="tile" onclick="openSheet('carte')"><span class="ico">🗺️</span><span class="tl">Ma carte</span><span class="hint">Où est mon poste</span></button><button class="tile" onclick="openSheet('poste')"><span class="ico">📸</span><span class="tl">Mon poste</span><span class="hint">Photo &amp; consignes</span></button><button class="tile" onclick="openSheet('annonces')"><span class="ico">📻</span><span class="tl">Annonces</span><span class="hint">Sonneries &amp; infos</span></button><button class="tile" onclick="openSheet('securite')"><span class="ico">🛡️</span><span class="tl">Sécurité</span><span class="hint">Consignes à respecter</span></button></div>
+<button class="tile wide ret" onclick="openSheet('retour')"><span class="ico">📋</span><span class="txt"><span class="tl">Envoyer mon retour</span><br><span class="hint">Dis à l'organisateur ce que tu as vu / tiré</span></span><span class="go">→</span></button>
+<div class="card" id="chefCard" style="display:none"><div class="pad"><h3 class="sec">👨‍✈️ Tu es chef de ligne</h3><p class="maphint">Postes sous ta responsabilité :</p><div id="chefPosts"></div><div id="chefTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0"></div><div class="map" id="chefMap" style="margin-top:8px;display:none"></div></div></div>
+<footer>Document en lecture seule — transmis par l'organisateur.</footer>
+</main>
+<div class="sheet-back" id="sheet-carte" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🗺️ Ma carte</h2><p class="maphint">Ton poste est surligné en orange.</p><div class="tabs" id="mapTabs" style="margin-bottom:10px"></div><div class="map" id="map"></div><label class="conetoggle"><input type="checkbox" id="coneToggle" checked onchange="toggleCones(this.checked)"> <span>Afficher les zones de sécurité</span></label><div class="conelegend"><span class="lg"><i class="sw green"></i> Tir autorisé</span><span class="lg"><i class="sw hatch"></i> Angle 30° — ne pas tirer</span><span class="lg"><i class="sw red"></i> Interdit — ne jamais tirer</span></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
+<div class="sheet-back" id="sheet-poste" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth" id="postInfoTitle">📍 Ton poste</h2><div class="tabs" id="postTabs" style="margin-bottom:10px"></div><div id="postInfoCard"><div id="myChef" style="display:none;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:8px;padding:6px 10px;font-size:14px;font-weight:600;color:#1c1917;margin-bottom:8px"></div><div class="consigne" id="myConsigne" style="display:none"><b>⚠️ Consignes :</b><span></span></div><div id="myPhotos"></div></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
+<div class="sheet-back" id="sheet-annonces" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🔔 Annonces &amp; sonneries</h2><ul class="list son" id="sonneries"></ul><button class="close" onclick="closeSheet()">Fermer</button></div></div>
+<div class="sheet-back" id="sheet-securite" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🛡️ Consignes de sécurité</h2><ul class="list" id="consignes"></ul><button class="close" onclick="closeSheet()">Fermer</button></div></div>
+<div class="sheet-back" id="sheet-retour" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">📋 Ton retour</h2><div class="hownote">👉 Après ta traque, dis à l'organisateur ce qui s'est passé : indique tes balles tirées et l'état du mirador, poste par poste, puis envoie.</div><div id="feedbackCard"><div id="fbList"></div></div><div class="priv">🔒 Ton retour est privé, envoyé uniquement à l'organisateur.</div><button class="close" onclick="closeSheet()">Fermer</button></div></div></div>
+<script>var DATA = `;
+
+const SHARED_TAIL = `;
+var AR=1.5, me=null;
+var DEF_IMG="data:image/svg+xml;utf8,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 520' preserveAspectRatio='xMidYMid slice'><defs><linearGradient id='sky' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#d7e7f2'/><stop offset='1' stop-color='#eef2e4'/></linearGradient></defs><rect width='900' height='520' fill='url(#sky)'/><circle cx='720' cy='120' r='46' fill='#f4ecd8'/><path d='M0 360 Q225 300 450 350 T900 340 V520 H0 Z' fill='#7fa060'/><path d='M0 410 Q250 360 520 400 T900 395 V520 H0 Z' fill='#5f8049'/><path d='M0 460 Q300 430 600 455 T900 450 V520 H0 Z' fill='#496b3a'/><g fill='#33502c'><polygon points='120,360 150,300 180,360'/><polygon points='128,382 150,330 172,382'/><rect x='146' y='378' width='8' height='24' fill='#5a3d24'/><polygon points='760,352 792,285 824,352'/><polygon points='768,374 792,318 816,374'/><rect x='788' y='370' width='9' height='26' fill='#5a3d24'/></g><g><rect x='420' y='250' width='60' height='60' rx='4' fill='#7a5a3a'/><polygon points='410,250 450,214 490,250' fill='#63472c'/><rect x='432' y='262' width='36' height='30' fill='#3f3020'/><rect x='426' y='310' width='10' height='150' fill='#63472c'/><rect x='464' y='310' width='10' height='150' fill='#63472c'/><line x1='426' y1='360' x2='474' y2='360' stroke='#63472c' stroke-width='7'/><line x1='426' y1='410' x2='474' y2='410' stroke='#63472c' stroke-width='7'/></g></svg>");
+function $(id){return document.getElementById(id);}
+function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s;}
+function fmtDate(d){try{return cap(new Date(d).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));}catch(e){return d;}}
+function myMir(ti){if(!me)return null;for(var k=0;k<me.posts.length;k++){if(me.posts[k].traqueIndex===ti)return me.posts[k].miradorId;}return null;}
+var MAP_I=0;
+function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}function tirRenderJS(zones){var n=zones.length;if(!n)return{reds:[],bands:[]};var Z=zones.map(function(z){return {l:((z.dir-z.width/2)%360+360)%360,r:((z.dir+z.width/2)%360+360)%360,w:z.width,dir:z.dir};});Z.sort(function(a,b){return a.dir-b.dir;});var ml=[],mr=[];for(var i=0;i<n;i++){var j=(i+1)%n;var g=((Z[j].l-Z[i].r)%360+360)%360;var me=Math.min(30,Math.max(0,(g-12)/2));mr[i]=me;ml[j]=me;}var reds=[],bands=[];for(var k=0;k<n;k++){reds.push({start:Z[k].l,width:Z[k].w});if(ml[k]>0.5)bands.push({start:Z[k].l-ml[k],width:ml[k]});if(mr[k]>0.5)bands.push({start:Z[k].r,width:mr[k]});}return {reds:reds,bands:bands};}var myId=myMir(index);if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}}
+function selectTraque(i){["tabs","mapTabs","postTabs"].forEach(function(id){var c=$(id);if(!c)return;var ks=c.children;for(var k=0;k<ks.length;k++)ks[k].classList.toggle("active",k===i);});renderMap(i);renderPostInfo(i);setHeroFor(i);}
+function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
+function setHeroFor(index){var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
+function aesc(x){return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+var RETOUR_HELP=false;function openSheet(k){var el=document.getElementById("sheet-"+k);if(el)el.classList.add("open");if(k==="retour"&&!RETOUR_HELP){RETOUR_HELP=true;var rh=document.getElementById("retourHelp");if(rh)rh.style.display="flex";}}
+function closeSheet(){var ls=document.querySelectorAll(".sheet-back");for(var i=0;i<ls.length;i++)ls[i].classList.remove("open");}
+var SHOW_CONES=true;
+function toggleCones(v){SHOW_CONES=v;renderMap(MAP_I);}
+function renderAttribs(){var card=$("attribsCard");var box=$("attribs");if(!card||!box)return;var list=DATA.attributions||[];box.innerHTML="";if(!list.length){card.style.display="none";return;}card.style.display="block";list.forEach(function(a){var txt,bg,col;if(a.mode==="bracelets"){txt=a.count+" bracelet"+(a.count>1?"s":"");bg="#f0fdf4";col="#166534";}else if(a.mode==="interdit"){txt="Interdit";bg="#fef2f2";col="#b91c1c";}else{txt="Libre";bg="#f5f5f4";col="#57534e";}var note=a.note?(" — "+aesc(a.note)):"";var d=document.createElement("div");d.style.cssText="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 11px;border-radius:9px;margin-bottom:6px;font-size:14px;background:"+bg;d.innerHTML="<span style='font-weight:600;color:#1c1917'>"+aesc(a.emoji)+" "+aesc(a.label)+"</span><span style='font-weight:700;color:"+col+";text-align:right'>"+txt+note+"</span>";box.appendChild(d);});}
+function renderPostInfo(index){var card=$("postInfoCard");if(!card)return;if(!me||!me.posts){card.style.display="none";return;}var post=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){post=me.posts[i];break;}}var title=$("postInfoTitle");var cons=$("myConsigne");var ph=$("myPhotos");if(!post){if(title)title.textContent="📍 Tu n'as pas de poste sur cette traque";if(cons)cons.style.display="none";if(ph)ph.innerHTML="";card.style.display="block";return;}if(title)title.textContent="📍 Ton poste : "+post.label;var mc=$("myChef");if(mc){if(post.chef){mc.style.display="block";mc.textContent="👨‍✈️ Chef de ligne : "+post.chef;}else{mc.style.display="none";}}if(cons){if(post.consignes){cons.style.display="flex";var cs=cons.querySelector("span");cs.textContent=post.consignes;cs.style.whiteSpace="pre-line";}else{cons.style.display="none";}}if(ph){ph.innerHTML="";(post.photos||[]).forEach(function(src){var im=document.createElement("img");im.className="postphoto";im.src=src;im.style.display="block";im.style.marginTop="8px";ph.appendChild(im);});}card.style.display="block";}
+function renderHero(){var hc=document.querySelector("#appview .hero");if(hc)hc.style.display="";var mh=document.querySelector(".maphint");if(mh)mh.textContent="Ton poste est surligné en orange · lecture seule";var p=me.posts[0];$("myTraque").textContent=p?p.traqueName:"—";$("myPost").textContent=p?p.label:"—";$("myName").textContent="🦌 "+me.name;var hchef=$("myHeroChef");if(hchef)hchef.style.display="none";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var ex=$("extra");ex.innerHTML="";me.posts.forEach(function(pp){var d=document.createElement("div");d.style.cssText="margin-top:7px;font-size:15px;line-height:1.35";d.innerHTML="• <b>"+aesc(pp.traqueName)+"</b> → "+aesc(pp.label)+(pp.chef?" <span style='color:#166534;font-weight:600'>· 👨‍✈️ "+aesc(pp.chef)+"</span>":"");ex.appendChild(d);});setupFeedback();renderAttribs();renderChef();}
+function renderChef(){var card=$("chefCard");var box=$("chefPosts");if(!card||!box)return;var list=(me&&me.chefPosts)||[];if(!list.length){card.style.display="none";return;}card.style.display="block";box.innerHTML="";var grp={};var ord=[];list.forEach(function(pp){if(!grp[pp.traqueName]){grp[pp.traqueName]=[];ord.push(pp.traqueName);}grp[pp.traqueName].push(pp);});ord.forEach(function(tn){var h=document.createElement("div");h.textContent=tn;h.style.cssText="font-weight:700;color:#166534;margin:10px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.03em";box.appendChild(h);grp[tn].forEach(function(pp){var d=document.createElement("div");d.style.cssText="display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:8px;margin-bottom:4px;background:#f5f5f4;font-size:14px";d.innerHTML="<span style='font-weight:600;color:#1c1917'>"+aesc(pp.label)+"</span><span style='color:#57534e'>"+aesc(pp.hunter||"libre")+"</span>";box.appendChild(d);});});var mids=(me&&me.chefMids)||[];var tabsEl=$("chefTabs");var mapEl=$("chefMap");if(!tabsEl||!mapEl)return;tabsEl.innerHTML="";var rel=[];DATA.traques.forEach(function(t,i){if((t.placed||[]).some(function(pp){return mids.indexOf(pp.mid)>=0;}))rel.push(i);});if(!rel.length){mapEl.style.display="none";return;}mapEl.style.display="block";rel.forEach(function(idx,k){var b=document.createElement("button");b.className="tab"+(k===0?" active":"");b.textContent=DATA.traques[idx].name;b.onclick=function(){var ch=tabsEl.children;for(var j=0;j<ch.length;j++)ch[j].className="tab";b.className="tab active";renderChefMap(idx);};tabsEl.appendChild(b);});renderChefMap(rel[0]);}
+function renderChefMap(index){var t=DATA.traques[index];var c=t.crop;var map=$("chefMap");if(!map)return;map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);var mids=(me&&me.chefMids)||[];(t.placed||[]).forEach(function(pp){var lx=(pp.gx-c.x)/c.w*100,ly=(pp.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var isChef=mids.indexOf(pp.mid)>=0;var el=document.createElement("div");el.className="marker"+(isChef?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(isChef?"★ ":"")+aesc(pp.hunter||"")+"</span>";map.appendChild(el);});}
+var FB_SENT=true, FB_B=[], FB_S=[], FB_A=[];
+function fbHasData(){for(var i=0;i<FB_B.length;i++){if((FB_B[i]||0)>0)return true;if(FB_S[i])return true;var c=$("fbC"+i);if(c&&c.value)return true;if(FB_A[i]){for(var k in FB_A[i]){if(FB_A[i][k]>0)return true;}}}return false;}
+window.addEventListener("beforeunload",function(e){if(!FB_SENT&&fbHasData()){e.preventDefault();e.returnValue="";return "";}});
+function fbPick(idx,val){var map={"Bon":"_bon","À réparer":"_rep","Dangereux":"_dng"};FB_S[idx]=(FB_S[idx]===val?"":val);["_bon","_rep","_dng"].forEach(function(sfx){var el=$("fbP"+idx+sfx);if(el)el.className="pill";});if(FB_S[idx]){var cls=(val==="Bon"?"on-bon":val==="À réparer"?"on-rep":"on-dng");$("fbP"+idx+map[val]).className="pill "+cls;}FB_SENT=false;}
+function bindCounter(inp,getV,setV,minusEl,plusEl){if(!inp)return;inp.value=getV();inp.setAttribute("inputmode","numeric");inp.onfocus=function(){inp.setAttribute("data-prev",getV());inp.value="";};inp.oninput=function(){var v=parseInt((inp.value||"").replace(/[^0-9]/g,""),10);setV(isNaN(v)?0:Math.max(0,v));FB_SENT=false;};inp.onblur=function(){if(inp.value===""){setV(Number(inp.getAttribute("data-prev"))||0);}inp.value=getV();};if(minusEl)minusEl.onclick=function(){setV(Math.max(0,getV()-1));inp.value=getV();FB_SENT=false;};if(plusEl)plusEl.onclick=function(){setV(getV()+1);inp.value=getV();FB_SENT=false;};}
+function fbStoreKey(){return "battue_fb_"+DATA.journeeId+"_"+((me&&me.name)||"");}
+function fbLoadSent(){try{return JSON.parse(localStorage.getItem(fbStoreKey())||"{}")||{};}catch(e){return {};}}
+function fbSaveSent(o){try{localStorage.setItem(fbStoreKey(),JSON.stringify(o));}catch(e){}}
+function fbGroups(){var groups=[],byId={};me.posts.forEach(function(p,idx){if(!byId[p.trackId]){byId[p.trackId]={trackId:p.trackId,name:p.traqueName,color:p.color,idxs:[]};groups.push(byId[p.trackId]);}byId[p.trackId].idxs.push(idx);});return groups;}
+function fbPostInputs(idx,esp){var p=me.posts[idx];if(FB_B[idx]==null)FB_B[idx]=0;if(!FB_S[idx])FB_S[idx]="";if(!FB_A[idx])FB_A[idx]={};var prows="";esp.forEach(function(e){if(FB_A[idx][e.key]==null)FB_A[idx][e.key]=0;prows+="<div class='prow'><span class='pemo'>"+e.emoji+" "+e.label+"</span><div class='counter sm'><button type='button' class='cbtn' id='fbAm"+idx+"_"+e.key+"'>\u2212</button><input class='cval' id='fbA"+idx+"_"+e.key+"' value='"+(FB_A[idx][e.key]||0)+"'/><button type='button' class='cbtn' id='fbAp"+idx+"_"+e.key+"'>+</button></div></div>";});return "<div class='fbpost'><p class='fbpost-t'>Poste "+p.label+"</p><p class='fblab'>Balles tir\u00e9es</p><div class='counter'><button type='button' class='cbtn' id='fbMinus"+idx+"'>\u2212</button><input class='cval' id='fbV"+idx+"' value='"+(FB_B[idx]||0)+"'/><button type='button' class='cbtn' id='fbPlus"+idx+"'>+</button></div><p class='fblab'>Animaux pr\u00e9lev\u00e9s</p><div class='preleve'>"+prows+"</div><button type='button' class='fbmini' id='fbToggle"+idx+"'>\ud83d\udee0\ufe0f Signaler un probl\u00e8me de mirador</button><div class='fbadv' id='fbAdv"+idx+"' style='display:none'><p class='fblab'>\u00c9tat du mirador</p><div class='pills'><button type='button' class='pill' id='fbP"+idx+"_bon'>Bon</button><button type='button' class='pill' id='fbP"+idx+"_rep'>\u00c0 r\u00e9parer</button><button type='button' class='pill' id='fbP"+idx+"_dng'>Dangereux</button></div><p class='fblab'>Commentaire</p><input class='fbcom' id='fbC"+idx+"' placeholder='ex : \u00e9chelle ab\u00eem\u00e9e\u2026'/></div></div>";}
+function fbWirePost(idx,esp){bindCounter($("fbV"+idx),function(){return FB_B[idx];},function(v){FB_B[idx]=v;},$("fbMinus"+idx),$("fbPlus"+idx));esp.forEach(function(e){bindCounter($("fbA"+idx+"_"+e.key),function(){return FB_A[idx][e.key];},function(v){FB_A[idx][e.key]=v;},$("fbAm"+idx+"_"+e.key),$("fbAp"+idx+"_"+e.key));});$("fbP"+idx+"_bon").onclick=function(){fbPick(idx,"Bon");};$("fbP"+idx+"_rep").onclick=function(){fbPick(idx,"\u00c0 r\u00e9parer");};$("fbP"+idx+"_dng").onclick=function(){fbPick(idx,"Dangereux");};var tg=$("fbToggle"+idx);if(tg)tg.onclick=function(){var a=$("fbAdv"+idx);if(a)a.style.display=(a.style.display==="none"?"block":"none");};if(FB_S[idx]){var mp={"Bon":"bon","\u00c0 r\u00e9parer":"rep","Dangereux":"dng"};var el=$("fbP"+idx+"_"+mp[FB_S[idx]]);if(el)el.classList.add("on");var av=$("fbAdv"+idx);if(av)av.style.display="block";}}
+function renderTraqueBlock(g,esp,isSent,editing){var block=$("fbFormBody");if(!block)return;if(isSent&&!editing){block.innerHTML="<div class='fbsentrow'><span class='fbok'>\u2713 D\u00e9j\u00e0 envoy\u00e9</span><button type='button' class='fbmod' id='fbMod_"+g.trackId+"'>Modifier</button></div>";$("fbMod_"+g.trackId).onclick=function(){if(window.confirm("Tu vas modifier un retour d\u00e9j\u00e0 envoy\u00e9 pour \u00ab "+g.name+" \u00bb. Continuer ?")){renderTraqueBlock(g,esp,true,true);}};return;}var inner="";if(editing)inner+="<div class='fbwarn'>\u26a0\ufe0f Modification d'un retour d\u00e9j\u00e0 envoy\u00e9</div>";inner+="<button type='button' class='fbrien' id='fbRien_"+g.trackId+"'>\ud83d\udc4d Rien \u00e0 signaler</button>";g.idxs.forEach(function(idx){inner+=fbPostInputs(idx,esp);});inner+="<button type='button' class='fbsend' id='fbSend_"+g.trackId+"'>"+(editing?"Renvoyer cette traque":"Envoyer cette traque")+"</button><p class='fbmsg' id='fbMsg_"+g.trackId+"'></p>";block.innerHTML=inner;g.idxs.forEach(function(idx){fbWirePost(idx,esp);});$("fbSend_"+g.trackId).onclick=function(){confirmTraque(g,esp);};var rn=$("fbRien_"+g.trackId);if(rn)rn.onclick=function(){sendRien(g,esp);};}
+function renderGridTile(g,isSent){var b=$("fbSq_"+g.trackId);if(!b)return;b.className="fbsq"+(isSent?" done":"");b.innerHTML="<span class='fbsqdot' style='background:"+(g.color||"#166534")+"'></span><span class='fbsqname'>"+g.name+"</span><span class='fbsqbadge'>"+(isSent?"\u2713 Envoy\u00e9":"\u00c0 remplir")+"</span>";}
+function fbOpenTraque(g,esp){var sent=fbLoadSent();var gr=$("fbGrid");if(gr)gr.style.display="none";var sa=$("fbSendAll");if(sa)sa.style.display="none";var form=$("fbForm");if(!form)return;form.style.display="block";form.innerHTML="<button type='button' class='fbback' id='fbBack'>\u2190 Retour aux traques</button><div class='fbformhd'><span class='fbdot' style='background:"+(g.color||"#166534")+"'></span>"+g.name+"</div><div id='fbFormBody'></div>";$("fbBack").onclick=function(){fbBackToGrid();};renderTraqueBlock(g,esp,!!sent[g.trackId],false);}
+function fbBackToGrid(){var form=$("fbForm");if(form){form.style.display="none";form.innerHTML="";}var gr=$("fbGrid");if(gr)gr.style.display="grid";updateSendAll();}
+function updateSendAll(){var sent=fbLoadSent();var groups=fbGroups();var remaining=0;groups.forEach(function(g){if(!sent[g.trackId])remaining++;});var b=$("fbSendAll");if(!b)return;if(remaining<=1){b.style.display="none";}else{b.style.display="block";b.textContent="\ud83d\udce4 Tout envoyer ("+remaining+" traques)";}}
+function setupFeedback(){var card=$("feedbackCard");var list=$("fbList");if(!card||!list)return;if(!me||!DATA.fnUrl||!DATA.journeeId||!me.posts.length){card.style.display="none";return;}card.style.display="block";FB_SENT=true;FB_B=[];FB_S=[];FB_A=[];var esp=DATA.especes||[];var sent=fbLoadSent();var groups=fbGroups();list.innerHTML="<div id='fbGrid' class='fbgrid'></div><button class='fbsendall' id='fbSendAll' type='button'>\ud83d\udce4 Tout envoyer</button><div id='fbForm' class='fbform' style='display:none'></div>";var gr=$("fbGrid");groups.forEach(function(g){var b=document.createElement("button");b.type="button";b.className="fbsq";b.id="fbSq_"+g.trackId;gr.appendChild(b);renderGridTile(g,!!sent[g.trackId]);b.onclick=function(){fbOpenTraque(g,esp);};});var sa=$("fbSendAll");if(sa)sa.onclick=function(){sendAll(esp);};updateSendAll();}
+function fbAnimalsText(idx){var esp=DATA.especes||[];var parts=[];esp.forEach(function(e){var q=(FB_A[idx]&&FB_A[idx][e.key])||0;if(q>0)parts.push(q+" "+e.label);});return parts.join(", ");}
+function confirmTraque(g,esp){var esp0=DATA.especes||[];var bad=null,badB=0,badA=0;for(var qi=0;qi<g.idxs.length;qi++){var ix=g.idxs[qi];var tot=0;esp0.forEach(function(e){tot+=(FB_A[ix]&&FB_A[ix][e.key])||0;});if((FB_B[ix]||0)<tot){bad=me.posts[ix];badB=FB_B[ix]||0;badA=tot;break;}}var warnHtml=bad?("<div class='fbwarnov'>\u26a0\ufe0f Poste "+bad.label+" : "+badB+" balle(s) pour "+badA+" animal(aux). V\u00e9rifie \u2014 tu peux quand m\u00eame envoyer.</div>"):"";var recaps=g.idxs.map(function(idx){var p=me.posts[idx];var b=FB_B[idx]||0;var s=FB_S[idx]||"non pr\u00e9cis\u00e9";var c=$("fbC"+idx)?$("fbC"+idx).value:"";var an=fbAnimalsText(idx);return "<div class='recap'><b>"+p.traqueName+" \u2014 "+p.label+"</b><span>"+b+" balle(s) \u00b7 mirador "+s+(an?(" \u00b7 \ud83e\udd8c "+an):"")+(c?(" \u00b7 \u00ab "+c+" \u00bb"):"")+"</span></div>";}).join("");var ov=document.createElement("div");ov.className="fbov";ov.id="fbov";ov.innerHTML="<div class='fbsheet'><h3>V\u00e9rifie ton retour</h3>"+warnHtml+"<p class='sub'>Traque \u00ab "+g.name+" \u00bb \u2014 tu confirmes ?</p>"+recaps+"<div class='row'><button class='bmod' id='fbModBtn'>Modifier</button><button class='bcon' id='fbConfirmBtn'>Confirmer l'envoi</button></div></div>";document.body.appendChild(ov);$("fbModBtn").onclick=closeConfirm;$("fbConfirmBtn").onclick=function(){doSendTraque(g,esp,false);};}
+function closeConfirm(){var ov=$("fbov");if(ov)ov.remove();}
+function fbSendPost(idx){var p=me.posts[idx];var payload={userId:DATA.userId,journeeId:DATA.journeeId,trackId:p.trackId,miradorId:p.miradorId,hunter:me.name,bullets:FB_B[idx]||0,state:FB_S[idx]||"",comment:$("fbC"+idx)?$("fbC"+idx).value:"",animals:FB_A[idx]||{}};return fetch(DATA.fnUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(r){if(!r.ok){return r.text().then(function(t){throw new Error("["+r.status+"] "+(t||"").slice(0,160));});}});}
+function doSendTraque(g,esp,silent){var cb=$("fbConfirmBtn");if(cb){cb.disabled=true;cb.textContent="Envoi\u2026";}var idxs=g.idxs.slice();var i=0;function nx(){if(i>=idxs.length){closeConfirm();var sent=fbLoadSent();sent[g.trackId]=true;fbSaveSent(sent);FB_SENT=true;renderGridTile(g,true);fbBackToGrid();updateSendAll();return Promise.resolve(true);}return fbSendPost(idxs[i]).then(function(){i++;return nx();});}return nx().catch(function(e){closeConfirm();var m=$("fbMsg_"+g.trackId);if(m){m.style.color="#b91c1c";m.textContent="\u00c9chec : "+String((e&&e.message)||e);}return false;});}
+function sendRien(g,esp){g.idxs.forEach(function(ix){FB_B[ix]=0;FB_S[ix]="";if(FB_A[ix]){for(var k in FB_A[ix])FB_A[ix][k]=0;}var cc=$("fbC"+ix);if(cc)cc.value="";});doSendTraque(g,esp,true);}
+function sendAll(esp){if(!window.confirm("Envoyer ton retour pour toutes les traques restantes ?"))return;var sent=fbLoadSent();var groups=fbGroups().filter(function(g){return !sent[g.trackId];});var i=0;function nx(){if(i>=groups.length)return;var g=groups[i];i++;doSendTraque(g,esp,true).then(function(){nx();});}nx();}
+
+function selectHunter(i){me=DATA.chasseurs[i];renderHero();var def=(me.posts[0]?me.posts[0].traqueIndex:0);buildTabs(def);$("pick").style.display="none";$("appview").style.display="block";window.scrollTo(0,0);}
+function backToPick(){if(!FB_SENT&&fbHasData()&&!window.confirm("Tu n'as pas envoyé ton retour (balles / mirador). Changer de nom quand même ?"))return;FB_SENT=true;$("appview").style.display="none";$("pick").style.display="flex";window.scrollTo(0,0);}
+function renderPicker(){var box=$("names");box.innerHTML="";if(!DATA.chasseurs.length){box.innerHTML="<p class='empty'>Aucun poste attribué pour le moment.</p>";}DATA.chasseurs.forEach(function(cc,i){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🦌 "+cc.name;b.onclick=function(){selectHunter(i);};box.appendChild(b);});var rb=$("rabnames");if(rb){rb.innerHTML="";(DATA.rabatteurs||[]).forEach(function(nm){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🥁 "+nm;b.onclick=function(){enterRabatteurs();};rb.appendChild(b);});}$("subpick").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var tp=$("talkiePill");if(tp&&DATA.canal){tp.textContent="📻 Canal talkie : "+DATA.canal;tp.style.display="inline-flex";}}
+function enterRabatteurs(){setupRabatteurs();}
+function fillLists(){var so=$("sonneries");DATA.sonneries.forEach(function(s){var li=document.createElement("li");li.innerHTML="<span class='ev'>"+s.evenement+"</span><span>"+s.signal+"</span>";so.appendChild(li);});var co=$("consignes");DATA.consignes.forEach(function(x){var li=document.createElement("li");li.className="rule";li.innerHTML="<span class='p'>•</span><span>"+x+"</span>";co.appendChild(li);});}
+if(DATA.orgName){try{document.title=DATA.orgName;}catch(e){}var pt=$("pickTitle");if(pt)pt.textContent=DATA.orgName;}
+function setupRabatteurs(){me=null;$("pick").style.display="none";$("appview").style.display="block";var hero=document.querySelector("#appview .hero");if(hero)hero.style.display="none";var fc=$("feedbackCard");if(fc)fc.style.display="none";var bk=$("back");if(bk)bk.style.display="";$("myName").textContent="🥁 Rabatteurs";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var mh=document.querySelector(".maphint");if(mh)mh.textContent="Vue d'ensemble des traques · lecture seule";buildTabs(0);renderAttribs();window.scrollTo(0,0);}
+renderPicker();fillLists();var wb=document.getElementById("welcomeBtn");if(wb)wb.onclick=function(){var w=document.getElementById("welcome");if(w)w.style.display="none";};var rhb=document.getElementById("retourHelpBtn");if(rhb)rhb.onclick=function(){var r=document.getElementById("retourHelp");if(r)r.style.display="none";};
+var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR=im.naturalWidth/im.naturalHeight;var mp=$("map");if(mp&&mp.innerHTML!=="")renderMap(MAP_I);}};im.src=DATA.image;
+</scr` + `ipt></body></html>`;
+
+function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId) {
+  const posted = {};
+  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "" }); }); });
+  const chefLignesData = journee.chefLignes || {};
+  const chefPostsOf = (hid) => Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid).map((mid) => { let f = null; (terrain.tracks || []).forEach((trk) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) { const pl = journee.placements[trk.id] || {}; const occHid = Object.keys(pl).find((h) => pl[h] === mid); const occ = occHid ? participants.find((x) => x.id === occHid) : null; f = { traqueName: trk.name, label: m.label, hunter: occ ? occ.name : "" }; } }); return f; }).filter(Boolean);
+  const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
+  return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
+}
+
+function PublishModal({ github, setGithub, onClose, onLoad }) {
+  const [token, setToken] = useState(github.token || "");
+  const [owner, setOwner] = useState(github.owner || "Hiplou");
+  const [repo, setRepo] = useState(github.repo || "battue");
+  const [dataRepo, setDataRepo] = useState(github.dataRepo || "battue-data");
+  const [fnUrl, setFnUrl] = useState(github.fnUrl || DEFAULT_FACTEUR);
+  const [orgName, setOrgName] = useState(github.orgName || "");
+  const url = "https://" + (owner || "hiplou").toLowerCase() + ".github.io/" + (repo || "battue") + "/";
+  return (<div className="fixed inset-0 z-50 bg-stone-900/70 flex items-end sm:items-center justify-center p-3 overflow-auto">
+    <div className="bg-stone-50 rounded-xl max-w-md w-full my-4 shadow-2xl">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200"><h3 className="font-serif text-lg text-stone-800">Réglages GitHub</h3><button onClick={onClose} className="text-stone-400"><X size={18} /></button></div>
+      <div className="px-4 py-3 space-y-3 text-sm">
+        <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom du groupe / société (titre de la page chasseurs)</label><input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
+        <p className="text-stone-500 text-xs">Colle ta clé GitHub une seule fois. Elle reste sur ton appareil.</p>
+        <div><label className="text-xs uppercase tracking-wide text-stone-400">Clé GitHub (jeton)</label><input value={token} onChange={(e) => setToken(e.target.value)} placeholder="github_pat_…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /></div>
+        <div className="flex gap-2"><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Compte</label><input value={owner} onChange={(e) => setOwner(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Dossier public (page)</label><input value={repo} onChange={(e) => setRepo(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div></div>
+        <div><label className="text-xs uppercase tracking-wide text-stone-400">Dossier privé (sauvegarde des données)</label><input value={dataRepo} onChange={(e) => setDataRepo(e.target.value)} placeholder="battue-data" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
+        <div><label className="text-xs uppercase tracking-wide text-stone-400">Adresse du facteur (retours chasseurs)</label><input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder="https://battue-facteur.hippolyte-houdard.workers.dev/" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /><p className="text-[10px] text-stone-400 mt-1">Pré-rempli par défaut. Ne change ça que si tu as ton propre facteur.</p></div>
+        <p className="text-xs text-stone-500">Lien des chasseurs : <span className="text-emerald-800 break-all">{url}</span></p>
+        {onLoad && <div className="border-t border-stone-200 pt-3"><button onClick={() => { onClose(); onLoad(); }} className="w-full flex items-center justify-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md">⬇ Importer mes anciennes données (GitHub)</button><p className="text-[11px] text-stone-400 mt-1">À faire UNE fois pour rapatrier ta sauvegarde GitHub dans ce compte.</p></div>}
+      </div>
+      <div className="px-4 py-3 border-t border-stone-200 flex justify-end gap-2"><button onClick={onClose} className="text-sm text-stone-500 px-3 py-1.5">Annuler</button><button onClick={() => { setGithub({ ...github, token: token.trim(), owner: (owner.trim() || "Hiplou"), repo: (repo.trim() || "battue"), path: github.path || "index.html", dataRepo: (dataRepo.trim() || "battue-data"), fnUrl: fnUrl.trim(), orgName: orgName.trim() }); onClose(); }} className="bg-emerald-800 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Enregistrer</button></div>
+    </div>
+  </div>);
+}
+
+// ---------- Impression des postes ----------
+const PRINT_CSS = "@page{margin:14mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Georgia,'Times New Roman',serif;color:#1c1917;margin:0}header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header .emo{font-size:34px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}.traque{border:1px solid #d6d3d1;border-radius:8px;padding:10px 12px;break-inside:avoid;margin-bottom:14px}.traque h2{margin:0 0 8px;font-size:16px;border-left:5px solid #166534;padding-left:8px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:13px}th{text-align:left;color:#78716c;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e7e5e4;padding:3px 4px}td{padding:4px;border-bottom:1px solid #f0efee}td.num{color:#a8a29e;width:34px;font-weight:bold;text-align:center}td.pl{color:#57534e;width:42%}td.ch{font-weight:bold}td.chef{color:#57534e;font-style:italic}.free{color:#a8a29e;font-weight:normal;font-style:italic}.mapwrap{position:relative;width:100%;margin-top:10px;break-inside:avoid}.mapwrap img{width:100%;display:block;border-radius:8px;border:1px solid #d6d3d1}.mk{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;font-family:Helvetica,Arial,sans-serif}.mkdot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}.mklbl{margin-top:2px;background:rgba(255,255,255,.92);border:1px solid #d6d3d1;border-radius:5px;padding:1px 4px;font-size:9px;white-space:nowrap;font-weight:bold;color:#1c1917}footer{margin-top:16px;text-align:center;color:#a8a29e;font-size:11px;font-family:Helvetica,Arial,sans-serif}";
+function buildPrintHtml(journee, terrain, participants, safety) {
+  const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
+  const nameOf = (hid) => { const p = participants.find((x) => x.id === hid); return p ? p.name : hid; };
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let sections = "";
+  const traquesData = [];
+  (terrain.tracks || []).forEach((trk, idx) => {
+    const pl = journee.placements[trk.id] || {}; const byMir = {}; Object.entries(pl).forEach(([hid, mid]) => { byMir[mid] = hid; });
+    let rows = "";
+    (trk.miradors || []).forEach((m, mi) => { const hid = byMir[m.id]; rows += "<tr><td class='num'>" + (mi + 1) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td><td class='chef'>" + ((journee.chefLignes && journee.chefLignes[m.id]) ? esc(nameOf(journee.chefLignes[m.id])) : "") + "</td></tr>"; });
+    if (!trk.miradors || !trk.miradors.length) rows = "<tr><td colspan='4' class='free'>Aucun mirador</td></tr>";
+    const mapHtml = terrain.planImage ? "<div class='mapbox' id='map" + idx + "'></div>" : "";
+    sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th><th>Chef de ligne</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
+    traquesData.push({ color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m, mi) => ({ gx: m.gx, gy: m.gy, n: mi + 1, tir: m.tir || null })) });
+  });
+  const script = terrain.planImage ? ("<script>var IMG=" + JSON.stringify(terrain.planImage) + ";var TQ=" + JSON.stringify(traquesData) + ";" + "var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;TQ.forEach(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var img=document.createElement('img');img.src=IMG;img.style.position='absolute';img.style.maxWidth='none';img.style.width=(100/fw)+'%';img.style.left=(-(fx/fw)*100)+'%';img.style.top=(-(fy/fh)*100)+'%';box.appendChild(img);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;if(m.tir&&m.tir.zones&&m.tir.zones.length){var mk=function(cc,color){var cd=document.createElement('div');cd.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';box.appendChild(cd);};var mkBand=function(start,w){var cd=document.createElement('div');cd.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';box.appendChild(cd);};var trJS=function(zones){var n=zones.length;if(!n)return{reds:[],bands:[]};var Z=zones.map(function(z){return {l:((z.dir-z.width/2)%360+360)%360,r:((z.dir+z.width/2)%360+360)%360,w:z.width,dir:z.dir};});Z.sort(function(a,b){return a.dir-b.dir;});var ml=[],mr=[];for(var i=0;i<n;i++){var j=(i+1)%n;var g=((Z[j].l-Z[i].r)%360+360)%360;var me=Math.min(30,Math.max(0,(g-12)/2));mr[i]=me;ml[j]=me;}var reds=[],bands=[];for(var k=0;k<n;k++){reds.push({start:Z[k].l,width:Z[k].w});if(ml[k]>0.5)bands.push({start:Z[k].l-ml[k],width:ml[k]});if(mr[k]>0.5)bands.push({start:Z[k].r,width:mr[k]});}return {reds:reds,bands:bands};};var gd=document.createElement('div');gd.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.42)';box.appendChild(gd);var tr=trJS(m.tir.zones);tr.bands.forEach(function(b){mkBand(b.start,b.width);});tr.reds.forEach(function(r){mk({dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)');});}var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);min-width:16px;height:16px;padding:0 3px;border-radius:9px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);background:'+t.color+';color:#fff;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:3;font-family:Helvetica,Arial,sans-serif';d.textContent=m.n;box.appendChild(d);});});};im.src=IMG;" + "</scr" + "ipt>") : "";
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + PRINT_CSS + "</style></head><body>"
+    + "<header><div class='emo'>🦌</div><div><h1>" + esc(terrain.name) + "</h1><p>" + esc(d) + "</p></div></header>"
+    + "<div>" + sections + "</div>"
+    + "<footer>Carnet de Battue — " + esc(terrain.name) + "</footer>" + script + "</body></html>";
+}
+
+function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onRemoveKill, onSetShot, onSetState }) {
+  const [sub, setSub] = useState("final");
+  const shots = j.shots || {};
+  const pName = (id) => participants.find((p) => p.id === id)?.name || "?";
+  const totalPris = (j.tableau || []).reduce((s, k) => s + (Number(k.quantite) || 0), 0);
+  const balleRows = [];
+  let totalBalles = 0;
+  (terrain?.tracks || []).forEach((trk) => { const pl = j.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); balleRows.push({ trackId: trk.id, trackName: trk.name, mid, label: m ? m.label : "?", hunter: pName(hid) }); totalBalles += Number((shots[trk.id] || {})[mid]) || 0; }); });
+  return (<div className="mt-1 border-t border-stone-200 pt-2 space-y-2">
+    <div className="flex items-center gap-1"><BookOpen size={13} className="text-stone-400" /><div className="flex gap-1">
+      <button onClick={() => setSub("final")} className={`text-xs font-medium px-2.5 py-1 rounded ${sub === "final" ? "bg-emerald-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>Tableau final</button>
+      <button onClick={() => setSub("balles")} className={`text-xs font-medium px-2.5 py-1 rounded ${sub === "balles" ? "bg-emerald-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>Balles / poste</button>
+    </div><span className="ml-auto text-xs text-stone-500">{sub === "final" ? totalPris + " pris" : totalBalles + " balles"}</span></div>
+    {sub === "final" ? (<>
+      {(j.tableau || []).length === 0 && <p className="text-xs text-stone-400 italic">Aucun animal noté. Ajoute une prise.</p>}
+      {(j.tableau || []).map((k) => (<div key={k.id} className={`border rounded-md p-2 space-y-2 ${k.source === "chasseur" ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
+        {k.source === "chasseur" && <p className="text-[10px] font-medium text-emerald-700">🦌 Déclaré par le chasseur — modifiable</p>}
+        <div className="flex gap-1 flex-wrap">{ESPECES.filter((e) => e.key === "autre" || e.key === k.espece || (terrain && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled)).map((e) => (<button key={e.key} onClick={() => onUpdateKill(k.id, { espece: e.key })} className={`px-2 py-1 rounded text-xs font-medium border ${k.espece === e.key ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{e.emoji} {e.label}</button>))}
+          <button onClick={() => onRemoveKill(k.id)} className="ml-auto text-stone-400 hover:text-red-700"><X size={15} /></button></div>
+        {k.espece === "autre" && <input value={k.especeLabel || ""} onChange={(e) => onUpdateKill(k.id, { especeLabel: e.target.value })} placeholder="Quelle espèce ?" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white" />}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Sexe :</span>
+            <button onClick={() => onUpdateKill(k.id, { sexe: k.sexe === "M" ? "" : "M" })} className={`px-2 py-1 rounded text-xs font-medium border ${k.sexe === "M" ? "bg-sky-700 text-white border-sky-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>♂ Mâle</button>
+            <button onClick={() => onUpdateKill(k.id, { sexe: k.sexe === "F" ? "" : "F" })} className={`px-2 py-1 rounded text-xs font-medium border ${k.sexe === "F" ? "bg-pink-700 text-white border-pink-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>♀ Femelle</button></div>
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Poids :</span><input type="number" inputMode="decimal" step="0.1" min="0" onFocus={(e) => e.target.select()} value={k.poids ?? ""} onChange={(e) => onUpdateKill(k.id, { poids: e.target.value })} placeholder="kg" className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /><span className="text-xs text-stone-400">kg</span></div>
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Bracelet :</span><input value={k.bracelet || ""} onChange={(e) => onUpdateKill(k.id, { bracelet: e.target.value })} placeholder="n°" className="w-24 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /></div>
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Traque :</span>
+            <select value={k.trackId || ""} onChange={(e) => onUpdateKill(k.id, { trackId: e.target.value })} className="border border-stone-300 rounded px-2 py-1 text-sm bg-white max-w-[130px]"><option value="">—</option>{(terrain?.tracks || []).map((trk) => <option key={trk.id} value={trk.id}>{trk.name}</option>)}</select></div>
+          <div className="flex items-center gap-1"><span className="text-xs text-stone-500">Tireur :</span>
+            <select value={k.tireurId || ""} onChange={(e) => onUpdateKill(k.id, { tireurId: e.target.value })} className="border border-stone-300 rounded px-2 py-1 text-sm bg-white max-w-[150px]"><option value="">—</option>{participants.filter((p) => p.role !== "rabatteur").map((p) => <option key={p.id} value={p.id}>{p.name || "Sans nom"}</option>)}</select></div>
+        </div>
+      </div>))}
+      <button onClick={onAddKill} className="w-full flex items-center justify-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Plus size={15} /> Ajouter une prise</button>
+    </>) : (<>
+      {!terrain ? <p className="text-xs text-stone-400 italic">Choisis un territoire.</p> : balleRows.length === 0 ? <p className="text-xs text-stone-400 italic">Aucun poste occupé. Poste des chasseurs d'abord (bouton « Poster les fusils »).</p> : balleRows.map((r) => { const st = ((j.miradorStates || {})[r.trackId] || {})[r.mid]; const stColor = st ? (st.state === "Dangereux" ? "text-red-700" : st.state === "À réparer" ? "text-amber-700" : "text-emerald-700") : ""; return (<div key={r.trackId + r.mid} className="bg-white border border-stone-200 rounded-md p-2">
+        <div className="flex items-center gap-2"><div className="flex-1 min-w-0"><p className="text-sm text-stone-800 truncate"><b>{r.trackName}</b> — {r.label}</p><p className="text-[10px] text-stone-400">{r.hunter}</p></div>
+        <input type="number" inputMode="numeric" min="0" placeholder="0" onFocus={(e) => e.target.select()} value={(shots[r.trackId] || {})[r.mid] ?? ""} onChange={(e) => onSetShot(r.trackId, r.mid, e.target.value === "" ? "" : Number(e.target.value))} className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" />
+        <span className="text-xs text-stone-400">balles</span></div>
+        {st && (st.state || st.comment) && <p className={`text-[11px] mt-1 ${stColor}`}>🛠️ Mirador : {st.state || "—"}{st.comment ? " — " + st.comment : ""}{st.hunter ? " (signalé par " + st.hunter + ")" : ""}</p>}
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap"><span className="text-[10px] uppercase tracking-wide text-stone-400">Mirador :</span>
+          <select value={st?.state || ""} onChange={(e) => onSetState(r.trackId, r.mid, { state: e.target.value })} className="border border-stone-300 rounded px-1.5 py-1 text-xs bg-white"><option value="">—</option><option>Bon</option><option>À réparer</option><option>Dangereux</option></select>
+          <input value={st?.comment || ""} onChange={(e) => onSetState(r.trackId, r.mid, { comment: e.target.value })} placeholder="commentaire" className="flex-1 min-w-[100px] border border-stone-300 rounded px-2 py-1 text-xs bg-white" /></div>
+      </div>); })}
+    </>)}
+  </div>);
+}
+
+// ---------- Journées ----------
+function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefLigne, onAssignPosts }) {
+  const [open, setOpen] = useState(false);
+  const placedPosts = []; (terrain.tracks || []).forEach((trk) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (!m) return; const p = participants.find((x) => x.id === hid); placedPosts.push({ mid, label: m.label, trackId: trk.id, traqueName: trk.name, hid, hunterName: p ? p.name : "?" }); }); });
+  const seen = {}; const placedHunters = []; placedPosts.forEach((pp) => { if (!seen[pp.hid]) { seen[pp.hid] = 1; placedHunters.push({ id: pp.hid, name: pp.hunterName }); } }); placedHunters.sort((a, b) => byNom(a.name || "", b.name || ""));
+  const chefs = journee.chefs || []; const cl = journee.chefLignes || {};
+  const nb = chefs.length;
+  return (<SectionCard className="p-3 space-y-2">
+    <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between"><span className="font-medium text-stone-800">👨‍✈️ Chefs de ligne</span><span className="text-xs text-stone-500">{nb ? nb + " désigné(s)" : "aucun"} {open ? "▲" : "▼"}</span></button>
+    {open && (placedPosts.length === 0 ? <p className="text-xs text-stone-400 italic">Place d'abord des chasseurs sur les postes.</p> : (<div className="space-y-2 pt-1">
+      <p className="text-[11px] text-stone-400">Désigne les chefs (parmi les chasseurs placés), puis coche les postes dont chacun est responsable.</p>
+      <div><span className="text-[10px] uppercase tracking-wide text-stone-400">Qui est chef de ligne ?</span>
+        <div className="flex flex-wrap gap-1.5 mt-1">{placedHunters.map((h) => { const on = chefs.indexOf(h.id) >= 0; return (<button key={h.id} onClick={() => onToggleChef(journee.id, h.id)} className={`text-xs px-2 py-1 rounded-full border ${on ? "bg-stone-800 text-white border-stone-800" : "bg-white text-stone-600 border-stone-300"}`}>{on ? "👨‍✈️ " : ""}{h.name}</button>); })}</div></div>
+      {chefs.map((chefId) => { const chef = placedHunters.find((h) => h.id === chefId); if (!chef) return null; const mine = placedPosts.filter((pp) => cl[pp.mid] === chefId); return (<div key={chefId} className="bg-white border border-stone-200 rounded-md p-2">
+        <div className="flex items-center justify-between gap-2"><p className="text-sm font-medium text-stone-800">👨‍✈️ {chef.name} <span className="text-xs font-normal text-stone-400">· {mine.length} poste(s)</span></p>
+          <button onClick={() => onAssignPosts(journee.id, chefId)} className="shrink-0 text-xs font-medium bg-emerald-800 hover:bg-emerald-900 text-white px-2.5 py-1.5 rounded-md flex items-center gap-1"><Crosshair size={13} /> Attribuer les postes</button></div>
+      </div>); })}
+    </div>))}
+  </SectionCard>);
+}
+function AttributionsSection({ journee, terrain, onSet }) {
+  const [open, setOpen] = useState(false);
+  const enabled = ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled);
+  const attr = journee.attributions || {};
+  if (!enabled.length) return null;
+  const nb = enabled.filter((e) => { const a = attr[e.key] || {}; return a.mode === "bracelets" || a.mode === "interdit" || (a.note || "").trim(); }).length;
+  return (<SectionCard className="p-3 space-y-2">
+    <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
+      <span className="font-medium text-stone-800 flex items-center gap-2">🎯 Attributions du jour</span>
+      <span className="text-xs text-stone-500">{nb ? nb + " définie(s)" : "à définir"} {open ? "▲" : "▼"}</span>
+    </button>
+    {open && (<div className="space-y-2 pt-1">
+      <p className="text-[11px] text-stone-400">Ce que les chasseurs peuvent prélever aujourd'hui. Apparaît sur la page publiée.</p>
+      {enabled.map((e) => { const a = attr[e.key] || { mode: "libre", count: 1, note: "" }; return (
+        <div key={e.key} className="bg-white border border-stone-200 rounded-md p-2">
+          <span className="text-sm font-medium text-stone-800">{e.emoji} {e.label}</span>
+          <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+            <button onClick={() => onSet(journee.id, e.key, { mode: "libre" })} className={`px-2 py-1 rounded text-xs font-medium border ${a.mode === "libre" ? "bg-stone-700 text-white border-stone-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>Libre</button>
+            <button onClick={() => onSet(journee.id, e.key, { mode: "bracelets" })} className={`px-2 py-1 rounded text-xs font-medium border ${a.mode === "bracelets" ? "bg-emerald-700 text-white border-emerald-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>Bracelets</button>
+            {a.mode === "bracelets" && <input type="number" inputMode="numeric" min="0" onFocus={(ev) => ev.target.select()} value={a.count ?? 1} onChange={(ev) => onSet(journee.id, e.key, { count: Math.max(0, parseInt(ev.target.value || "0", 10) || 0) })} className="w-14 border border-stone-300 rounded px-2 py-1 text-sm bg-white" />}
+            <button onClick={() => onSet(journee.id, e.key, { mode: "interdit" })} className={`px-2 py-1 rounded text-xs font-medium border ${a.mode === "interdit" ? "bg-red-700 text-white border-red-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>Interdit</button>
+          </div>
+          <input value={a.note || ""} onChange={(ev) => onSet(journee.id, e.key, { note: ev.target.value })} placeholder="Restriction (poids, sexe…) — optionnel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1.5" />
+        </div>); })}
+    </div>)}
+  </SectionCard>);
+}
+function InvitationsSection({ journee, terrain, participants, orgEmail, onToggleInvite, onSetPresence, onSetMsg }) {
+  const [open, setOpen] = useState(false);
+  const [showMailPick, setShowMailPick] = useState(false);
+  const [emarg, setEmarg] = useState(null);
+  const [qInv, setQInv] = useState(""); const [qPres, setQPres] = useState(""); const [showInv, setShowInv] = useState(true); const [showPres, setShowPres] = useState(true);
+  const matchQ = (p, q) => !q.trim() || (p.name || "").toLowerCase().indexOf(q.toLowerCase()) >= 0;
+  const invites = journee.invites || [];
+  const invited = participants.filter((p) => invites.includes(p.id)).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const pres = journee.presence || {};
+  const dateFr = journee.date ? new Date(journee.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
+  const terrName = terrain ? terrain.name : "";
+  const defSubject = "Battue du " + dateFr + (terrName ? " — " + terrName : "");
+  const defBody = "Bonjour,\n\nJe t'invite à la battue du " + dateFr + (terrName ? " sur " + terrName : "") + ".\nMerci de me confirmer ta présence.\n\nÀ bientôt !";
+  const subject = journee.inviteSubject != null ? journee.inviteSubject : defSubject;
+  const body = journee.inviteBody != null ? journee.inviteBody : defBody;
+  const invitedEmails = () => invited.map((p) => (p.email || "").trim()).filter(Boolean);
+  const openMail = (provider) => {
+    const emails = invitedEmails();
+    if (!emails.length) { window.alert("Coche au moins un invité qui a une adresse email."); return; }
+    const to = encodeURIComponent(orgEmail || "");
+    const bcc = encodeURIComponent(emails.join(","));
+    const su = encodeURIComponent(subject);
+    const bd = encodeURIComponent(body);
+    let url = "";
+    if (provider === "gmail") url = "googlegmail:///co?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
+    else if (provider === "gmailweb") url = "https://mail.google.com/mail/?view=cm&fs=1&to=" + to + "&bcc=" + bcc + "&su=" + su + "&body=" + bd;
+    else if (provider === "outlook") url = "https://outlook.live.com/mail/0/deeplink/compose?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
+    else if (provider === "yahoo") url = "https://compose.mail.yahoo.com/?to=" + to + "&bcc=" + bcc + "&subject=" + su + "&body=" + bd;
+    else url = "mailto:" + to + "?bcc=" + bcc + "&subject=" + su + "&body=" + bd; // défaut / Apple Mail / iCloud
+    if (provider === "gmailweb" || provider === "outlook" || provider === "yahoo") window.open(url, "_blank");
+    else window.location.href = url;
+    setShowMailPick(false);
+  };
+  const copyEmails = () => { const emails = invitedEmails(); if (!emails.length) { window.alert("Aucun invité avec email."); return; } const txt = emails.join(", "); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Emails copiés ✓ Colle-les dans le champ Cci.")); else window.prompt("Copie les emails :", txt); };
+  const copyMsg = () => { const txt = subject + "\n\n" + body; if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Message copié ✓")); else window.prompt("Copie le message :", txt); };
+  const exportDinerExcel = () => {
+    try {
+      const list = invited.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+      const rows = list.map((p) => { const sup = Number((pres[p.id] || {}).invitesSup) || 0; return { Nom: p.name || "", "Invités supplémentaires": sup, Convives: 1 + sup }; });
+      const total = rows.reduce((s, r) => s + r.Convives, 0);
+      rows.push({ Nom: "TOTAL", "Invités supplémentaires": "", Convives: total });
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Nom: "" }]), "Dîner");
+      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }); const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const fn = "diner-" + (journee.date || "") + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: fn }).catch(() => {}); } else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
+  };
+  const nbPres = invited.filter((p) => (pres[p.id] || {}).statut === "present").length;
+  const nbDiner = invited.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).diner).length;
+  const nbSup = invited.reduce((s, p) => s + (((pres[p.id] || {}).statut === "present") ? (Number((pres[p.id] || {}).invitesSup) || 0) : 0), 0);
+  return (<SectionCard className="p-3 space-y-2">
+    <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
+      <span className="font-medium text-stone-800 flex items-center gap-2">📧 Invitations</span>
+      <span className="text-xs text-stone-500">{invited.length} invités · {nbPres} présents {open ? "▲" : "▼"}</span>
+    </button>
+    {open && (<div className="space-y-3 pt-1">
+      <div className="space-y-1">
+        <label className="text-xs uppercase tracking-wide text-stone-400">Objet du mail</label>
+        <input value={subject} onChange={(e) => onSetMsg(journee.id, { inviteSubject: e.target.value })} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+        <label className="text-xs uppercase tracking-wide text-stone-400">Message</label>
+        <textarea value={body} onChange={(e) => onSetMsg(journee.id, { inviteBody: e.target.value })} rows={4} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+      </div>
+      <div>
+        <div className="flex items-center justify-between mb-1"><button onClick={() => setShowInv((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Qui inviter {showInv ? "▲" : "▼"}</button></div>
+        {showInv && participants.length === 0 && <p className="text-xs text-stone-400 italic">Ajoute d'abord des membres dans l'onglet Membres.</p>}
+        {showInv && participants.length > 4 && <input value={qInv} onChange={(e) => setQInv(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mb-1" />}
+        {showInv && <div className="space-y-1 max-h-56 overflow-auto">
+          {[...participants].filter((p) => matchQ(p, qInv)).sort((a, b) => byNom(a.name || "", b.name || "")).map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
+            <button key={p.id} onClick={() => onToggleInvite(journee.id, p.id)} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded border text-left text-sm ${on ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
+              <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] shrink-0 ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{on ? "✓" : ""}</span>
+              <span className="flex-1 text-stone-800 truncate">{p.name || "(sans nom)"}</span>
+              {noMail && <span className="text-[10px] text-amber-700 shrink-0">pas d'email</span>}
+            </button>); })}
+        </div>}
+      </div>
+      <button onClick={() => { if (!invitedEmails().length) { window.alert("Coche au moins un invité qui a une adresse email."); return; } setShowMailPick(true); }} className="w-full flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium px-3 py-2 rounded-md">✉️ Écrire l'invitation</button>
+      {showMailPick && (<div className="border border-stone-300 rounded-lg p-2 bg-stone-50 space-y-1">
+        <p className="text-xs text-stone-500 px-1 pb-1">Ouvrir avec :</p>
+        <button onClick={() => openMail("gmail")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">📧 Application Gmail</button>
+        <button onClick={() => openMail("gmailweb")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🌐 Gmail (navigateur)</button>
+        <button onClick={() => openMail("apple")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">✉️ Mail / iCloud (app par défaut)</button>
+        <button onClick={() => openMail("outlook")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🔵 Outlook (navigateur)</button>
+        <button onClick={() => openMail("yahoo")} className="w-full text-left text-sm px-3 py-2 rounded-md bg-white border border-stone-200 hover:bg-stone-100">🟣 Yahoo (navigateur)</button>
+        <button onClick={() => setShowMailPick(false)} className="w-full text-center text-xs text-stone-400 pt-1">Annuler</button>
+      </div>)}
+      <div className="flex gap-2">
+        <button onClick={copyEmails} className="flex-1 flex items-center justify-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium px-2 py-2 rounded-md">📋 Copier les emails</button>
+        <button onClick={copyMsg} className="flex-1 flex items-center justify-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium px-2 py-2 rounded-md">📋 Copier le message</button>
+      </div>
+      <p className="text-[11px] text-stone-400">Destinataires en copie cachée (Cci). Choisis ta messagerie ci-dessus, ou utilise « Copier » si besoin.</p>
+      {invited.length > 0 && (<div>
+        {emarg && <PrintOverlay html={emarg} onClose={() => setEmarg(null)} />}
+        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+          <button onClick={() => setShowPres((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""} {showPres ? "▲" : "▼"}</button>
+          <div className="flex gap-1.5 flex-wrap">
+            <button onClick={() => { if (!nbPres) { window.alert("Coche au moins un présent."); return; } setEmarg(buildEmargementHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Émargement</button>
+            <button onClick={() => { if (!nbDiner) { window.alert("Personne n'est inscrit au dîner."); return; } setEmarg(buildDinerHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Dîner PDF</button>
+            <button onClick={exportDinerExcel} className="flex items-center gap-1 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white px-2 py-1 rounded shrink-0"><Download size={13} /> Dîner Excel</button>
+          </div>
+        </div>
+        {showPres && invited.length > 4 && <input value={qPres} onChange={(e) => setQPres(e.target.value)} placeholder="🔍 Rechercher un présent…" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mb-1.5" />}
+        {showPres && <div className="space-y-1.5">
+          {invited.filter((p) => matchQ(p, qPres)).map((p) => { const pr = pres[p.id] || {}; return (
+            <div key={p.id} className="bg-white border border-stone-200 rounded-md p-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-stone-800 flex-1 truncate">{p.name}</span>
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => onSetPresence(journee.id, p.id, { statut: pr.statut === "present" ? null : "present" })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.statut === "present" ? "bg-emerald-700 text-white border-emerald-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>Présent</button>
+                  <button onClick={() => onSetPresence(journee.id, p.id, { statut: pr.statut === "absent" ? null : "absent" })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.statut === "absent" ? "bg-red-700 text-white border-red-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>Absent</button>
+                </div>
+              </div>
+              {pr.statut === "present" && (<div className="flex items-center gap-3 mt-2 pt-2 border-t border-stone-100">
+                <button onClick={() => onSetPresence(journee.id, p.id, { diner: !pr.diner })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.diner ? "bg-amber-700 text-white border-amber-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>🍽️ Dîner</button>
+                {pr.diner && (<span className="flex items-center gap-1 text-xs text-stone-600">+ invités
+                  <input type="number" inputMode="numeric" value={pr.invitesSup || 0} onFocus={(e) => e.target.select()} onChange={(e) => onSetPresence(journee.id, p.id, { invitesSup: Math.max(0, parseInt(e.target.value || "0", 10) || 0) })} className="w-14 border border-stone-300 rounded px-2 py-1 bg-white" /></span>)}
+              </div>)}
+            </div>); })}
+        </div>}
+      </div>)}
+    </div>)}
+  </SectionCard>);
+}
+function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings, userId, orgEmail }) {
+  const [openJournee, setOpenJournee] = useState(null);
+  const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null); const [chefView, setChefView] = useState(null);
+  const [pub, setPub] = useState({ status: "idle" });
+  const pubSlug = userId ? String(userId).replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 12) : "public";
+  const pubUrl = "https://" + (github.owner || "hiplou").toLowerCase() + ".github.io/" + (github.repo || "battue") + "/" + pubSlug + "/";
+  const publish = async (journee) => {
+    const terrain = terrains.find((t) => t.id === journee.terrainId);
+    if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
+    if (!github.token) { openSettings(); return; }
+    setPub({ status: "publishing" });
+    try {
+      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId);
+      const token = "PUBTS-" + Date.now();
+      const stamped = html + "\n<!--" + token + "-->";
+      await githubPutFile({ token: github.token, owner: github.owner, repo: github.repo, path: pubSlug + "/index.html", content: toBase64Utf8(stamped), message: "Publication battue " + new Date().toISOString() });
+      const url = pubUrl + "?v=" + Date.now();
+      setPub({ status: "propagating", url });
+      let live = false;
+      for (let i = 0; i < 40 && !live; i++) {
+        await new Promise((res) => setTimeout(res, 3000));
+        try { const r = await fetch(pubUrl + "?c=" + Date.now(), { cache: "no-store" }); if (r.ok) { const t = await r.text(); if (t.indexOf(token) >= 0) live = true; } } catch (e) {}
+      }
+      setPub({ status: live ? "live" : "ok", url: pubUrl + "?v=" + Date.now() });
+    } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
+  };
+  const shareLinkWhatsApp = () => { const link = (pub && pub.url) ? pub.url : pubUrl; const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
+  const copyPubLink = () => { const link = (pub && pub.url) ? pub.url : pubUrl; if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => window.alert("Lien copié ✓ Colle-le dans ton groupe WhatsApp.")); else window.prompt("Copie le lien :", link); };
+  const [postesPrint, setPostesPrint] = useState(null);
+  const printPostes = (journee) => {
+    const terrain = terrains.find((t) => t.id === journee.terrainId);
+    if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
+    setPostesPrint(buildPrintHtml(journee, terrain, participants, safety));
+  };
+  const addJournee = () => { const id = `j-${Date.now()}`; setJournees((prev) => [...prev, normJournee({ id, date: new Date().toISOString().slice(0, 10), terrainId: terrains[0]?.id || null })]); setOpenJournee(id); };
+  const removeJournee = (id) => { if (window.confirm("Supprimer cette journée ?")) setJournees((prev) => prev.filter((j) => j.id !== id)); };
+  const setJourneeDate = (id, date) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, date } : j)));
+  const setJourneeTerrain = (id, terrainId) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, terrainId, placements: {} } : j)));
+  const toggleInvite = (jid, mid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const inv = j.invites || []; return { ...j, invites: inv.includes(mid) ? inv.filter((x) => x !== mid) : [...inv, mid] }; }));
+  const setPresence = (jid, mid, patch) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const pr = { ...(j.presence || {}) }; pr[mid] = { ...(pr[mid] || { statut: null, diner: false, invitesSup: 0 }), ...patch }; return { ...j, presence: pr }; }));
+  const setInviteMsg = (jid, patch) => setJournees((prev) => prev.map((j) => (j.id === jid ? { ...j, ...patch } : j)));
+  const setAttribution = (jid, key, patch) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const a = { ...(j.attributions || {}) }; a[key] = { ...(a[key] || { mode: "libre", count: 1, note: "" }), ...patch }; return { ...j, attributions: a }; }));
+  const toggleChef = (jid, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const chefs = j.chefs || []; const on = chefs.indexOf(hid) >= 0; if (on) { const cl = { ...(j.chefLignes || {}) }; Object.keys(cl).forEach((mid) => { if (cl[mid] === hid) delete cl[mid]; }); return { ...j, chefs: chefs.filter((x) => x !== hid), chefLignes: cl }; } return { ...j, chefs: [...chefs, hid] }; }));
+  const setChefLigne = (jid, mid, chefId) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const cl = { ...(j.chefLignes || {}) }; if (!chefId) delete cl[mid]; else cl[mid] = chefId; return { ...j, chefLignes: cl }; }));
+  const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...(j.placements || {}), [trackId]: { ...((j.placements || {})[trackId] || {}), [hid]: mid } } })));
+  const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...((j.placements || {})[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...(j.placements || {}), [trackId]: t } }; }));
+  const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
+  const autoFill = (jid, track, pending, sortedFree) => {
+    const tierOrder = (arr) => { const byP = {}; arr.forEach((m) => { const p = m.priority || 1; (byP[p] = byP[p] || []).push(m); }); return Object.keys(byP).map(Number).sort((a, b) => a - b).reduce((acc, p) => acc.concat(shuffle(byP[p])), []); };
+    const okFauteuil = (m) => !!m.accFauteuil;
+    const okCanne = (m) => !!m.accCanne || !!m.accFauteuil;
+    const jCur = journees.find((j) => j.id === jid);
+    let free = sortedFree.slice();
+    const cur = { ...((jCur && jCur.placements && jCur.placements[track.id]) || {}) };
+    const place = (hunters, ok) => { shuffle(hunters.slice()).forEach((h) => { const ordered = tierOrder(free.filter(ok)); if (!ordered.length) return; const post = ordered[0]; cur[h.id] = post.id; free = free.filter((m) => m.id !== post.id); }); };
+    place(pending.filter((h) => h.mobility === "fauteuil"), okFauteuil);
+    place(pending.filter((h) => h.mobility === "canne"), okCanne);
+    place(pending.filter((h) => h.mobility !== "fauteuil" && h.mobility !== "canne"), () => true);
+    setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...(j.placements || {}), [track.id]: cur } })));
+  };
+  const clearAll = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: {} } })));
+  const addArrow = (jid, trackId, a) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [...((j.arrows || {})[trackId] || []), a] } })));
+  const clearArrows = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [] } })));
+  const updateArrow = (jid, trackId, idx, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: ((j.arrows || {})[trackId] || []).map((a, i) => (i === idx ? { ...a, ...patch } : a)) } })));
+  const deleteArrow = (jid, trackId, idx) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: ((j.arrows || {})[trackId] || []).filter((a, i) => i !== idx) } })));
+  const addKill = (jid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const terrain = terrains.find((t) => t.id === j.terrainId); const firstTrack = terrain?.tracks?.[0]?.id || ""; return { ...j, tableau: [...(j.tableau || []), { id: "k-" + Date.now(), espece: "chevreuil", especeLabel: "", quantite: 1, sexe: "", poids: "", bracelet: "", tireurId: "", trackId: firstTrack }] }; }));
+  const updateKill = (jid, kid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).map((k) => (k.id === kid ? { ...k, ...patch } : k)) })));
+  const removeKill = (jid, kid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).filter((k) => k.id !== kid) })));
+  const setShot = (jid, trackId, mid, val) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, shots: { ...(j.shots || {}), [trackId]: { ...((j.shots || {})[trackId] || {}), [mid]: val } } })));
+  const setMiradorState = (jid, trackId, mid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, miradorStates: { ...(j.miradorStates || {}), [trackId]: { ...((j.miradorStates || {})[trackId] || {}), [mid]: { ...(((j.miradorStates || {})[trackId] || {})[mid] || {}), ...patch } } } })));
+
+  if (chefView) { const journee = journees.find((j) => j.id === chefView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const chef = participants.find((p) => p.id === chefView.chefId); if (!journee || !terrain || !chef) { setChefView(null); return null; } return <ChefAssign terrain={terrain} journee={journee} chefId={chefView.chefId} chefName={chef.name} participants={participants} onToggle={(mid, chefId) => setChefLigne(journee.id, mid, chefId)} onBack={() => setChefView(null)} />; }
+  if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
+    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
+  if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
+    return <EnvoiChasseurs journee={journee} terrain={terrain} participants={participants} safety={safety} onBack={() => setShareView(null)} />; }
+
+  return (<div className="space-y-3">
+    {postesPrint && <PrintOverlay html={postesPrint} onClose={() => setPostesPrint(null)} />}
+    <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Journées de chasse</h2><button onClick={addJournee} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouvelle journée</button></div>
+    {journees.map((j) => { const isOpen = openJournee === j.id; const terrain = terrains.find((t) => t.id === j.terrainId);
+      return (<SectionCard key={j.id}>
+        <div className="flex items-center justify-between px-4 py-3"><button onClick={() => setOpenJournee(isOpen ? null : j.id)} className="flex items-center gap-2 font-medium text-stone-800">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<CalendarDays size={16} className="text-amber-800" />{new Date(j.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</button><span className="text-xs text-stone-400">{terrain?.name || "aucun territoire"}</span></div>
+        {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm"><span className="text-stone-500">Date :</span><input type="date" value={j.date} onChange={(e) => setJourneeDate(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white" /><span className="text-stone-500 ml-2">Territoire :</span>
+            <select value={terrains.some((t) => t.id === j.terrainId) ? j.terrainId : ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white"><option value="" disabled>Choisir…</option>{[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+            <button onClick={() => removeJournee(j.id)} className="ml-auto flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer</button></div>
+          <div className="flex items-center gap-2 mb-2"><span className="text-sm text-stone-600">📻 Canal talkie</span><input value={j.canal || ""} onChange={(e) => setJournees((prev) => prev.map((x) => x.id === j.id ? { ...x, canal: e.target.value } : x))} placeholder="ex. 8" className="w-24 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /><span className="text-xs text-stone-400">affiché aux chasseurs</span></div>
+          <InvitationsSection journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
+          {terrain ? (<>
+            {terrain.tracks.map((trk) => { const placed = Object.keys(j.placements[trk.id] || {}).length;
+              return (<div key={trk.id} className="flex items-center justify-between bg-white border border-stone-200 rounded-md px-3 py-2"><div><p className="font-medium text-sm text-stone-800">{trk.name}</p><p className="text-xs text-stone-500 flex items-center gap-1"><MapPin size={12} /> {placed}/{trk.miradors.length} postes</p></div><button onClick={() => setPosterView({ journeeId: j.id, trackId: trk.id })} className="flex items-center gap-1.5 text-sm font-medium bg-emerald-800 hover:bg-emerald-900 text-stone-50 px-3 py-1.5 rounded-md"><Crosshair size={14} /> Poster les fusils</button></div>); })}
+            <AttributionsSection journee={j} terrain={terrain} onSet={setAttribution} />
+            <ChefsSection journee={j} terrain={terrain} participants={participants} onToggleChef={toggleChef} onSetChefLigne={setChefLigne} onAssignPosts={(jid, chefId) => setChefView({ journeeId: jid, chefId })} />
+            <div className="flex gap-2 mt-1">
+              <button onClick={() => printPostes(j)} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2.5 rounded-md"><FileText size={16} /> Imprimer les postes</button>
+              <button onClick={() => { const np = Object.keys(j.presence || {}).filter((id) => (j.presence[id] || {}).statut === "present").length; if (!np) { window.alert("Coche d'abord des présents dans la section Invitations."); return; } setPostesPrint(buildEmargementHtml(j, terrain, participants)); }} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2.5 rounded-md"><FileText size={16} /> Feuille d'émargement</button>
+            </div>
+            <div className="mt-1 border-t border-stone-200 pt-2 space-y-2">
+              <div className="flex items-center justify-between"><p className="text-xs uppercase tracking-wide text-stone-400">Lien en ligne (lecture seule)</p><button onClick={openSettings} className="text-xs text-stone-500 underline">Réglages</button></div>
+              <button onClick={() => publish(j)} disabled={pub.status === "publishing" || pub.status === "propagating"} className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 disabled:bg-stone-400 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Share2 size={16} /> {pub.status === "publishing" ? "Envoi…" : pub.status === "propagating" ? "Mise en ligne…" : "Publier en ligne (chasseurs + rabatteurs)"}</button>
+              {pub.status === "propagating" && (<div className="bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2"><p className="text-sm text-amber-800">⏳ Mise en ligne en cours… <span className="text-xs">(le lien fonctionne d'ici ~1 min)</span></p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-amber-300 rounded-md px-3 py-2.5 text-sm text-amber-900 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
+              {pub.status === "live" && (<div className="bg-emerald-50 border border-emerald-300 rounded-md p-3 space-y-2"><p className="text-sm font-semibold text-emerald-800">✅ En ligne et à jour !</p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2.5 text-sm text-emerald-800 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
+              {pub.status === "ok" && (<div className="bg-emerald-50 border border-emerald-200 rounded-md p-3 space-y-2"><p className="text-sm text-emerald-800">✓ Publié ! Le lien sera à jour d'ici ~1 min.</p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-300 rounded-md px-3 py-2.5 text-sm text-emerald-800 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
+              {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-md p-2.5"><p className="text-sm text-red-800">⚠ Échec : {pub.msg}</p><p className="text-xs text-red-700 mt-1">Vérifie la clé dans « Réglages ». Si l'erreur parle de « 404 », le compte/dossier est peut-être mal orthographié.</p></div>)}
+            </div>
+            <button onClick={() => setShareView({ journeeId: j.id })} className="w-full flex items-center justify-center gap-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 text-xs font-medium px-3 py-2 rounded-md mt-3 border border-stone-200"><Send size={13} /> Envoyer un récap des postes (texte WhatsApp)</button>
+            <TableauSection j={j} terrain={terrains.find((t) => t.id === j.terrainId)} participants={participants} onAddKill={() => addKill(j.id)} onUpdateKill={(kid, patch) => updateKill(j.id, kid, patch)} onRemoveKill={(kid) => removeKill(j.id, kid)} onSetShot={(trackId, mid, val) => setShot(j.id, trackId, mid, val)} onSetState={(trackId, mid, patch) => setMiradorState(j.id, trackId, mid, patch)} />
+          </>) : <p className="text-sm text-stone-500 italic">Choisis un territoire pour voir ses traques.</p>}
+        </div>)}
+      </SectionCard>); })}
+  </div>);
+}
+
+// ---------- Carnet de chasse (par saison) ----------
+function computeStats(inSeason, terrains, participants) {
+  const terrById = (id) => terrains.find((t) => t.id === id);
+  const pName = (id) => participants.find((p) => p.id === id)?.name || "?";
+  const postOfHunter = (j, terrain, hid) => { for (const trk of terrain.tracks) { const pl = j.placements[trk.id] || {}; if (pl[hid]) return { trackId: trk.id, trackName: trk.name, mid: pl[hid] }; } return null; };
+  let totalAnimals = 0, totalBullets = 0; const bySpecies = {}; const shooterA = {}; const shooterB = {}; const postAgg = {}; const perJournee = [];
+  inSeason.forEach((j) => {
+    const terrain = terrById(j.terrainId); const shots = j.shots || {}; let dayA = 0, dayB = 0; const dayPosts = {};
+    if (terrain) terrain.tracks.forEach((trk) => { const pl = j.placements[trk.id] || {}; const ts = shots[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); const b = Number(ts[mid]) || 0; const pkey = j.terrainId + "|" + trk.id + "|" + mid; dayPosts[trk.id + "|" + mid] = { track: trk.name, post: m ? m.label : "?", hunter: pName(hid), bullets: b, animals: {} }; dayB += b; shooterB[hid] = (shooterB[hid] || 0) + b; if (!postAgg[pkey]) postAgg[pkey] = { terrain: terrain.name, track: trk.name, post: m ? m.label : "?", animals: 0, bullets: 0 }; postAgg[pkey].bullets += b; }); });
+    (j.tableau || []).forEach((k) => { const q = Number(k.quantite) || 0; const label = especeLabel(k); totalAnimals += q; dayA += q; bySpecies[label] = (bySpecies[label] || 0) + q; if (k.tireurId) { shooterA[k.tireurId] = (shooterA[k.tireurId] || 0) + q; if (terrain) { let pos = null; if (k.trackId) { const trk = terrain.tracks.find((t) => t.id === k.trackId); const mid = trk && (j.placements[k.trackId] || {})[k.tireurId]; if (trk && mid) pos = { trackId: k.trackId, trackName: trk.name, mid }; } if (!pos) pos = postOfHunter(j, terrain, k.tireurId); if (pos) { const dp = dayPosts[pos.trackId + "|" + pos.mid]; if (dp) dp.animals[label] = (dp.animals[label] || 0) + q; const pkey = j.terrainId + "|" + pos.trackId + "|" + pos.mid; if (!postAgg[pkey]) { const mm = terrain.tracks.find((t) => t.id === pos.trackId)?.miradors.find((x) => x.id === pos.mid); postAgg[pkey] = { terrain: terrain.name, track: pos.trackName, post: mm ? mm.label : "?", animals: 0, bullets: 0 }; } postAgg[pkey].animals += q; } } } });
+    totalBullets += dayB; perJournee.push({ id: j.id, date: j.date, terrain: terrain ? terrain.name : "—", animals: dayA, bullets: dayB, posts: Object.values(dayPosts) });
+  });
+  const byShooter = participants.map((p) => ({ name: p.name || "Sans nom", animals: shooterA[p.id] || 0, bullets: shooterB[p.id] || 0 })).filter((x) => x.animals > 0 || x.bullets > 0).sort((a, b) => b.animals - a.animals || b.bullets - a.bullets);
+  const byPost = Object.values(postAgg).filter((p) => p.animals > 0 || p.bullets > 0).sort((a, b) => b.animals - a.animals || b.bullets - a.bullets);
+  return { totalAnimals, totalBullets, ratio: totalAnimals ? totalBullets / totalAnimals : 0, bySpecies, byShooter, byPost, perJournee };
+}
+const STATS_CSS = "@page{margin:14mm}body{font-family:Georgia,serif;color:#1c1917;margin:0}header{border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}h2{font-size:16px;margin:18px 0 6px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:12px;margin-bottom:8px}th{text-align:left;color:#78716c;font-size:10px;text-transform:uppercase;border-bottom:1px solid #e7e5e4;padding:4px}td{padding:4px;border-bottom:1px solid #f0efee}.c{text-align:center}.tot{display:flex;gap:20px;margin-bottom:6px}.tot b{font-size:22px;color:#166534}";
+function buildDinerHtml(journee, terrain, participants) {
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const df = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return d; } };
+  const pres = journee.presence || {};
+  const list = participants.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+  let total = 0;
+  let rows = list.map((p, i) => { const sup = Number((pres[p.id] || {}).invitesSup) || 0; const conv = 1 + sup; total += conv; return "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td class='c'>" + sup + "</td><td class='c'>" + conv + "</td></tr>"; }).join("");
+  if (!rows) rows = "<tr><td colspan='4' style='text-align:center;color:#999;padding:14px'>Personne n'est encore inscrit au dîner.</td></tr>";
+  const css = "*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1c1917;margin:0;padding:28px 26px;background:#fff}"
+    + ".head{border:2px solid #b45309;border-radius:12px;padding:16px 20px;margin-bottom:16px;background:#fffbeb}"
+    + ".head h1{margin:0 0 4px;font-size:22px;color:#7c2d12}.head .sub{font-size:14px;color:#b45309;font-weight:600;text-transform:capitalize}"
+    + ".meta{margin-top:8px;font-size:13px;color:#44403c}.meta b{color:#1c1917}"
+    + "table{border-collapse:collapse;width:100%;font-size:13px;margin-top:4px}"
+    + "th,td{border:1px solid #e7e5e4;padding:9px 10px;text-align:left}th{background:#b45309;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.03em}"
+    + "tbody tr:nth-child(even){background:#fafaf9}.num{width:26px;text-align:center;color:#78716c}.nom{font-weight:600}.c{text-align:center;width:120px}"
+    + ".tot{margin-top:14px;font-size:16px;font-weight:700;color:#7c2d12;text-align:right}";
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Dîner</title><style>" + css + "</style></head><body>"
+    + "<div class='head'><h1>🍽️ Liste du dîner</h1><div class='sub'>" + esc(df(journee.date)) + "</div>"
+    + "<div class='meta'><b>Territoire :</b> " + esc(terrain ? terrain.name : "—") + "</div></div>"
+    + "<table><thead><tr><th class='num'>#</th><th>Prénom &amp; nom</th><th class='c'>Invités suppl.</th><th class='c'>Convives</th></tr></thead><tbody>" + rows + "</tbody></table>"
+    + "<p class='tot'>Total : " + total + " convive" + (total > 1 ? "s" : "") + "</p>"
+    + "</body></html>";
+}
+function buildEmargementHtml(journee, terrain, participants) {
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const df = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return d; } };
+  const pres = journee.presence || {};
+  const list = participants.filter((p) => (pres[p.id] || {}).statut === "present").sort((a, b) => byNom(a.name || "", b.name || ""));
+  let rows = list.map((p, i) => "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td>" + esc(p.permis || "") + "</td><td>" + esc(p.validation || "") + "</td><td>" + esc(p.assurance || "") + "</td><td class='sig'></td></tr>").join("");
+  const emptyRows = Math.max(0, 12 - list.length);
+  for (let i = 0; i < emptyRows; i++) rows += "<tr><td class='num'>" + (list.length + i + 1) + "</td><td></td><td></td><td></td><td></td><td class='sig'></td></tr>";
+  const css = "*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1c1917;margin:0;padding:28px 26px;background:#fff}"
+    + ".head{border:2px solid #166534;border-radius:12px;padding:16px 20px;margin-bottom:18px;background:#f0fdf4}"
+    + ".head h1{margin:0 0 4px;font-size:22px;color:#14532d}.head .sub{font-size:14px;color:#166534;font-weight:600;text-transform:capitalize}"
+    + ".meta{display:flex;gap:24px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:#44403c}.meta b{color:#1c1917}"
+    + ".note{font-size:11px;color:#78716c;margin:10px 2px 14px;line-height:1.4}"
+    + "table{border-collapse:collapse;width:100%;font-size:12.5px}"
+    + "th,td{border:1px solid #d6d3d1;padding:9px 8px;text-align:left;vertical-align:middle}"
+    + "th{background:#166534;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.03em}"
+    + "tbody tr:nth-child(even){background:#fafaf9}"
+    + ".num{width:26px;text-align:center;color:#78716c}.nom{font-weight:600}.sig{width:150px}"
+    + "tbody td{height:34px}"
+    + ".foot{margin-top:16px;font-size:11px;color:#78716c;display:flex;justify-content:space-between}"
+    + "@media print{body{padding:0}.head{border-color:#166534}}";
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Feuille d'émargement</title><style>" + css + "</style></head><body>"
+    + "<div class='head'><h1>🦌 Feuille d'émargement</h1><div class='sub'>" + esc(df(journee.date)) + "</div>"
+    + "<div class='meta'><span><b>Territoire :</b> " + esc(terrain ? terrain.name : "—") + "</span><span><b>Présents :</b> " + list.length + "</span></div></div>"
+    + "<p class='note'>Chaque participant doit être titulaire d'un permis de chasser validé pour la saison en cours et d'une assurance responsabilité civile. Signature obligatoire avant le début de la battue.</p>"
+    + "<table><thead><tr><th class='num'>#</th><th>Prénom &amp; nom</th><th>N° de permis</th><th>Validation saison</th><th>Assurance</th><th>Signature</th></tr></thead><tbody>" + rows + "</tbody></table>"
+    + "<div class='foot'><span>Organisateur : _______________________</span><span>Fait le " + esc(df(journee.date)) + "</span></div>"
+    + "</body></html>";
+}
+function buildStatsPrintHtml(stats, season) {
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const df = (d) => { try { return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }); } catch (e) { return d; } };
+  let jr = ""; stats.perJournee.forEach((pj) => { jr += "<tr><td>" + esc(df(pj.date)) + "</td><td>" + esc(pj.terrain) + "</td><td class='c'>" + pj.animals + "</td><td class='c'>" + pj.bullets + "</td></tr>"; });
+  let pr = ""; stats.byShooter.forEach((s) => { pr += "<tr><td>" + esc(s.name) + "</td><td class='c'>" + s.animals + "</td><td class='c'>" + s.bullets + "</td></tr>"; });
+  let po = ""; stats.byPost.forEach((p) => { po += "<tr><td>" + esc(p.terrain) + "</td><td>" + esc(p.track) + "</td><td>" + esc(p.post) + "</td><td class='c'>" + p.animals + "</td><td class='c'>" + p.bullets + "</td></tr>"; });
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Statistiques " + esc(season) + "</title><style>" + STATS_CSS + "</style></head><body>"
+    + "<header><h1>🦌 Statistiques de chasse — Saison " + esc(season) + "</h1><p>Bilan de la saison</p></header>"
+    + "<div class='tot'><div><b>" + stats.totalAnimals + "</b><br>animaux</div><div><b>" + stats.totalBullets + "</b><br>balles</div><div><b>" + (stats.ratio ? stats.ratio.toFixed(1) : "—") + "</b><br>balles / animal</div></div>"
+    + "<h2>Résumé par journée</h2><table><thead><tr><th>Date</th><th>Territoire</th><th class='c'>Animaux</th><th class='c'>Balles</th></tr></thead><tbody>" + (jr || "<tr><td colspan='4'>—</td></tr>") + "</tbody></table>"
+    + "<h2>Animaux &amp; balles par personne</h2><table><thead><tr><th>Chasseur</th><th class='c'>Animaux</th><th class='c'>Balles</th></tr></thead><tbody>" + (pr || "<tr><td colspan='3'>—</td></tr>") + "</tbody></table>"
+    + "<h2>Animaux &amp; balles par poste</h2><table><thead><tr><th>Territoire</th><th>Traque</th><th>Poste</th><th class='c'>Animaux</th><th class='c'>Balles</th></tr></thead><tbody>" + (po || "<tr><td colspan='5'>—</td></tr>") + "</tbody></table>"
+    + "</body></html>";
+}
+function CarnetView({ journees, terrains, participants, setJournees }) {
+  const seasons = [...new Set(journees.map((j) => seasonOf(j.date)))].sort().reverse();
+  const [season, setSeason] = useState(seasons[0] || seasonOf(new Date().toISOString()));
+  const [openId, setOpenId] = useState(null);
+  const [terrFilter, setTerrFilter] = useState("all");
+  const [statsPrint, setStatsPrint] = useState(null);
+  const [expSpecies, setExpSpecies] = useState(null);
+  const seasonJournees = journees.filter((j) => seasonOf(j.date) === season);
+  const territoriesInSeason = [...new Map(seasonJournees.filter((j) => j.terrainId).map((j) => { const t = terrains.find((x) => x.id === j.terrainId); return [j.terrainId, t ? t.name : "—"]; })).entries()];
+  const inSeason = seasonJournees.filter((j) => terrFilter === "all" || j.terrainId === terrFilter).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const stats = computeStats(inSeason, terrains, participants);
+  const nameOf = (hid) => participants.find((p) => p.id === hid)?.name || "?";
+  const updateKill = (jid, kid, patch) => setJournees && setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, tableau: (j.tableau || []).map((k) => (k.id === kid ? { ...k, ...patch } : k)) })));
+  const animalRows = () => { const rows = []; inSeason.forEach((j) => { const terr = terrains.find((t) => t.id === j.terrainId); (j.tableau || []).forEach((k) => { rows.push({ jid: j.id, kid: k.id, date: j.date, terrain: terr ? terr.name : "", espece: especeLabel(k), sexe: k.sexe || "", poids: k.poids || "", bracelet: k.bracelet || "", tireur: k.tireurId ? nameOf(k.tireurId) : "" }); }); }); return rows; };
+  const dfr = (d) => { try { return new Date(d).toLocaleDateString("fr-FR"); } catch (e) { return d; } };
+  const sexLabel = (s) => (s === "M" ? "Mâle" : s === "F" ? "Femelle" : "");
+  const exportFedExcel = () => {
+    try {
+      const rows = animalRows().map((r) => ({ Date: dfr(r.date), Territoire: r.terrain, Espèce: r.espece, Sexe: sexLabel(r.sexe), "Poids (kg)": r.poids, "N° bracelet": r.bracelet, Tireur: r.tireur }));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Date: "" }]), "Fédération");
+      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }); const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const fn = "federation-" + season + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: fn }).catch(() => {}); } else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
+  };
+  const printFed = () => {
+    const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const rows = animalRows();
+    const trs = rows.map((r) => "<tr><td>" + esc(dfr(r.date)) + "</td><td>" + esc(r.terrain) + "</td><td>" + esc(r.espece) + "</td><td>" + esc(sexLabel(r.sexe)) + "</td><td>" + esc(r.poids) + "</td><td>" + esc(r.bracelet) + "</td><td>" + esc(r.tireur) + "</td></tr>").join("");
+    const html = "<!doctype html><html><head><meta charset='utf-8'><title>Fédération " + esc(season) + "</title><style>body{font-family:-apple-system,sans-serif;padding:20px;color:#1c1917}h1{font-size:18px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #d6d3d1;padding:5px 7px;text-align:left}th{background:#f5f5f4}</style></head><body><h1>Bilan fédération — Saison " + esc(season) + "</h1><table><thead><tr><th>Date</th><th>Territoire</th><th>Espèce</th><th>Sexe</th><th>Poids (kg)</th><th>N° bracelet</th><th>Tireur</th></tr></thead><tbody>" + trs + "</tbody></table></body></html>";
+    setStatsPrint(html);
+  };
+  const printStats = () => { setStatsPrint(buildStatsPrintHtml(stats, season)); };
+  const exportStatsExcel = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      const df = (d) => { try { return new Date(d).toLocaleDateString("fr-FR"); } catch (e) { return d; } };
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stats.perJournee.length ? stats.perJournee.map((p) => ({ Date: df(p.date), Territoire: p.terrain, Animaux: p.animals, Balles: p.bullets })) : [{ Date: "" }]), "Journées");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stats.byShooter.length ? stats.byShooter.map((s) => ({ Chasseur: s.name, Animaux: s.animals, Balles: s.bullets })) : [{ Chasseur: "" }]), "Par personne");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stats.byPost.length ? stats.byPost.map((p) => ({ Territoire: p.terrain, Traque: p.track, Poste: p.post, Animaux: p.animals, Balles: p.bullets })) : [{ Poste: "" }]), "Par poste");
+      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }); const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const fn = "stats-chasse-" + season + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: fn }).catch(() => {}); } else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
+  };
+  return (<div className="space-y-4">
+    {statsPrint && <PrintOverlay html={statsPrint} onClose={() => setStatsPrint(null)} />}
+    <div className="flex items-center justify-between gap-2 flex-wrap"><h2 className="font-serif text-xl text-stone-800 flex items-center gap-2"><BookOpen size={20} className="text-emerald-800" /> Carnet de chasse</h2>
+      <div className="flex gap-2">{territoriesInSeason.length >= 1 && <select value={terrFilter} onChange={(e) => setTerrFilter(e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white text-sm"><option value="all">Tous les territoires</option>{territoriesInSeason.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>}{seasons.length > 0 && <select value={season} onChange={(e) => { setSeason(e.target.value); setTerrFilter("all"); }} className="border border-stone-300 rounded px-2 py-1 bg-white text-sm">{seasons.map((s) => <option key={s} value={s}>Saison {s}</option>)}</select>}</div></div>
+    {inSeason.length === 0 ? <SectionCard className="p-4"><p className="text-sm text-stone-500 italic">Aucune journée pour cette sélection.</p></SectionCard> : (<>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-white border border-stone-200 rounded-md p-3 text-center"><p className="text-2xl font-bold text-emerald-800">{stats.totalAnimals}</p><p className="text-xs text-stone-600">animaux</p></div>
+        <div className="bg-white border border-stone-200 rounded-md p-3 text-center"><p className="text-2xl font-bold text-amber-800">{stats.totalBullets}</p><p className="text-xs text-stone-600">balles</p></div>
+        <div className="bg-white border border-stone-200 rounded-md p-3 text-center"><p className="text-2xl font-bold text-stone-700">{stats.ratio ? stats.ratio.toFixed(1) : "—"}</p><p className="text-xs text-stone-600">balles / animal</p></div>
+      </div>
+      <div className="flex gap-2"><button onClick={printStats} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2 rounded-md"><FileText size={15} /> Carnet de chasse PDF</button><button onClick={exportStatsExcel} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2 rounded-md"><Download size={15} /> Carnet de chasse Excel</button></div>
+      <div className="flex gap-2"><button onClick={printFed} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2 rounded-md"><FileText size={15} /> Fédération PDF</button><button onClick={exportFedExcel} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2 rounded-md"><Download size={15} /> Fédération Excel</button></div>
+      {Object.keys(stats.bySpecies).length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par espèce (clique une espèce pour saisir sexe / poids / bracelet)</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(stats.bySpecies).sort((a, b) => b[1] - a[1]).map(([k, n]) => (<button key={k} onClick={() => setExpSpecies(expSpecies === k ? null : k)} className={`bg-white border rounded-md p-2 text-center ${expSpecies === k ? "border-emerald-500 ring-2 ring-emerald-200" : "border-stone-200"}`}><p className="text-xl font-bold text-emerald-800">{n}</p><p className="text-xs text-stone-600">{k}</p></button>))}</div>
+        {expSpecies && (<div className="mt-3 space-y-2">
+          <p className="text-xs font-medium text-stone-600">{expSpecies} — {animalRows().filter((r) => r.espece === expSpecies).length} animal(aux)</p>
+          {animalRows().filter((r) => r.espece === expSpecies).map((r) => (<div key={r.kid} className="border border-stone-200 rounded-md p-2 bg-stone-50">
+            <div className="flex justify-between items-center text-[11px] text-stone-500 mb-1.5"><span>{dfr(r.date)}{r.terrain ? " · " + r.terrain : ""}</span><span>{r.tireur}</span></div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex gap-1">
+                <button onClick={() => updateKill(r.jid, r.kid, { sexe: r.sexe === "M" ? "" : "M" })} className={`px-2 py-1 rounded text-xs font-medium border ${r.sexe === "M" ? "bg-sky-700 text-white border-sky-700" : "bg-white text-stone-600 border-stone-200"}`}>♂ M</button>
+                <button onClick={() => updateKill(r.jid, r.kid, { sexe: r.sexe === "F" ? "" : "F" })} className={`px-2 py-1 rounded text-xs font-medium border ${r.sexe === "F" ? "bg-pink-700 text-white border-pink-700" : "bg-white text-stone-600 border-stone-200"}`}>♀ F</button>
+              </div>
+              <div className="flex items-center gap-1"><input type="number" inputMode="decimal" step="0.1" min="0" onFocus={(e) => e.target.select()} value={r.poids} onChange={(e) => updateKill(r.jid, r.kid, { poids: e.target.value })} placeholder="kg" className="w-16 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /><span className="text-xs text-stone-400">kg</span></div>
+              <input value={r.bracelet} onChange={(e) => updateKill(r.jid, r.kid, { bracelet: e.target.value })} placeholder="n° bracelet" className="w-28 border border-stone-300 rounded px-2 py-1 text-sm bg-white" />
+            </div>
+          </div>))}
+        </div>)}
+      </SectionCard>}
+      {stats.byShooter.length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par personne (animaux · balles)</p><div className="space-y-1">{stats.byShooter.map((t, i) => (<div key={i} className="flex items-center justify-between text-sm border-b border-stone-100 py-1 last:border-0"><span className="text-stone-800">{i + 1}. {t.name}</span><span className="text-stone-500"><b className="text-emerald-800">{t.animals}</b> animal(aux) · <b className="text-amber-800">{t.bullets}</b> balle(s)</span></div>))}</div></SectionCard>}
+      {stats.byPost.length > 0 && <SectionCard className="p-4"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Par poste (animaux · balles)</p><div className="space-y-1">{stats.byPost.map((p, i) => (<div key={i} className="flex items-center justify-between text-sm border-b border-stone-100 py-1 last:border-0"><span className="text-stone-700 truncate mr-2"><b>{p.track}</b> — {p.post}</span><span className="text-stone-500 shrink-0"><b className="text-emerald-800">{p.animals}</b> · <b className="text-amber-800">{p.bullets}</b></span></div>))}</div></SectionCard>}
+      <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Historique des journées ({inSeason.length})</p><div className="space-y-2">
+        {stats.perJournee.map((pj) => { const isOpen = openId === pj.id; const jrn = journees.find((x) => x.id === pj.id);
+          return (<SectionCard key={pj.id}>
+            <button onClick={() => setOpenId(isOpen ? null : pj.id)} className="w-full flex items-center justify-between px-4 py-3 gap-2 text-left"><span className="flex items-center gap-2 font-medium text-stone-800 text-sm">{isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}{new Date(pj.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span><span className="text-xs text-stone-500 truncate">{pj.terrain} · {pj.animals} pris · {pj.bullets} balles</span></button>
+            {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3 text-sm">
+              {pj.posts.length > 0 && <div><p className="font-medium text-stone-700">Postes</p><ul className="text-stone-600 text-xs mt-0.5 space-y-0.5">{pj.posts.map((po, i) => { const an = Object.entries(po.animals).map(([l, n]) => n + " " + l).join(", "); return <li key={i}><b>{po.track}</b> — {po.post} · {po.hunter} · {po.bullets} balle(s){an ? " · 🦌 " + an : ""}</li>; })}</ul></div>}
+              <div><p className="font-medium text-stone-700">🦌 Tableau du jour</p>{!jrn || (jrn.tableau || []).length === 0 ? <p className="text-xs text-stone-400 italic">Rien noté.</p> : <ul className="text-stone-600 text-xs mt-0.5 space-y-0.5">{(jrn.tableau || []).map((k) => <li key={k.id}>{especeEmoji(k.espece)} {especeLabel(k)} × {k.quantite || 0}{k.tireurId ? " — " + nameOf(k.tireurId) : ""}</li>)}</ul>}</div>
+            </div>)}
+          </SectionCard>); })}
+      </div></div>
+    </>)}
+  </div>);
+}
+
+// ---------- Récap dîner ----------
+const DINER_CSS = "@page{margin:16mm}body{font-family:Georgia,serif;color:#1c1917;margin:0}header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #92400e;padding-bottom:10px;margin-bottom:16px}header .emo{font-size:32px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}h2{font-size:16px;margin:18px 0 6px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:13px}th{text-align:left;color:#78716c;font-size:11px;text-transform:uppercase;border-bottom:1px solid #e7e5e4;padding:4px}td{padding:5px 4px;border-bottom:1px solid #f0efee}tfoot td{font-weight:bold;border-top:2px solid #d6d3d1}ul.abs{font-family:Helvetica,Arial,sans-serif;font-size:13px;color:#57534e;columns:2}";
+function buildDinnerPrintHtml(participants) {
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const vient = participants.filter((p) => p.diner && p.diner.vient);
+  const absent = participants.filter((p) => !(p.diner && p.diner.vient));
+  const total = vient.reduce((s, p) => s + 1 + (Number(p.diner.invitesSupplementaires) || 0), 0);
+  let rowsV = ""; vient.forEach((p) => { const sup = Number(p.diner.invitesSupplementaires) || 0; rowsV += "<tr><td>" + esc(p.name || "Sans nom") + "</td><td style='text-align:center'>" + (sup ? ("+" + sup) : "") + "</td><td style='text-align:center'>" + (1 + sup) + "</td></tr>"; });
+  let rowsA = ""; absent.forEach((p) => { rowsA += "<li>" + esc(p.name || "Sans nom") + "</li>"; });
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Récap dîner</title><style>" + DINER_CSS + "</style></head><body>"
+    + "<header><div class='emo'>🐗</div><div><h1>Récap du dîner</h1><p>" + vient.length + " présent(s) · " + total + " convive(s)</p></div></header>"
+    + "<h2>Présents</h2><table><thead><tr><th>Nom</th><th style='text-align:center'>+ invités</th><th style='text-align:center'>Total</th></tr></thead><tbody>" + (rowsV || "<tr><td colspan='3'>—</td></tr>") + "</tbody><tfoot><tr><td>TOTAL CONVIVES</td><td></td><td style='text-align:center'>" + total + "</td></tr></tfoot></table>"
+    + (rowsA ? ("<h2>Absents</h2><ul class='abs'>" + rowsA + "</ul>") : "")
+    + "</body></html>";
+}
+
+// ---------- Application ----------
+const K = { participants: "cdb2:participants", journees: "cdb2:journees", terrainIndex: "cdb2:terrain-index", terrainPrefix: "cdb2:terrain:", imgPrefix: "cdb2:img:", mimgPrefix: "cdb2:mimg:", safety: "cdb2:safety", github: "cdb2:github", localAt: "cdb2:localAt", cloudAt: "cdb2:cloudAt" };
+const DEFAULT_FACTEUR = "https://battue-facteur.hippolyte-houdard.workers.dev/";
+const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", dataRepo: "battue-data", fnUrl: DEFAULT_FACTEUR, orgName: "" };
+const STORAGE_OK = typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
+
+const SUPA_URL = "https://zbneklsactpgttkpzwiv.supabase.co";
+const SUPA_KEY = "sb_publishable_2x46K_6vwJ4OjBODiCycGA_JXScarw9";
+const SB = (typeof window !== "undefined" && window.supabase && window.supabase.createClient) ? window.supabase.createClient(SUPA_URL, SUPA_KEY) : null;
+
+function AuthScreen() {
+  const [mode, setMode] = useState("in");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!SB) { setMsg("⚠ Connexion à la base impossible (internet ?)."); return; }
+    setBusy(true); setMsg("");
+    try {
+      if (mode === "forgot") {
+        if (!email.trim()) { setMsg("⚠ Entre ton email d'abord."); setBusy(false); return; }
+        const { error } = await SB.auth.resetPasswordForEmail(email.trim(), { redirectTo: "https://hiplou.github.io/carnet/" });
+        if (error) throw error;
+        setMsg("✓ Si un compte existe pour cet email, un lien de réinitialisation vient d'être envoyé. Regarde ta boîte mail (et les spams).");
+      } else if (mode === "up") {
+        const { error } = await SB.auth.signUp({ email: email.trim(), password: pass });
+        if (error) throw error;
+        setMsg("✓ Compte créé ! Va confirmer ton adresse dans l'email reçu, puis connecte-toi.");
+        setMode("in");
+      } else {
+        const { error } = await SB.auth.signInWithPassword({ email: email.trim(), password: pass });
+        if (error) throw error;
+      }
+    } catch (e) { setMsg("⚠ " + ((e && e.message) || e)); }
+    setBusy(false);
+  };
+  const title = mode === "up" ? "Crée ton compte" : mode === "forgot" ? "Réinitialiser le mot de passe" : "Connecte-toi à ton carnet";
+  const cta = busy ? "…" : mode === "up" ? "Créer mon compte" : mode === "forgot" ? "Envoyer le lien" : "Se connecter";
+  return (<div className="min-h-screen bg-stone-100 flex items-center justify-center px-4 py-8">
+    <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
+      <div className="flex items-center gap-2 mb-1"><span className="text-3xl">🦌</span><h1 className="font-serif text-2xl text-stone-800">Carnet de Battue</h1></div>
+      <p className="text-sm text-stone-500 mb-5">{title}</p>
+      <label className="text-xs uppercase tracking-wide text-stone-400">Email</label>
+      <input type="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-3 mt-1 bg-white" placeholder="ton@email.fr" />
+      {mode !== "forgot" && (<><label className="text-xs uppercase tracking-wide text-stone-400">Mot de passe</label>
+      <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-1 mt-1 bg-white" placeholder="••••••••" /></>)}
+      {mode === "in" && <button onClick={() => { setMode("forgot"); setMsg(""); }} className="text-xs text-stone-500 hover:text-stone-700 underline mb-3 block">Mot de passe oublié ?</button>}
+      <button onClick={submit} disabled={busy || !email || (mode !== "forgot" && !pass)} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg py-2.5 font-medium disabled:bg-stone-300 mt-2">{cta}</button>
+      {msg && <p className="text-sm mt-3 text-stone-700 whitespace-pre-wrap">{msg}</p>}
+      {mode === "forgot" ? <button onClick={() => { setMode("in"); setMsg(""); }} className="w-full text-sm text-emerald-800 mt-4 underline">← Retour à la connexion</button>
+        : <button onClick={() => { setMode(mode === "up" ? "in" : "up"); setMsg(""); }} className="w-full text-sm text-emerald-800 mt-4 underline">{mode === "up" ? "J'ai déjà un compte" : "Pas encore de compte ? En créer un"}</button>}
+    </div>
+  </div>);
+}
+
+function CarnetApp({ session, onSignOut }) {
+  const [tab, setTab] = useState("journees");
+  const [participants, setParticipants] = useState(initialParticipants);
+  const [terrains, setTerrains] = useState(initialTerrains);
+  const [journees, setJournees] = useState(initialJournees);
+  const [safety, setSafety] = useState(DEFAULT_SAFETY);
+  const [github, setGithub] = useState(DEFAULT_GITHUB);
+  const [loaded, setLoaded] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [showPub, setShowPub] = useState(false);
+  const [ghStatus, setGhStatus] = useState("idle");
+  const [ghMsg, setGhMsg] = useState("");
+  const [saveStatus, setSaveStatus] = useState(STORAGE_OK ? "idle" : "nostorage");
+  const [dismissBanner, setDismissBanner] = useState(false);
+  const saveTimeout = useRef(null); const skipDirty = useRef(true); const importFileRef = useRef(null);
+  const ghTimer = useRef(null); const skipAuto = useRef(true); const localAtRef = useRef(0);
+  const stateRef = useRef({});
+  stateRef.current = { participants, terrains, journees, safety, github };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const getLS = async (key, fb) => { try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
+        const gh = await getLS(K.github, DEFAULT_GITHUB);
+        setGithub({ ...DEFAULT_GITHUB, ...(gh || {}) });
+        const uid = session.user.id; const cacheKey = "cb_supa_" + uid;
+        let d = null;
+        if (SB) {
+          try { const { data } = await SB.from("carnets").select("data").eq("user_id", uid).maybeSingle(); if (data && data.data) d = data.data; }
+          catch (e) { d = await getLS(cacheKey, null); }
+        } else { d = await getLS(cacheKey, null); }
+        if (d) {
+          setParticipants((d.participants || []).map(normParticipant));
+          setTerrains((d.terrains || []).map(normTerrain));
+          setJournees((d.journees || []).map(normJournee));
+          setSafety(normSafety(d.safety || DEFAULT_SAFETY));
+        }
+      } catch (e) { console.error(e); } finally { setLoaded(true); }
+    })();
+  }, []);
+
+  const saveNow = async () => {
+    if (!SB || !session) return false;
+    setGhStatus("saving");
+    try {
+      const s = stateRef.current;
+      const payload = { version: 3, savedAt: Date.now(), participants: s.participants, terrains: s.terrains, journees: s.journees, safety: s.safety };
+      const { error } = await SB.from("carnets").upsert({ user_id: session.user.id, data: payload, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      try { await window.storage.set("cb_supa_" + session.user.id, JSON.stringify(payload)); } catch (e) {}
+      setGhStatus("saved"); return true;
+    } catch (e) { setGhStatus("error"); return false; }
+  };
+
+  // Sauvegarde automatique dans ton compte Supabase (debounce)
+  useEffect(() => {
+    if (!loaded) return;
+    clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(() => { saveNow(); }, 1500);
+    return () => clearTimeout(saveTimeout.current);
+  }, [participants, terrains, journees, safety, loaded]);
+
+  // Récupère les retours des chasseurs (table feedbacks) et les fusionne, puis les efface
+  const pullFeedback = async () => {
+    if (!SB || !session) return;
+    try {
+      const { data, error } = await SB.from("feedbacks").select("*").eq("user_id", session.user.id).order("ts", { ascending: true });
+      if (error || !data || !data.length) return;
+      const parts = stateRef.current.participants || [];
+      let changed = false; let mergedJs = null;
+      setJournees((prev) => {
+        const js = prev.map((j) => ({ ...j, shots: { ...(j.shots || {}) }, miradorStates: { ...(j.miradorStates || {}) }, tableau: (j.tableau || []).slice() }));
+        let ch = false;
+        data.forEach((f) => {
+          const j = js.find((x) => x.id === f.journee_id);
+          if (!j) return;
+          j.shots[f.track_id] = { ...(j.shots[f.track_id] || {}), [f.mirador_id]: f.bullets };
+          j.miradorStates[f.track_id] = { ...(j.miradorStates[f.track_id] || {}), [f.mirador_id]: { state: f.state || "", comment: f.comment || "", hunter: f.hunter || "", ts: f.ts } };
+          let animals = f.animals; if (typeof animals === "string") { try { animals = JSON.parse(animals); } catch (e) { animals = null; } }
+          if (animals && typeof animals === "object") {
+            const hp = parts.find((p) => p.name === f.hunter);
+            const tireurId = hp ? hp.id : "";
+            Object.keys(animals).forEach((esp) => {
+              const qty = Math.max(0, Number(animals[esp]) || 0);
+              for (let k = j.tableau.length - 1; k >= 0; k--) { const kk = j.tableau[k]; if (kk.source === "chasseur" && kk.tireurId === tireurId && kk.trackId === f.track_id && kk.espece === esp) j.tableau.splice(k, 1); }
+              for (let n = 0; n < qty; n++) { j.tableau.push({ id: "k-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6) + "-" + n, espece: esp, especeLabel: "", quantite: 1, sexe: "", poids: "", bracelet: "", tireurId: tireurId, trackId: f.track_id, source: "chasseur" }); }
+            });
+          }
+          ch = true;
+        });
+        changed = ch; mergedJs = ch ? js : prev;
+        return ch ? js : prev;
+      });
+      if (!changed) return;
+      const s = stateRef.current;
+      const payload = { version: 3, savedAt: Date.now(), participants: s.participants, terrains: s.terrains, journees: mergedJs, safety: s.safety };
+      await SB.from("carnets").upsert({ user_id: session.user.id, data: payload, updated_at: new Date().toISOString() });
+      try { await window.storage.set("cb_supa_" + session.user.id, JSON.stringify(payload)); } catch (e) {}
+      await SB.from("feedbacks").delete().in("id", data.map((f) => f.id));
+    } catch (e) {}
+  };
+  const pullRef = useRef(null); pullRef.current = pullFeedback;
+  useEffect(() => {
+    if (!loaded) return;
+    const iv = setInterval(() => { if (pullRef.current) pullRef.current(); }, 45000);
+    const onFocus = () => { if (pullRef.current) pullRef.current(); };
+    window.addEventListener("focus", onFocus);
+    if (pullRef.current) pullRef.current();
+    return () => { clearInterval(iv); window.removeEventListener("focus", onFocus); };
+  }, [loaded]);
+
+  // Reglages GitHub (publication) gardes par appareil, en local
+  useEffect(() => { if (!loaded) return; try { window.storage.set(K.github, JSON.stringify(github)); } catch (e) {} }, [github, loaded]);
+
+  const buildWorkbook = () => {
+    const wb = XLSX.utils.book_new();
+    const add = (rows, fb, name) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [fb]), name);
+    add(participants.map((p) => ({ Nom: p.name, Téléphone: p.phone || "", Participe: yn(p.participe), Invité: yn(p.invitation), Rôle: p.role || "", Dîner: yn(p.diner?.vient), Invités_sup: p.diner?.invitesSupplementaires || 0, id: p.id })), { Nom: "" }, "Participants");
+    add(terrains.map((t) => ({ Territoire: t.name, id: t.id })), { Territoire: "" }, "Territoires");
+    const trk = []; terrains.forEach((t) => t.tracks.forEach((k) => trk.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Couleur: k.color, crop_x: k.crop?.x ?? 0, crop_y: k.crop?.y ?? 0, crop_w: k.crop?.w ?? 100, crop_h: k.crop?.h ?? 100 })));
+    add(trk, { Traque: "" }, "Traques");
+    const mir = []; terrains.forEach((t) => t.tracks.forEach((k) => k.miradors.forEach((m) => mir.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Mirador: m.label, MiradorId: m.id, gx: m.gx, gy: m.gy, Priorite: m.priority || 1, Consignes: m.consignes || "" }))));
+    add(mir, { Mirador: "" }, "Miradors");
+    const tab = []; journees.forEach((j) => (j.tableau || []).forEach((k) => tab.push({ JourneeId: j.id, Date: j.date, Espece: k.espece, EspeceLibre: k.especeLabel || "", Quantite: k.quantite || 0, TireurId: k.tireurId || "" })));
+    add(tab, { JourneeId: "" }, "Tableau");
+    add(journees.map((j) => ({ Date: j.date, Territoire: terrains.find((t) => t.id === j.terrainId)?.name || "", TerritoireId: j.terrainId || "", id: j.id })), { Date: "" }, "Journées");
+    const pl = []; journees.forEach((j) => Object.entries(j.placements || {}).forEach(([trackId, hunters]) => Object.entries(hunters).forEach(([hid, mid]) => { let tn = "", ml = mid; terrains.forEach((t) => t.tracks.forEach((k) => { if (k.id === trackId) { tn = k.name; const mm = k.miradors.find((x) => x.id === mid); if (mm) ml = mm.label; } })); pl.push({ JournéeId: j.id, Date: j.date, Traque: tn, TraqueId: trackId, Chasseur: participants.find((p) => p.id === hid)?.name || hid, ChasseurId: hid, Mirador: ml, MiradorId: mid }); })));
+    add(pl, { Chasseur: "" }, "Placements");
+    add(safety.consignes.map((c, i) => ({ Ordre: i, Consigne: c })), { Ordre: 0, Consigne: "" }, "Consignes");
+    add(safety.sonneries.map((s, i) => ({ Ordre: i, Événement: s.evenement, Signal: s.signal })), { Ordre: 0, Événement: "", Signal: "" }, "Sonneries");
+    const ph = []; terrains.forEach((t) => { if (t.planImage) chunkStr(t.planImage).forEach((d, i) => ph.push({ Kind: "plan", OwnerId: t.id, PhotoIndex: 0, Chunk: i, Data: d })); t.tracks.forEach((k) => k.miradors.forEach((m) => (m.photos || []).forEach((pht, pi) => chunkStr(pht).forEach((d, i) => ph.push({ Kind: "mirador", OwnerId: m.id, PhotoIndex: pi, Chunk: i, Data: d }))))); });
+    add(ph, { Kind: "", OwnerId: "", PhotoIndex: 0, Chunk: 0, Data: "" }, "_Photos");
+    return wb;
+  };
+  const exportJson = async () => {
+    try {
+      const blob = new Blob([JSON.stringify({ version: 2, participants, terrains, journees, safety })], { type: "application/json" });
+      const fname = `carnet-de-battue-${new Date().toISOString().slice(0, 10)}.json`;
+      const file = new File([blob], fname, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: fname }); }
+      else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    } catch (e) { if (e && e.name !== "AbortError") window.alert("Export impossible : " + (e.message || e)); }
+  };
+  const exportExcel = async () => {
+    try {
+      const wb = buildWorkbook(); const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const fname = `carnet-de-battue-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const file = new File([blob], fname, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: fname }); }
+      else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      setDirty(false);
+    } catch (e) { if (e && e.name !== "AbortError") window.alert("Export impossible : " + (e.message || e)); }
+  };
+
+  const importFromWorkbook = (wb) => {
+    const sh = (name) => (wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name]) : []);
+    const P = sh("Participants"), T = sh("Territoires"), TRK = sh("Traques"), M = sh("Miradors"), J = sh("Journées"), PL = sh("Placements"), PH = sh("_Photos"), CO = sh("Consignes"), SO = sh("Sonneries");
+    const photoMap = {}; PH.forEach((r) => { if (!r.Kind) return; const key = `${r.Kind}|${r.OwnerId}|${r.PhotoIndex || 0}`; (photoMap[key] = photoMap[key] || []).push({ c: Number(r.Chunk) || 0, d: String(r.Data || "") }); });
+    const blob = (key) => (photoMap[key] ? photoMap[key].sort((a, b) => a.c - b.c).map((x) => x.d).join("") : null);
+    const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: (function(){ var rr = String(r.Rôle || r.Role || "").toLowerCase(); return rr.indexOf("rab") >= 0 ? "rabatteur" : (rr ? "chasseur" : null); })(), mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })() }));
+    const terrs = T.filter((r) => r.Territoire || r.id).map((r) => ({ id: r.id || `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: r.Territoire || "Territoire", planImage: blob(`plan|${r.id}|0`), tracks: [] }));
+    const terrById = Object.fromEntries(terrs.map((t) => [t.id, t]));
+    TRK.filter((r) => r.TraqueId).forEach((r) => { const t = terrById[r.TerritoireId]; if (!t) return; t.tracks.push({ id: r.TraqueId, name: r.Traque || "Traque", color: r.Couleur || "#dc2626", crop: { x: Number(r.crop_x) || 0, y: Number(r.crop_y) || 0, w: Number(r.crop_w) || 100, h: Number(r.crop_h) || 100 }, miradors: [] }); });
+    const trkById = {}; terrs.forEach((t) => t.tracks.forEach((k) => { trkById[k.id] = k; }));
+    M.filter((r) => r.MiradorId).forEach((r) => { const k = trkById[r.TraqueId]; if (!k) return; const photos = []; for (let pi = 0; ; pi++) { const b = blob(`mirador|${r.MiradorId}|${pi}`); if (!b) break; photos.push(b); } k.miradors.push({ id: r.MiradorId, label: r.Mirador || "Poste", gx: Number(r.gx) || 50, gy: Number(r.gy) || 50, priority: Number(r.Priorite) || 1, consignes: r.Consignes || "", photos }); });
+    terrs.forEach((t) => { if (!t.tracks.length) t.tracks.push({ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }); });
+    const jours = J.filter((r) => r.Date || r.id).map((r, i) => ({ id: r.id || `j-${Date.now()}-${i}`, date: excelDate(r.Date), terrainId: r.TerritoireId || null, placements: {}, tableau: [] }));
+    const jourById = Object.fromEntries(jours.map((j) => [j.id, j]));
+    PL.forEach((r) => { const j = jourById[r.JournéeId]; if (!j || !r.TraqueId || !r.ChasseurId || !r.MiradorId) return; (j.placements[r.TraqueId] = j.placements[r.TraqueId] || {})[r.ChasseurId] = r.MiradorId; });
+    (sh("Tableau") || []).forEach((r, i) => { const j = jourById[r.JourneeId]; if (!j || !r.Espece) return; j.tableau.push({ id: "k-imp-" + Date.now() + "-" + i, espece: String(r.Espece), especeLabel: r.EspeceLibre || "", quantite: Number(r.Quantite) || 0, tireurId: r.TireurId || "" }); });
+    const consignes = CO.filter((r) => r.Consigne).sort((a, b) => (a.Ordre || 0) - (b.Ordre || 0)).map((r) => String(r.Consigne));
+    const sonneries = SO.filter((r) => r.Événement || r.Signal).sort((a, b) => (a.Ordre || 0) - (b.Ordre || 0)).map((r) => ({ evenement: String(r.Événement || ""), signal: String(r.Signal || "") }));
+    if (parts.length) setParticipants(parts.map(normParticipant));
+    if (terrs.length) setTerrains(terrs.map(normTerrain));
+    if (jours.length) setJournees(jours);
+    setSafety(normSafety({ consignes, sonneries }));
+  };
+  const importFile = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    try {
+      if (file.name.toLowerCase().endsWith(".json")) { const data = JSON.parse(await file.text()); if (data.participants) setParticipants(data.participants.map(normParticipant)); if (data.terrains) setTerrains(data.terrains.map(normTerrain)); if (data.journees) setJournees(data.journees); if (data.safety) setSafety(normSafety(data.safety)); }
+      else { const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); importFromWorkbook(wb); }
+      setDismissBanner(true); skipDirty.current = true; setDirty(false); window.alert("Sauvegarde importée ✔ (photos comprises).");
+    } catch (ex) { window.alert("Import impossible : " + (ex.message || ex)); } finally { if (importFileRef.current) importFileRef.current.value = ""; }
+  };
+  const ghBase = (repo) => "https://api.github.com/repos/" + github.owner + "/" + repo + "/contents/data.json";
+  const ghHeaders = () => ({ Authorization: "Bearer " + github.token, Accept: "application/vnd.github+json" });
+  const saveToGitHub = async (auto) => {
+    if (!github.token) { if (auto) return; setShowPub(true); return; }
+    setGhStatus("saving"); setGhMsg("");
+    try {
+      const repo = github.dataRepo || "battue-data";
+      const stamp = localAtRef.current || Date.now();
+      const content = toBase64Utf8(JSON.stringify({ version: 2, savedAt: stamp, participants, terrains, journees, safety }));
+      await githubPutFile({ token: github.token, owner: github.owner, repo: repo, path: "data.json", content: content, message: "Sauvegarde " + new Date().toISOString() });
+      try { await window.storage.set(K.cloudAt, JSON.stringify(stamp)); } catch (e) {}
+      setGhStatus("saved"); setGhMsg("✓ Enregistré à " + new Date().toLocaleTimeString("fr-FR")); setDirty(false);
+    } catch (e) { setGhStatus("error"); setGhMsg("⚠ Non enregistré : " + ((e && e.message) || e)); }
+  };
+  const loadFromGitHub = async () => {
+    if (!github.token) { setShowPub(true); window.alert("Ajoute d'abord ta clé GitHub dans les Réglages, puis reclique sur Importer."); return; }
+    if (!window.confirm("Importer tes données depuis GitHub (battue-data) dans CE compte ? Elles remplaceront le carnet actuel de ce compte.")) return;
+    setGhStatus("saving"); setGhMsg("Import en cours…");
+    try {
+      const repo = github.dataRepo || "battue-data";
+      const res = await fetch("https://api.github.com/repos/" + github.owner + "/" + repo + "/contents/data.json?ref=main&t=" + Date.now(), { headers: { Authorization: "Bearer " + github.token, Accept: "application/vnd.github+json" }, cache: "no-store" });
+      if (res.status === 404) { setGhStatus("idle"); window.alert("Aucune sauvegarde trouvée dans " + repo + "."); return; }
+      if (!res.ok) { const t = await res.text(); throw new Error("Code " + res.status + " — " + t.slice(0, 150)); }
+      const j = await res.json();
+      const data = JSON.parse(fromBase64Utf8(j.content || ""));
+      if (data.participants) setParticipants(data.participants.map(normParticipant));
+      if (data.terrains) setTerrains(data.terrains.map(normTerrain));
+      if (data.journees) setJournees(data.journees);
+      if (data.safety) setSafety(normSafety(data.safety));
+      setGhStatus("saved"); setGhMsg("✓ Importé");
+      window.alert("✓ Données importées ! Elles s'enregistrent maintenant dans ton compte (attends « ✓ Enregistré » en haut).");
+    } catch (e) { setGhStatus("error"); window.alert("Échec de l'import : " + ((e && e.message) || e)); }
+  };
+
+  // Retire automatiquement des postes tout participant devenu absent ou supprimé
+  useEffect(() => {
+    if (!loaded) return;
+    const activeIds = new Set(participants.map((p) => p.id));
+    let changed = false;
+    const next = journees.map((j) => {
+      let jChanged = false; const placements = {};
+      for (const [trackId, byHunter] of Object.entries(j.placements || {})) {
+        const cleaned = {};
+        for (const [hid, mid] of Object.entries(byHunter)) { if (activeIds.has(hid)) cleaned[hid] = mid; else jChanged = true; }
+        placements[trackId] = cleaned;
+      }
+      if (jChanged) { changed = true; return { ...j, placements }; }
+      return j;
+    });
+    if (changed) setJournees(next);
+  }, [participants, journees, loaded]);
+
+  const resetAll = () => { if (!window.confirm("Tout réinitialiser ?")) return; setParticipants(initialParticipants); setTerrains(initialTerrains); setJournees(initialJournees); setSafety(DEFAULT_SAFETY); };
+
+  const tabs = [{ id: "journees", label: "Journées", icon: CalendarDays }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "participants", label: "Membres", icon: Users }, { id: "securite", label: "Sécurité", icon: Shield }];
+  const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !t.planImage);
+
+  if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
+
+  return (<div className="min-h-screen bg-stone-100">
+    {showPub && <PublishModal github={github} setGithub={setGithub} onClose={() => setShowPub(false)} onLoad={loadFromGitHub} />}    <header className="bg-stone-900 text-stone-50 px-4 py-4"><div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3"><span className="text-3xl">🦌</span><div><h1 className="font-serif text-2xl tracking-wide">Carnet de Battue</h1><p className="text-stone-400 text-sm">Saison 2026 – 2027</p></div></div>
+      <div className="text-right">
+        <p className={`text-xs h-4 ${ghStatus === "error" ? "text-amber-300" : ghStatus === "saving" ? "text-stone-300" : "text-emerald-300"}`}>{ghStatus === "saving" ? "Enregistrement…" : ghStatus === "saved" ? "✓ Enregistré" : ghStatus === "error" ? "⚠ Non enregistré (connexion ?)" : ""}</p>
+        <div className="flex items-center gap-3 justify-end mt-1">
+          <button onClick={() => saveNow()} className="flex items-center gap-1 text-sm font-medium bg-emerald-700 hover:bg-emerald-800 text-stone-50 px-3 py-1 rounded-md">☁ Sauvegarder</button>
+          <button onClick={() => setShowPub(true)} className="text-xs text-stone-400 hover:text-stone-200 underline">Réglages</button>
+          <button onClick={onSignOut} className="text-xs text-stone-400 hover:text-stone-200 underline">Déconnexion</button>
+        </div>
+        <p className="text-[10px] text-stone-500 mt-0.5 truncate max-w-[180px]">{session?.user?.email}</p>
+      </div>
+    </div></header>
+
+    {missingImages && !dismissBanner && (<div className="bg-amber-100 border-b border-amber-300 text-amber-900 text-sm px-4 py-2"><div className="max-w-3xl mx-auto flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span className="flex-1">Une photo de territoire manque. Clique <button onClick={loadFromGitHub} className="underline font-medium">Charger</button> pour récupérer ta sauvegarde.</span><button onClick={() => setDismissBanner(true)} className="text-amber-700"><X size={16} /></button></div></div>)}
+
+    <nav className="bg-stone-800 px-4"><div className="max-w-3xl mx-auto flex gap-1 overflow-x-auto">{tabs.map(({ id, label, icon: Icon }) => (<button key={id} onClick={() => setTab(id)} className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap ${tab === id ? "bg-stone-100 text-stone-900" : "text-stone-300 hover:text-stone-50"}`}><Icon size={15} /> {label}</button>))}</div></nav>
+
+    <main className="max-w-3xl mx-auto px-4 py-5">
+      {tab === "participants" && <ParticipantsView participants={participants} setParticipants={setParticipants} />}
+      {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} journees={journees} />}
+      {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} userId={session?.user?.id} orgEmail={session?.user?.email} />}
+      {tab === "securite" && <SecurityView safety={safety} setSafety={setSafety} />}
+      {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} setJournees={setJournees} />}
+    </main>
+  </div>);
+}
+
+function UpdatePasswordScreen({ onDone }) {
+  const [pass, setPass] = useState(""); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if ((pass || "").length < 6) { setMsg("⚠ Au moins 6 caractères."); return; }
+    setBusy(true); setMsg("");
+    try { const { error } = await SB.auth.updateUser({ password: pass }); if (error) throw error; setMsg("✓ Mot de passe mis à jour !"); setTimeout(onDone, 900); }
+    catch (e) { setMsg("⚠ " + ((e && e.message) || e)); setBusy(false); }
+  };
+  return (<div className="min-h-screen bg-stone-100 flex items-center justify-center px-4 py-8"><div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
+    <div className="flex items-center gap-2 mb-1"><span className="text-3xl">🦌</span><h1 className="font-serif text-xl text-stone-800">Nouveau mot de passe</h1></div>
+    <p className="text-sm text-stone-500 mb-4">Choisis ton nouveau mot de passe.</p>
+    <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-3 bg-white" placeholder="••••••••" />
+    <button onClick={submit} disabled={busy || !pass} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg py-2.5 font-medium disabled:bg-stone-300">{busy ? "…" : "Valider"}</button>
+    {msg && <p className="text-sm mt-3 text-stone-700">{msg}</p>}
+  </div></div>);
+}
+
+export default function CarnetDeBattue() {
+  const [session, setSession] = useState(null);
+  const [ready, setReady] = useState(false);
+  const [recovery, setRecovery] = useState(false);
+  useEffect(() => {
+    if (!SB) { setReady(true); return; }
+    SB.auth.getSession().then(({ data }) => { setSession(data.session); setReady(true); }).catch(() => setReady(true));
+    const { data: sub } = SB.auth.onAuthStateChange((event, s) => { setSession(s); if (event === "PASSWORD_RECOVERY") setRecovery(true); });
+    return () => { try { sub.subscription.unsubscribe(); } catch (e) {} };
+  }, []);
+  if (!ready) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement…</div>;
+  if (!SB) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-red-700 text-sm px-6 text-center">Impossible de charger Supabase (connexion internet ?). Recharge la page.</div>;
+  if (recovery && session) return <UpdatePasswordScreen onDone={() => setRecovery(false)} />;
+  if (!session) return <AuthScreen />;
+  return <CarnetApp key={session.user.id} session={session} onSignOut={() => SB.auth.signOut()} />;
+}
