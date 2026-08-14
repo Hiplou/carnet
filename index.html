@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.8";
+const APP_VERSION = "v1.9";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -608,15 +608,31 @@ function IgnMapPicker({ onCapture, onCancel }) {
     return () => { try { map.remove(); } catch (e) {} };
   }, []);
   useEffect(() => { if (overRef.current) overRef.current.setOpacity(opac / 100); }, [opac]);
-  const search = async () => {
-    if (!q.trim()) return; setBusy(true); setErr("");
+  const skipRef = useRef(false);
+  const search = async (text) => {
+    const t = (text != null ? text : q).trim();
+    if (!t) { setRes([]); return; }
+    setErr("");
     try {
-      const r = await fetch("https://data.geopf.fr/geocodage/search?q=" + encodeURIComponent(q.trim()) + "&limit=6");
-      const j = await r.json(); setRes((j.features || []).map((ft) => ({ label: ft.properties.label, lon: ft.geometry.coordinates[0], lat: ft.geometry.coordinates[1] })));
-      if (!(j.features || []).length) setErr("Aucun lieu trouvé.");
-    } catch (e) { setErr("Recherche impossible (connexion ?)."); } finally { setBusy(false); }
+      const r = await fetch("https://data.geopf.fr/geocodage/completion?text=" + encodeURIComponent(t) + "&type=PositionOfInterest,StreetAddress&maximumResponses=8");
+      const j = await r.json();
+      let list = (j.results || []).map((it) => ({ label: it.fulltext || it.city || "", lon: it.x, lat: it.y })).filter((x) => x.label && isFinite(x.lat) && isFinite(x.lon));
+      if (!list.length) {
+        const r2 = await fetch("https://data.geopf.fr/geocodage/search?q=" + encodeURIComponent(t) + "&limit=8");
+        const j2 = await r2.json();
+        list = (j2.features || []).map((ft) => ({ label: ft.properties.label, lon: ft.geometry.coordinates[0], lat: ft.geometry.coordinates[1] }));
+      }
+      setRes(list);
+    } catch (e) { setRes([]); }
   };
-  const goTo = (r) => { const map = mapRef.current; if (map) map.setView([r.lat, r.lon], 15); setRes([]); setQ(r.label); };
+  useEffect(() => {
+    if (skipRef.current) { skipRef.current = false; return; }
+    const t = q.trim();
+    if (t.length < 3) { setRes([]); return; }
+    const id = setTimeout(() => search(t), 300);
+    return () => clearTimeout(id);
+  }, [q]);
+  const goTo = (r) => { const map = mapRef.current; if (map) map.setView([r.lat, r.lon], 15); setRes([]); skipRef.current = true; setQ(r.label); };
   const loadWms = (layer, fmt, sw, ne, W, H) => new Promise((resolve, reject) => {
     const url = "https://data.geopf.fr/wms-r/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=" + layer + "&STYLES=&CRS=EPSG:3857&BBOX=" + sw.x + "," + sw.y + "," + ne.x + "," + ne.y + "&WIDTH=" + W + "&HEIGHT=" + H + "&FORMAT=" + fmt + "&TRANSPARENT=true";
     const img = new Image(); img.crossOrigin = "anonymous";
@@ -645,9 +661,9 @@ function IgnMapPicker({ onCapture, onCancel }) {
     <div className="absolute top-0 left-0 right-0 z-[1000] p-2 pointer-events-none" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
       <div className="flex gap-2 items-center pointer-events-auto">
         <button onClick={onCancel} aria-label="Retour" className="shrink-0 w-11 h-11 rounded-full bg-white shadow-lg flex items-center justify-center text-stone-700"><ArrowLeft size={20} /></button>
-        <div className="flex-1 flex gap-1.5 bg-white rounded-full shadow-lg pl-3 pr-1 py-1 items-center">
-          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.target.blur(); search(); } }} placeholder="Commune, lieu-dit…" className="flex-1 min-w-0 text-base bg-transparent outline-none" style={{ fontSize: 16 }} />
-          <button onClick={search} className="shrink-0 w-9 h-9 rounded-full bg-emerald-800 text-white text-sm font-bold flex items-center justify-center">OK</button>
+        <div className="flex-1 flex gap-1.5 bg-white rounded-full shadow-lg pl-4 pr-2 py-2.5 items-center">
+          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} placeholder="Commune, lieu-dit…" autoComplete="off" autoCorrect="off" className="flex-1 min-w-0 text-base bg-transparent outline-none" style={{ fontSize: 16 }} />
+          {q && <button onClick={() => { setQ(""); setRes([]); }} aria-label="Effacer" className="shrink-0 w-7 h-7 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center"><X size={15} /></button>}
         </div>
       </div>
       {res.length > 0 && <div className="pointer-events-auto mt-2 ml-[52px] bg-white rounded-xl shadow-lg overflow-hidden max-h-52 overflow-y-auto">{res.map((r, i) => <button key={i} onClick={() => goTo(r)} className="w-full text-left px-3 py-3 text-sm border-b border-stone-100 last:border-0">{r.label}</button>)}</div>}
