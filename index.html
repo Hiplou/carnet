@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.17";
+const APP_VERSION = "v1.20";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1446,10 +1446,8 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
 }
 
 function PublishModal({ github, setGithub, onClose, onLoad }) {
-  const [token, setToken] = useState(github.token || "");
   const [owner, setOwner] = useState(github.owner || "Hiplou");
   const [repo, setRepo] = useState(github.repo || "battue");
-  const [dataRepo, setDataRepo] = useState(github.dataRepo || "battue-data");
   const [fnUrl, setFnUrl] = useState(github.fnUrl || DEFAULT_FACTEUR);
   const [orgName, setOrgName] = useState(github.orgName || "");
   const url = "https://" + (owner || "hiplou").toLowerCase() + ".github.io/" + (repo || "battue") + "/";
@@ -1459,14 +1457,12 @@ function PublishModal({ github, setGithub, onClose, onLoad }) {
       <div className="px-4 py-3 space-y-3 text-sm">
         <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom du groupe / société (titre de la page chasseurs)</label><input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
         <p className="text-stone-500 text-xs">Colle ta clé GitHub une seule fois. Elle reste sur ton appareil.</p>
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Clé GitHub (jeton)</label><input value={token} onChange={(e) => setToken(e.target.value)} placeholder="github_pat_…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /></div>
         <div className="flex gap-2"><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Compte</label><input value={owner} onChange={(e) => setOwner(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Dossier public (page)</label><input value={repo} onChange={(e) => setRepo(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div></div>
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Dossier privé (sauvegarde des données)</label><input value={dataRepo} onChange={(e) => setDataRepo(e.target.value)} placeholder="battue-data" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
         <div><label className="text-xs uppercase tracking-wide text-stone-400">Adresse du facteur (retours chasseurs)</label><input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder="https://battue-facteur.hippolyte-houdard.workers.dev/" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /><p className="text-[10px] text-stone-400 mt-1">Pré-rempli par défaut. Ne change ça que si tu as ton propre facteur.</p></div>
         <p className="text-xs text-stone-500">Lien des chasseurs : <span className="text-emerald-800 break-all">{url}</span></p>
         {onLoad && <div className="border-t border-stone-200 pt-3"><button onClick={() => { onClose(); onLoad(); }} className="w-full flex items-center justify-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md">⬇ Importer mes anciennes données (GitHub)</button><p className="text-[11px] text-stone-400 mt-1">À faire UNE fois pour rapatrier ta sauvegarde GitHub dans ce compte.</p></div>}
       </div>
-      <div className="px-4 py-3 border-t border-stone-200 flex justify-end gap-2"><button onClick={onClose} className="text-sm text-stone-500 px-3 py-1.5">Annuler</button><button onClick={() => { setGithub({ ...github, token: token.trim(), owner: (owner.trim() || "Hiplou"), repo: (repo.trim() || "battue"), path: github.path || "index.html", dataRepo: (dataRepo.trim() || "battue-data"), fnUrl: fnUrl.trim(), orgName: orgName.trim() }); onClose(); }} className="bg-emerald-800 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Enregistrer</button></div>
+      <div className="px-4 py-3 border-t border-stone-200 flex justify-end gap-2"><button onClick={onClose} className="text-sm text-stone-500 px-3 py-1.5">Annuler</button><button onClick={() => { setGithub({ ...github, token: "", owner: (owner.trim() || "Hiplou"), repo: (repo.trim() || "battue"), path: github.path || "index.html", fnUrl: fnUrl.trim(), orgName: orgName.trim() }); onClose(); }} className="bg-emerald-800 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Enregistrer</button></div>
     </div>
   </div>);
 }
@@ -2033,7 +2029,7 @@ function buildDinnerPrintHtml(participants) {
 // ---------- Application ----------
 const K = { participants: "cdb2:participants", journees: "cdb2:journees", terrainIndex: "cdb2:terrain-index", terrainPrefix: "cdb2:terrain:", imgPrefix: "cdb2:img:", mimgPrefix: "cdb2:mimg:", safety: "cdb2:safety", github: "cdb2:github", localAt: "cdb2:localAt", cloudAt: "cdb2:cloudAt" };
 const DEFAULT_FACTEUR = "https://battue-facteur.hippolyte-houdard.workers.dev/";
-const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", dataRepo: "battue-data", fnUrl: DEFAULT_FACTEUR, orgName: "" };
+const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", fnUrl: DEFAULT_FACTEUR, orgName: "" };
 const STORAGE_OK = typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
 
 const SUPA_URL = "https://zbneklsactpgttkpzwiv.supabase.co";
@@ -2094,6 +2090,7 @@ function CarnetApp({ session, onSignOut }) {
   const [safety, setSafety] = useState(DEFAULT_SAFETY);
   const [github, setGithub] = useState(DEFAULT_GITHUB);
   const [loaded, setLoaded] = useState(false);
+  const [cloudOk, setCloudOk] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [showPub, setShowPub] = useState(false);
   const [ghStatus, setGhStatus] = useState("idle");
@@ -2116,9 +2113,9 @@ function CarnetApp({ session, onSignOut }) {
         const uid = session.user.id; const cacheKey = "cb_supa_" + uid;
         let d = null;
         if (SB) {
-          try { const { data } = await SB.from("carnets").select("data").eq("user_id", uid).maybeSingle(); if (data && data.data) d = data.data; }
-          catch (e) { d = await getLS(cacheKey, null); }
-        } else { d = await getLS(cacheKey, null); }
+          try { const { data, error } = await SB.from("carnets").select("data").eq("user_id", uid).maybeSingle(); if (error) throw error; if (data && data.data) d = data.data; setCloudOk(true); }
+          catch (e) { setCloudOk(false); setGhMsg("⚠ Serveur injoignable — carnet en lecture seule, rien ne sera enregistré."); }
+        } else { setCloudOk(false); }
         if (d) {
           setParticipants((d.participants || []).map(normParticipant));
           setTerrains((d.terrains || []).map(normTerrain));
@@ -2131,6 +2128,7 @@ function CarnetApp({ session, onSignOut }) {
 
   const saveNow = async () => {
     if (!SB || !session) return false;
+    if (!cloudOk) { setGhStatus("error"); setGhMsg("⚠ Sauvegarde bloquée : le carnet n'a pas pu être chargé. Recharge la page."); return false; }
     setGhStatus("saving");
     try {
       const s = stateRef.current;
@@ -2274,67 +2272,13 @@ function CarnetApp({ session, onSignOut }) {
       setDismissBanner(true); skipDirty.current = true; setDirty(false); window.alert("Sauvegarde importée ✔ (photos comprises).");
     } catch (ex) { window.alert("Import impossible : " + (ex.message || ex)); } finally { if (importFileRef.current) importFileRef.current.value = ""; }
   };
-  const ghBase = (repo) => "https://api.github.com/repos/" + github.owner + "/" + repo + "/contents/data.json";
-  const ghHeaders = () => ({ Authorization: "Bearer " + github.token, Accept: "application/vnd.github+json" });
-  const saveToGitHub = async (auto) => {
-    if (!github.token) { if (auto) return; setShowPub(true); return; }
-    setGhStatus("saving"); setGhMsg("");
-    try {
-      const repo = github.dataRepo || "battue-data";
-      const stamp = localAtRef.current || Date.now();
-      const content = toBase64Utf8(JSON.stringify({ version: 2, savedAt: stamp, participants, terrains, journees, safety }));
-      await githubPutFile({ token: github.token, owner: github.owner, repo: repo, path: "data.json", content: content, message: "Sauvegarde " + new Date().toISOString() });
-      try { await window.storage.set(K.cloudAt, JSON.stringify(stamp)); } catch (e) {}
-      setGhStatus("saved"); setGhMsg("✓ Enregistré à " + new Date().toLocaleTimeString("fr-FR")); setDirty(false);
-    } catch (e) { setGhStatus("error"); setGhMsg("⚠ Non enregistré : " + ((e && e.message) || e)); }
-  };
-  const loadFromGitHub = async () => {
-    if (!github.token) { setShowPub(true); window.alert("Ajoute d'abord ta clé GitHub dans les Réglages, puis reclique sur Importer."); return; }
-    if (!window.confirm("Importer tes données depuis GitHub (battue-data) dans CE compte ? Elles remplaceront le carnet actuel de ce compte.")) return;
-    setGhStatus("saving"); setGhMsg("Import en cours…");
-    try {
-      const repo = github.dataRepo || "battue-data";
-      const res = await fetch("https://api.github.com/repos/" + github.owner + "/" + repo + "/contents/data.json?ref=main&t=" + Date.now(), { headers: { Authorization: "Bearer " + github.token, Accept: "application/vnd.github+json" }, cache: "no-store" });
-      if (res.status === 404) { setGhStatus("idle"); window.alert("Aucune sauvegarde trouvée dans " + repo + "."); return; }
-      if (!res.ok) { const t = await res.text(); throw new Error("Code " + res.status + " — " + t.slice(0, 150)); }
-      const j = await res.json();
-      const data = JSON.parse(fromBase64Utf8(j.content || ""));
-      if (data.participants) setParticipants(data.participants.map(normParticipant));
-      if (data.terrains) setTerrains(data.terrains.map(normTerrain));
-      if (data.journees) setJournees(data.journees);
-      if (data.safety) setSafety(normSafety(data.safety));
-      setGhStatus("saved"); setGhMsg("✓ Importé");
-      window.alert("✓ Données importées ! Elles s'enregistrent maintenant dans ton compte (attends « ✓ Enregistré » en haut).");
-    } catch (e) { setGhStatus("error"); window.alert("Échec de l'import : " + ((e && e.message) || e)); }
-  };
-
-  // Retire automatiquement des postes tout participant devenu absent ou supprimé
-  useEffect(() => {
-    if (!loaded) return;
-    const activeIds = new Set(participants.map((p) => p.id));
-    let changed = false;
-    const next = journees.map((j) => {
-      let jChanged = false; const placements = {};
-      for (const [trackId, byHunter] of Object.entries(j.placements || {})) {
-        const cleaned = {};
-        for (const [hid, mid] of Object.entries(byHunter)) { if (activeIds.has(hid)) cleaned[hid] = mid; else jChanged = true; }
-        placements[trackId] = cleaned;
-      }
-      if (jChanged) { changed = true; return { ...j, placements }; }
-      return j;
-    });
-    if (changed) setJournees(next);
-  }, [participants, journees, loaded]);
-
-  const resetAll = () => { if (!window.confirm("Tout réinitialiser ?")) return; setParticipants(initialParticipants); setTerrains(initialTerrains); setJournees(initialJournees); setSafety(DEFAULT_SAFETY); };
-
-  const tabs = [{ id: "journees", label: "Journées", icon: CalendarDays }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "participants", label: "Membres", icon: Users }, { id: "securite", label: "Sécurité", icon: Shield }];
   const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !t.planImage);
 
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
 
   return (<div className="min-h-screen bg-stone-100">
-    {showPub && <PublishModal github={github} setGithub={setGithub} onClose={() => setShowPub(false)} onLoad={loadFromGitHub} />}    <header className="bg-stone-900 text-stone-50 px-4 py-4"><div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+    {showPub && <PublishModal github={github} setGithub={setGithub} onClose={() => setShowPub(false)} />}
+    <header className="bg-stone-900 text-stone-50 px-4 py-4"><div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
       <div className="flex items-center gap-3"><span className="text-3xl">🦌</span><div><h1 className="font-serif text-2xl tracking-wide">Carnet de Battue</h1><p className="text-stone-400 text-sm">Saison 2026 – 2027</p></div></div>
       <div className="text-right">
         <p className={`text-xs h-4 ${ghStatus === "error" ? "text-amber-300" : ghStatus === "saving" ? "text-stone-300" : "text-emerald-300"}`}>{ghStatus === "saving" ? "Enregistrement…" : ghStatus === "saved" ? "✓ Enregistré" : ghStatus === "error" ? "⚠ Non enregistré (connexion ?)" : ""}</p>
@@ -2348,7 +2292,8 @@ function CarnetApp({ session, onSignOut }) {
       </div>
     </div></header>
 
-    {missingImages && !dismissBanner && (<div className="bg-amber-100 border-b border-amber-300 text-amber-900 text-sm px-4 py-2"><div className="max-w-3xl mx-auto flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span className="flex-1">Une photo de territoire manque. Clique <button onClick={loadFromGitHub} className="underline font-medium">Charger</button> pour récupérer ta sauvegarde.</span><button onClick={() => setDismissBanner(true)} className="text-amber-700"><X size={16} /></button></div></div>)}
+    {!cloudOk && (<div className="bg-red-100 border-b border-red-300 text-red-900 text-sm px-4 py-2"><div className="max-w-3xl mx-auto flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span className="flex-1"><b>Carnet non chargé</b> — rien ne sera enregistré. Recharge la page.</span></div></div>)}
+
 
     <nav className="bg-stone-800 px-4"><div className="max-w-3xl mx-auto flex gap-1 overflow-x-auto">{tabs.map(({ id, label, icon: Icon }) => (<button key={id} onClick={() => setTab(id)} className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap ${tab === id ? "bg-stone-100 text-stone-900" : "text-stone-300 hover:text-stone-50"}`}><Icon size={15} /> {label}</button>))}</div></nav>
 
