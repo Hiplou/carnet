@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.15";
+const APP_VERSION = "v1.16";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -591,12 +591,11 @@ function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsigne
 const IGN_WMTS = "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}";
 const IGN_FONDS = [
   { key: "ortho", label: "🛰️ Satellite", wmts: "HR.ORTHOIMAGERY.ORTHOPHOTOS", wms: "ORTHOIMAGERY.ORTHOPHOTOS", fmt: "image/jpeg" },
-  { key: "plan", label: "🗺️ Plan IGN", wmts: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", wms: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", fmt: "image/png" },
-  { key: "topo", label: "🏔️ Relief", wmts: null, wms: "ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW", fmt: "image/png" }
+  { key: "plan", label: "🗺️ Plan IGN", wmts: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", wms: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", fmt: "image/png" }
 ];
 function IgnMapPicker({ onCapture, onCancel }) {
   const mapRef = useRef(null); const divRef = useRef(null); const layersRef = useRef({});
-  const [op, setOp] = useState({ ortho: 100, plan: 0, topo: 0 });
+  const [op, setOp] = useState({ ortho: 100, plan: 0 });
   const [q, setQ] = useState(""); const [res, setRes] = useState([]); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const ORTHO = IGN_FONDS[0], PLAN = IGN_FONDS[1];
   useEffect(() => {
@@ -687,7 +686,7 @@ function IgnMapPicker({ onCapture, onCancel }) {
           <input type="range" min="0" max="100" step="5" value={op[f.key] || 0} onChange={(e) => setOp({ ...op, [f.key]: Number(e.target.value) })} className="w-full" style={{ height: 30 }} />
         </div>))}
         <div className="flex gap-1.5 pt-1">
-          {[["🛰️ Satellite", { ortho: 100, plan: 0, topo: 0 }], ["Sat + Plan", { ortho: 100, plan: 55, topo: 0 }], ["🗺️ Plan", { ortho: 0, plan: 100, topo: 0 }], ["🏔️ Carte", { ortho: 0, plan: 0, topo: 100 }]].map(([lbl, v]) => <button key={lbl} onClick={() => setOp(v)} className="flex-1 text-[11px] font-medium px-1.5 py-2 rounded-lg border bg-white text-stone-600 border-stone-300">{lbl}</button>)}
+          {[["🛰️ Satellite", { ortho: 100, plan: 0 }], ["Sat + Plan", { ortho: 100, plan: 55 }], ["🗺️ Plan IGN", { ortho: 0, plan: 100 }]].map(([lbl, v]) => <button key={lbl} onClick={() => setOp(v)} className="flex-1 text-[11px] font-medium px-1.5 py-2 rounded-lg border bg-white text-stone-600 border-stone-300">{lbl}</button>)}
         </div>
       </div>)}
       <button onClick={capture} disabled={busy} className="w-full bg-emerald-800 disabled:bg-stone-400 text-white font-bold px-3 py-3 rounded-lg text-base">{busy ? "Capture…" : "📸 Utiliser cette vue"}</button>
