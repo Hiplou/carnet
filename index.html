@@ -77,7 +77,9 @@ var __ICONS = {
   Share2: "<circle cx='18' cy='5' r='3'/><circle cx='6' cy='12' r='3'/><circle cx='18' cy='19' r='3'/><line x1='8.59' x2='15.42' y1='13.51' y2='17.49'/><line x1='15.41' x2='8.59' y1='6.51' y2='10.49'/>",
   ImageIcon: "<rect width='18' height='18' x='3' y='3' rx='2' ry='2'/><circle cx='9' cy='9' r='2'/><path d='m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21'/>",
   BookOpen: "<path d='M12 7v14'/><path d='M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z'/>",
-  Merge: "<path d='m8 6 4-4 4 4'/><path d='M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22'/><path d='m20 22-5-5'/>"
+  Merge: "<path d='m8 6 4-4 4 4'/><path d='M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22'/><path d='m20 22-5-5'/>",
+  Settings: "<path d='M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z'/><circle cx='12' cy='12' r='3'/>",
+  Cloud: "<path d='M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z'/>"
 };
 function __mkIcon(name) {
   return function (props) {
@@ -85,7 +87,7 @@ function __mkIcon(name) {
     return React.createElement("svg", { width: props.size || 18, height: props.size || 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: props.strokeWidth || 2, strokeLinecap: "round", strokeLinejoin: "round", className: props.className, style: props.style, dangerouslySetInnerHTML: { __html: __ICONS[name] } });
   };
 }
-const Users = __mkIcon("Users"), MapPin = __mkIcon("MapPin"), CalendarDays = __mkIcon("CalendarDays"), ChevronDown = __mkIcon("ChevronDown"), ChevronRight = __mkIcon("ChevronRight"), Plus = __mkIcon("Plus"), Check = __mkIcon("Check"), X = __mkIcon("X"), Crosshair = __mkIcon("Crosshair"), ArrowLeft = __mkIcon("ArrowLeft"), Target = __mkIcon("Target"), Trash2 = __mkIcon("Trash2"), Upload = __mkIcon("Upload"), Download = __mkIcon("Download"), FolderOpen = __mkIcon("FolderOpen"), AlertTriangle = __mkIcon("AlertTriangle"), Crop = __mkIcon("Crop"), FileText = __mkIcon("FileText"), Shield = __mkIcon("Shield"), Bell = __mkIcon("Bell"), Phone = __mkIcon("Phone"), Send = __mkIcon("Send"), Share2 = __mkIcon("Share2"), ImageIcon = __mkIcon("ImageIcon"), BookOpen = __mkIcon("BookOpen"), Merge = __mkIcon("Merge");
+const Users = __mkIcon("Users"), MapPin = __mkIcon("MapPin"), CalendarDays = __mkIcon("CalendarDays"), ChevronDown = __mkIcon("ChevronDown"), ChevronRight = __mkIcon("ChevronRight"), Plus = __mkIcon("Plus"), Check = __mkIcon("Check"), X = __mkIcon("X"), Crosshair = __mkIcon("Crosshair"), ArrowLeft = __mkIcon("ArrowLeft"), Target = __mkIcon("Target"), Trash2 = __mkIcon("Trash2"), Upload = __mkIcon("Upload"), Download = __mkIcon("Download"), FolderOpen = __mkIcon("FolderOpen"), AlertTriangle = __mkIcon("AlertTriangle"), Crop = __mkIcon("Crop"), FileText = __mkIcon("FileText"), Shield = __mkIcon("Shield"), Bell = __mkIcon("Bell"), Phone = __mkIcon("Phone"), Send = __mkIcon("Send"), Share2 = __mkIcon("Share2"), ImageIcon = __mkIcon("ImageIcon"), BookOpen = __mkIcon("BookOpen"), Merge = __mkIcon("Merge"), Settings = __mkIcon("Settings"), Cloud = __mkIcon("Cloud");
 
 // ============================================================
 //  CARNET DE BATTUE — v4
@@ -1445,25 +1447,131 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
 }
 
-function PublishModal({ github, setGithub, onClose, onLoad }) {
-  const [owner, setOwner] = useState(github.owner || "Hiplou");
-  const [repo, setRepo] = useState(github.repo || "battue");
-  const [fnUrl, setFnUrl] = useState(github.fnUrl || DEFAULT_FACTEUR);
+// Vignettes de l'écran Réglages. Définies ici (et non dans SettingsSheet) pour que
+// React conserve leur identité entre deux rendus : sinon les champs de saisie
+// perdraient le focus à chaque caractère tapé.
+function Tile({ id, emoji, title, sub, open, onToggle }) {
+  return (<button onClick={() => onToggle(id)} className={`rounded-xl border p-3.5 text-left transition-colors ${open === id ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"}`}>
+    <div className="text-2xl mb-1.5">{emoji}</div>
+    <div className="text-sm font-medium text-stone-800">{title}</div>
+    <div className="text-[11px] text-stone-400 mt-0.5">{sub}</div>
+  </button>);
+}
+function Panel({ id, open, children }) {
+  if (open !== id) return null;
+  return <div className="mt-3 bg-white rounded-xl border border-emerald-600 p-4">{children}</div>;
+}
+function Group({ label, children }) {
+  return (<div><p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2 px-1">{label}</p>{children}</div>);
+}
+
+function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExportExcel, onExportJson, onImportPick }) {
+  const [open, setOpen] = useState(null);
   const [orgName, setOrgName] = useState(github.orgName || "");
-  const url = "https://" + (owner || "hiplou").toLowerCase() + ".github.io/" + (repo || "battue") + "/";
-  return (<div className="fixed inset-0 z-50 bg-stone-900/70 flex items-end sm:items-center justify-center p-3 overflow-auto">
-    <div className="bg-stone-50 rounded-xl max-w-md w-full my-4 shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200"><h3 className="font-serif text-lg text-stone-800">Réglages GitHub</h3><button onClick={onClose} className="text-stone-400"><X size={18} /></button></div>
-      <div className="px-4 py-3 space-y-3 text-sm">
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom du groupe / société (titre de la page chasseurs)</label><input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
-        <p className="text-stone-500 text-xs">Colle ta clé GitHub une seule fois. Elle reste sur ton appareil.</p>
-        <div className="flex gap-2"><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Compte</label><input value={owner} onChange={(e) => setOwner(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Dossier public (page)</label><input value={repo} onChange={(e) => setRepo(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div></div>
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Adresse du facteur (retours chasseurs)</label><input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder="https://battue-facteur.hippolyte-houdard.workers.dev/" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /><p className="text-[10px] text-stone-400 mt-1">Pré-rempli par défaut. Ne change ça que si tu as ton propre facteur.</p></div>
-        <p className="text-xs text-stone-500">Lien des chasseurs : <span className="text-emerald-800 break-all">{url}</span></p>
-        {onLoad && <div className="border-t border-stone-200 pt-3"><button onClick={() => { onClose(); onLoad(); }} className="w-full flex items-center justify-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md">⬇ Importer mes anciennes données (GitHub)</button><p className="text-[11px] text-stone-400 mt-1">À faire UNE fois pour rapatrier ta sauvegarde GitHub dans ce compte.</p></div>}
-      </div>
-      <div className="px-4 py-3 border-t border-stone-200 flex justify-end gap-2"><button onClick={onClose} className="text-sm text-stone-500 px-3 py-1.5">Annuler</button><button onClick={() => { setGithub({ ...github, token: "", owner: (owner.trim() || "Hiplou"), repo: (repo.trim() || "battue"), path: github.path || "index.html", fnUrl: fnUrl.trim(), orgName: orgName.trim() }); onClose(); }} className="bg-emerald-800 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Enregistrer</button></div>
+  const [fnUrl, setFnUrl] = useState(github.fnUrl || DEFAULT_FACTEUR);
+  const [pass, setPass] = useState(""); const [pwMsg, setPwMsg] = useState(""); const [pwBusy, setPwBusy] = useState(false);
+  const [toast, setToast] = useState("");
+
+  const email = (session && session.user && session.user.email) || "";
+  const initials = (email.slice(0, 2) || "?").toUpperCase();
+  const toggle = (id) => setOpen((o) => (o === id ? null : id));
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 1800); };
+
+  const saveOrg = () => { setGithub({ ...github, orgName: orgName.trim() }); flash("Nom du groupe enregistré"); setOpen(null); };
+  const saveFn = () => { setGithub({ ...github, fnUrl: fnUrl.trim() }); flash("Adresse du facteur enregistrée"); setOpen(null); };
+
+  const changePassword = async () => {
+    if ((pass || "").length < 6) { setPwMsg("Choisis au moins 6 caractères."); return; }
+    setPwBusy(true); setPwMsg("");
+    try { const { error } = await SB.auth.updateUser({ password: pass }); if (error) throw error; setPass(""); setPwMsg("✓ Mot de passe modifié."); }
+    catch (e) { setPwMsg("⚠ " + ((e && e.message) || e)); }
+    finally { setPwBusy(false); }
+  };
+
+  return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
+      <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Réglages</h2>
     </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-4 space-y-5">
+
+        <Group label="Mon compte">
+          <div className="grid grid-cols-2 gap-3">
+            <Tile open={open} onToggle={toggle} id="compte" emoji="👤" title="Mon compte" sub="Email, mot de passe" />
+            <Tile open={open} onToggle={toggle} id="quitter" emoji="🚪" title="Déconnexion" sub="Quitter ce compte" />
+          </div>
+          <Panel open={open} id="compte">
+            <div className="flex items-center gap-3 pb-3 mb-3 border-b border-stone-100">
+              <div className="w-11 h-11 rounded-full bg-emerald-700 text-stone-50 flex items-center justify-center font-semibold shrink-0">{initials}</div>
+              <div className="min-w-0"><p className="text-sm font-medium text-stone-800 truncate">{email}</p><p className="text-[11px] text-stone-400">Organisateur</p></div>
+            </div>
+            <label className="text-[11px] uppercase tracking-wide text-stone-400">Nouveau mot de passe</label>
+            <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••••" className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 text-sm bg-white" />
+            <button onClick={changePassword} disabled={pwBusy || !pass} className="mt-3 bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">{pwBusy ? "…" : "Modifier mon mot de passe"}</button>
+            {pwMsg && <p className="text-sm mt-2 text-stone-700">{pwMsg}</p>}
+            <div className="border-t border-stone-100 mt-4 pt-3">
+              <p className="text-sm font-medium text-stone-500">🗑 Supprimer mon compte</p>
+              <p className="text-[11px] text-stone-400 mt-1">Bientôt disponible.</p>
+            </div>
+          </Panel>
+          <Panel open={open} id="quitter">
+            <p className="text-sm text-stone-600 mb-3">Ton carnet reste enregistré. Tu le retrouveras à la prochaine connexion.</p>
+            <button onClick={onSignOut} className="w-full bg-stone-800 hover:bg-stone-900 text-stone-50 text-sm font-medium py-2.5 rounded-lg">Me déconnecter</button>
+          </Panel>
+        </Group>
+
+        <Group label="Ma société de chasse">
+          <div className="grid grid-cols-2 gap-3">
+            <Tile open={open} onToggle={toggle} id="groupe" emoji="🏹" title="Nom du groupe" sub="Titre de la page chasseurs" />
+            <Tile open={open} onToggle={toggle} id="facteur" emoji="📮" title="Adresse du facteur" sub="Retours des chasseurs" />
+          </div>
+          <Panel open={open} id="groupe">
+            <label className="text-[11px] uppercase tracking-wide text-stone-400">Nom affiché aux chasseurs</label>
+            <input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 text-sm bg-white" />
+            <button onClick={saveOrg} className="mt-3 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">Enregistrer</button>
+          </Panel>
+          <Panel open={open} id="facteur">
+            <label className="text-[11px] uppercase tracking-wide text-stone-400">Adresse du facteur</label>
+            <input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder={DEFAULT_FACTEUR} className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 font-mono text-xs bg-white" />
+            <p className="text-[11px] text-stone-400 mt-1.5">Pré-rempli. Ne le change que si tu as ton propre facteur.</p>
+            <button onClick={saveFn} className="mt-3 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">Enregistrer</button>
+          </Panel>
+        </Group>
+
+        <Group label="Mes données">
+          <div className="grid grid-cols-2 gap-3">
+            <Tile open={open} onToggle={toggle} id="save" emoji="💾" title="Sauvegarde" sub="Exporter · Importer" />
+            <Tile open={open} onToggle={toggle} id="notif" emoji="🔔" title="Notifications" sub="À venir" />
+          </div>
+          <Panel open={open} id="save">
+            <p className="text-sm text-stone-600 mb-3">Ton carnet est enregistré automatiquement. Tu peux aussi en garder une copie sur ton appareil.</p>
+            <button onClick={onExportExcel} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en Excel</button>
+            <button onClick={onExportJson} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en fichier de secours</button>
+            <button onClick={onImportPick} className="w-full text-left text-sm text-stone-700 py-2">⬇ Importer une sauvegarde</button>
+          </Panel>
+          <Panel open={open} id="notif"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
+        </Group>
+
+        <Group label="L'application">
+          <div className="grid grid-cols-2 gap-3">
+            <Tile open={open} onToggle={toggle} id="aide" emoji="❓" title="Aide" sub="Guide d'utilisation" />
+            <Tile open={open} onToggle={toggle} id="contact" emoji="✉️" title="Nous écrire" sub="Une idée, un souci" />
+            <Tile open={open} onToggle={toggle} id="confid" emoji="📜" title="Confidentialité" sub="Tes données" />
+            <Tile open={open} onToggle={toggle} id="apropos" emoji="ℹ️" title="À propos" sub={"Version " + APP_VERSION} />
+          </div>
+          <Panel open={open} id="aide"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
+          <Panel open={open} id="contact"><p className="text-sm text-stone-600">Une idée, une remarque ? Écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a></p></Panel>
+          <Panel open={open} id="confid"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
+          <Panel open={open} id="apropos"><p className="text-sm text-stone-700">Carnet de Chasse</p><p className="text-sm text-stone-500 mt-0.5">Version {APP_VERSION}</p></Panel>
+        </Group>
+
+        <p className="text-center text-[11px] text-stone-400 pt-1 pb-4">Carnet de Chasse — {APP_VERSION}</p>
+      </div>
+    </div>
+
+    {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-stone-900 text-stone-50 text-sm px-4 py-2 rounded-full shadow-lg">{toast}</div>}
   </div>);
 }
 
@@ -2096,6 +2204,8 @@ function CarnetApp({ session, onSignOut }) {
   const ghTimer = useRef(null); const skipAuto = useRef(true); const localAtRef = useRef(0);
   const stateRef = useRef({});
   stateRef.current = { participants, terrains, journees, safety, github };
+  // Un seul indicateur pour le témoin de la barre et le bandeau rouge
+  const saveBad = !cloudOk || ghStatus === "error";
 
   useEffect(() => {
     (async () => {
@@ -2273,23 +2383,21 @@ function CarnetApp({ session, onSignOut }) {
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
 
   return (<div className="min-h-screen bg-stone-100">
-    {showPub && <PublishModal github={github} setGithub={setGithub} onClose={() => setShowPub(false)} />}
-    <header className="bg-stone-900 text-stone-50 px-4 py-4"><div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-      <div className="flex items-center gap-3"><span className="text-3xl">🦌</span><div><h1 className="font-serif text-2xl tracking-wide">Carnet de Battue</h1><p className="text-stone-400 text-sm">Saison 2026 – 2027</p></div></div>
-      <div className="text-right">
-        <p className={`text-xs h-4 ${ghStatus === "error" ? "text-amber-300" : ghStatus === "saving" ? "text-stone-300" : "text-emerald-300"}`}>{ghStatus === "saving" ? "Enregistrement…" : ghStatus === "saved" ? "✓ Enregistré" : ghStatus === "error" ? "⚠ Non enregistré (connexion ?)" : ""}</p>
-        <div className="flex items-center gap-3 justify-end mt-1">
-          <button onClick={() => saveNow()} className="flex items-center gap-1 text-sm font-medium bg-emerald-700 hover:bg-emerald-800 text-stone-50 px-3 py-1 rounded-md">☁ Sauvegarder</button>
-          <button onClick={() => setShowPub(true)} className="text-xs text-stone-400 hover:text-stone-200 underline">Réglages</button>
-          <button onClick={onSignOut} className="text-xs text-stone-400 hover:text-stone-200 underline">Déconnexion</button>
+    {showPub && <SettingsSheet github={github} setGithub={setGithub} onClose={() => setShowPub(false)} session={session} onSignOut={onSignOut} onExportExcel={exportExcel} onExportJson={exportJson} onImportPick={() => importFileRef.current && importFileRef.current.click()} />}
+    <input ref={importFileRef} type="file" accept=".xlsx,.json" onChange={importFile} className="hidden" />
+
+    <header className="bg-stone-900 text-stone-50 px-4 py-3"><div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2 min-w-0"><span className="text-2xl">🦌</span><h1 className="font-serif text-xl tracking-wide truncate">Carnet de Chasse</h1></div>
+      <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-1.5" title={saveBad ? "Tes modifications ne sont pas enregistrées" : "Tout est enregistré"}>
+          {saveBad ? <AlertTriangle size={16} className="text-red-400" /> : <Cloud size={16} className={ghStatus === "saving" ? "text-stone-400" : "text-emerald-400"} />}
+          <span className={`text-[11px] ${saveBad ? "text-red-400" : ghStatus === "saving" ? "text-stone-400" : "text-emerald-400"}`}>{saveBad ? "Non enregistré" : ghStatus === "saving" ? "Enregistrement…" : "Enregistré"}</span>
         </div>
-        <p className="text-[10px] text-stone-500 mt-0.5 truncate max-w-[180px]">{session?.user?.email}</p>
-        <p className="text-[10px] text-stone-600">{APP_VERSION}</p>
+        <button onClick={() => setShowPub(true)} className="p-2 -mr-1 rounded-lg hover:bg-stone-800" title="Réglages"><Settings size={21} /></button>
       </div>
     </div></header>
 
-    {!cloudOk && (<div className="bg-red-100 border-b border-red-300 text-red-900 text-sm px-4 py-2"><div className="max-w-3xl mx-auto flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span className="flex-1"><b>Carnet non chargé</b> — rien ne sera enregistré. Recharge la page.</span></div></div>)}
-
+    {saveBad && (<div className="bg-red-100 border-b border-red-300 text-red-900 text-sm px-4 py-2.5"><div className="max-w-3xl mx-auto flex items-start gap-2"><AlertTriangle size={17} className="shrink-0 mt-0.5" /><span className="flex-1">{!cloudOk ? <span><b>Carnet non chargé</b> — rien ne sera enregistré. Recharge la page.</span> : <span><b>Rien n'est enregistré.</b> Vérifie ta connexion, tes dernières modifications ne sont pas sauvegardées.</span>}</span></div></div>)}
 
     <nav className="bg-stone-800 px-4"><div className="max-w-3xl mx-auto flex gap-1 overflow-x-auto">{tabs.map(({ id, label, icon: Icon }) => (<button key={id} onClick={() => setTab(id)} className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap ${tab === id ? "bg-stone-100 text-stone-900" : "text-stone-300 hover:text-stone-50"}`}><Icon size={15} /> {label}</button>))}</div></nav>
 
