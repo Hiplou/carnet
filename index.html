@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.22";
+const APP_VERSION = "v1.23";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1713,7 +1713,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null); const [chefView, setChefView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
   const pubSlug = userId ? String(userId).replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 12) : "public";
-  const pubUrl = "https://" + (github.owner || "hiplou").toLowerCase() + ".github.io/" + (github.repo || "battue") + "/" + pubSlug + "/";
+  const pubUrl = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "") + "/b/" + pubSlug + "/";
   const publish = async (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
@@ -1728,14 +1728,9 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
       if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi et réessaie.");
       const rp = await fetch(fn + "/publish", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token }, body: JSON.stringify({ html: stamped }) });
       if (!rp.ok) { const t = await rp.text(); throw new Error("Publication refusée — " + t.slice(0, 200)); }
-      const url = pubUrl + "?v=" + Date.now();
-      setPub({ status: "propagating", url });
-      let live = false;
-      for (let i = 0; i < 40 && !live; i++) {
-        await new Promise((res) => setTimeout(res, 3000));
-        try { const r = await fetch(pubUrl + "?c=" + Date.now(), { cache: "no-store" }); if (r.ok) { const t = await r.text(); if (t.indexOf(token) >= 0) live = true; } } catch (e) {}
-      }
-      setPub({ status: live ? "live" : "ok", url: pubUrl + "?v=" + Date.now() });
+      let liveUrl = pubUrl;
+      try { const jr = await rp.json(); if (jr && jr.url) liveUrl = jr.url; } catch (e) {}
+      setPub({ status: "live", url: liveUrl });
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
   };
   const shareLinkWhatsApp = () => { const link = (pub && pub.url) ? pub.url : pubUrl; const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
@@ -1823,8 +1818,8 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
             </div>
             <div className="mt-1 border-t border-stone-200 pt-2 space-y-2">
               <div className="flex items-center justify-between"><p className="text-xs uppercase tracking-wide text-stone-400">Lien en ligne (lecture seule)</p><button onClick={openSettings} className="text-xs text-stone-500 underline">Réglages</button></div>
-              <button onClick={() => publish(j)} disabled={pub.status === "publishing" || pub.status === "propagating"} className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 disabled:bg-stone-400 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Share2 size={16} /> {pub.status === "publishing" ? "Envoi…" : pub.status === "propagating" ? "Mise en ligne…" : "Publier en ligne (chasseurs + rabatteurs)"}</button>
-              {pub.status === "propagating" && (<div className="bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2"><p className="text-sm text-amber-800">⏳ Mise en ligne en cours… <span className="text-xs">(le lien fonctionne d'ici ~1 min)</span></p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-amber-300 rounded-md px-3 py-2.5 text-sm text-amber-900 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
+              <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 disabled:bg-stone-400 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Share2 size={16} /> {pub.status === "publishing" ? "Publication…" : "Publier en ligne (chasseurs + rabatteurs)"}</button>
+              
               {pub.status === "live" && (<div className="bg-emerald-50 border border-emerald-300 rounded-md p-3 space-y-2"><p className="text-sm font-semibold text-emerald-800">✅ En ligne et à jour !</p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2.5 text-sm text-emerald-800 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
               {pub.status === "ok" && (<div className="bg-emerald-50 border border-emerald-200 rounded-md p-3 space-y-2"><p className="text-sm text-emerald-800">✓ Publié ! Le lien sera à jour d'ici ~1 min.</p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-300 rounded-md px-3 py-2.5 text-sm text-emerald-800 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
               {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-md p-2.5"><p className="text-sm text-red-800">⚠ Échec : {pub.msg}</p><p className="text-xs text-red-700 mt-1">Vérifie la clé dans « Réglages ». Si l'erreur parle de « 404 », le compte/dossier est peut-être mal orthographié.</p></div>)}
