@@ -1468,7 +1468,6 @@ function Group({ label, children }) {
 function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExportExcel, onExportJson, onImportPick }) {
   const [open, setOpen] = useState(null);
   const [orgName, setOrgName] = useState(github.orgName || "");
-  const [fnUrl, setFnUrl] = useState(github.fnUrl || DEFAULT_FACTEUR);
   const [pass, setPass] = useState(""); const [pwMsg, setPwMsg] = useState(""); const [pwBusy, setPwBusy] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -1478,7 +1477,6 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 1800); };
 
   const saveOrg = () => { setGithub({ ...github, orgName: orgName.trim() }); flash("Nom du groupe enregistré"); setOpen(null); };
-  const saveFn = () => { setGithub({ ...github, fnUrl: fnUrl.trim() }); flash("Adresse du facteur enregistrée"); setOpen(null); };
 
   const changePassword = async () => {
     if ((pass || "").length < 6) { setPwMsg("Choisis au moins 6 caractères."); return; }
@@ -1525,18 +1523,11 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
         <Group label="Ma société de chasse">
           <div className="grid grid-cols-2 gap-3">
             <Tile open={open} onToggle={toggle} id="groupe" emoji="🏹" title="Nom du groupe" sub="Titre de la page chasseurs" />
-            <Tile open={open} onToggle={toggle} id="facteur" emoji="📮" title="Adresse du facteur" sub="Retours des chasseurs" />
           </div>
           <Panel open={open} id="groupe">
             <label className="text-[11px] uppercase tracking-wide text-stone-400">Nom affiché aux chasseurs</label>
             <input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 text-sm bg-white" />
             <button onClick={saveOrg} className="mt-3 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">Enregistrer</button>
-          </Panel>
-          <Panel open={open} id="facteur">
-            <label className="text-[11px] uppercase tracking-wide text-stone-400">Adresse du facteur</label>
-            <input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder={DEFAULT_FACTEUR} className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 font-mono text-xs bg-white" />
-            <p className="text-[11px] text-stone-400 mt-1.5">Pré-rempli. Ne le change que si tu as ton propre facteur.</p>
-            <button onClick={saveFn} className="mt-3 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">Enregistrer</button>
           </Panel>
         </Group>
 
