@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.16";
+const APP_VERSION = "v1.17";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1721,13 +1721,17 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const publish = async (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
-    if (!github.token) { openSettings(); return; }
     setPub({ status: "publishing" });
     try {
       const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId);
       const token = "PUBTS-" + Date.now();
       const stamped = html + "\n<!--" + token + "-->";
-      await githubPutFile({ token: github.token, owner: github.owner, repo: github.repo, path: pubSlug + "/index.html", content: toBase64Utf8(stamped), message: "Publication battue " + new Date().toISOString() });
+      const fn = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
+      let sess = null;
+      try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
+      if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi et réessaie.");
+      const rp = await fetch(fn + "/publish", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token }, body: JSON.stringify({ html: stamped }) });
+      if (!rp.ok) { const t = await rp.text(); throw new Error("Publication refusée — " + t.slice(0, 200)); }
       const url = pubUrl + "?v=" + Date.now();
       setPub({ status: "propagating", url });
       let live = false;
