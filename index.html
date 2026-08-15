@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.20";
+const APP_VERSION = "v1.21";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -2273,6 +2273,7 @@ function CarnetApp({ session, onSignOut }) {
     } catch (ex) { window.alert("Import impossible : " + (ex.message || ex)); } finally { if (importFileRef.current) importFileRef.current.value = ""; }
   };
   const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !t.planImage);
+  const tabs = [{ id: "journees", label: "Journées", icon: CalendarDays }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "participants", label: "Membres", icon: Users }, { id: "securite", label: "Sécurité", icon: Shield }];
 
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
 
