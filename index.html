@@ -251,7 +251,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.14";
+const APP_VERSION = "v1.15";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -592,7 +592,7 @@ const IGN_WMTS = "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSIO
 const IGN_FONDS = [
   { key: "ortho", label: "🛰️ Satellite", wmts: "HR.ORTHOIMAGERY.ORTHOPHOTOS", wms: "ORTHOIMAGERY.ORTHOPHOTOS", fmt: "image/jpeg" },
   { key: "plan", label: "🗺️ Plan IGN", wmts: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", wms: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", fmt: "image/png" },
-  { key: "topo", label: "🏔️ Carte IGN", wmts: "GEOGRAPHICALGRIDSYSTEMS.MAPS.SCAN-EXPRESS.STANDARD", wms: "GEOGRAPHICALGRIDSYSTEMS.MAPS.SCAN-EXPRESS.STANDARD", fmt: "image/jpeg" }
+  { key: "topo", label: "🏔️ Relief", wmts: null, wms: "ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW", fmt: "image/png" }
 ];
 function IgnMapPicker({ onCapture, onCancel }) {
   const mapRef = useRef(null); const divRef = useRef(null); const layersRef = useRef({});
@@ -603,7 +603,7 @@ function IgnMapPicker({ onCapture, onCancel }) {
     if (typeof L === "undefined" || !divRef.current) { setErr("La carte n'a pas pu se charger (connexion ?)."); return; }
     const map = L.map(divRef.current, { zoomControl: true }).setView([46.6, 2.5], 6);
     mapRef.current = map;
-    IGN_FONDS.forEach((f, i) => { const ly = L.tileLayer(IGN_WMTS + "&LAYER=" + f.wmts + "&FORMAT=" + f.fmt, { maxZoom: 19, opacity: i === 0 ? 1 : 0, attribution: i === 0 ? "© IGN" : undefined }).addTo(map); layersRef.current[f.key] = ly; });
+    IGN_FONDS.forEach((f, i) => { const ly = f.wmts ? L.tileLayer(IGN_WMTS + "&LAYER=" + f.wmts + "&FORMAT=" + f.fmt, { maxZoom: 19, opacity: i === 0 ? 1 : 0, attribution: i === 0 ? "© IGN" : undefined }) : L.tileLayer.wms("https://data.geopf.fr/wms-r/wms", { layers: f.wms, format: f.fmt, transparent: true, version: "1.3.0", maxZoom: 19, opacity: 0 }); ly.addTo(map); layersRef.current[f.key] = ly; });
     let nOk = 0;
     layersRef.current.ortho.on("tileload", () => { nOk++; setErr(""); });
     layersRef.current.ortho.on("tileerror", () => { if (nOk === 0) setErr("Les images IGN ne se chargent pas (connexion ?)."); });
