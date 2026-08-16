@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.24";
+const APP_VERSION = "v1.25";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1535,7 +1535,6 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
         <Group label="Mes données">
           <div className="grid grid-cols-2 gap-3">
             <Tile open={open} onToggle={toggle} id="save" emoji="💾" title="Sauvegarde" sub="Exporter · Importer" />
-            <Tile open={open} onToggle={toggle} id="notif" emoji="🔔" title="Notifications" sub="À venir" />
           </div>
           <Panel open={open} id="save">
             <p className="text-sm text-stone-600 mb-3">Ton carnet est enregistré automatiquement. Tu peux aussi en garder une copie sur ton appareil.</p>
@@ -1543,7 +1542,6 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
             <button onClick={onExportJson} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en fichier de secours</button>
             <button onClick={onImportPick} className="w-full text-left text-sm text-stone-700 py-2">⬇ Importer une sauvegarde</button>
           </Panel>
-          <Panel open={open} id="notif"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
         </Group>
 
         <Group label="L'application">
