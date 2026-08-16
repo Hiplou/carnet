@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.31";
+const APP_VERSION = "v1.32";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1808,7 +1808,7 @@ function HelpH({ children }) { return <p className="font-semibold text-stone-800
 
 function HelpSheet({ onClose }) {
   const [open, setOpen] = useState(null);
-  const toggle = (id) => { if (id === "aide") { setShowHelp(true); return; } setOpen((o) => (o === id ? null : id)); };
+  const toggle = (id) => setOpen((o) => (o === id ? null : id));
   const etapes = ["J'invite mes membres", "Je note les présents", "Je définis les attributions", "Je place les fusils", "Je partage le lien", "Les retours remontent tout seuls"];
 
   return (<div className="fixed inset-0 z-[60] bg-stone-100 flex flex-col">
@@ -2083,7 +2083,11 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
 
         <Group label="L'application">
           <div className="grid grid-cols-2 gap-3">
-            <Tile open={open} onToggle={toggle} id="aide" emoji="❓" title="Aide" sub="Le guide complet" />
+            <button onClick={() => setShowHelp(true)} className="rounded-xl border border-stone-200 bg-white hover:border-stone-300 p-3.5 text-left transition-colors">
+              <div className="text-2xl mb-1.5">❓</div>
+              <div className="text-sm font-medium text-stone-800">Aide</div>
+              <div className="text-[11px] text-stone-400 mt-0.5">Le guide complet</div>
+            </button>
             <Tile open={open} onToggle={toggle} id="contact" emoji="✉️" title="Nous écrire" sub="Une idée, un souci" />
             <Panel open={open} id="contact"><p className="text-sm text-stone-600">Une idée, une remarque ? Écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a></p></Panel>
             <Tile open={open} onToggle={toggle} id="confid" emoji="📜" title="Confidentialité" sub="Tes données" />
