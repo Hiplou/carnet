@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.26";
+const APP_VERSION = "v1.27";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1369,6 +1369,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 <div class="card hero"><div class="pad"><h3 class="sec">📍 Ton poste</h3><div id="extra" class="extra"></div><div id="myTraque" style="display:none"></div><div id="myPost" style="display:none"></div></div></div>
 <div class="card banner" id="attribsCard" style="display:none"><div class="pad"><h3 class="sec">🎯 Attributions du jour</h3><div id="attribs"></div></div></div>
 <div class="tilegrid"><button class="tile" onclick="openSheet('carte')"><span class="ico">🗺️</span><span class="tl">Ma carte</span><span class="hint">Où est mon poste</span></button><button class="tile" onclick="openSheet('poste')"><span class="ico">📸</span><span class="tl">Mon poste</span><span class="hint">Photo &amp; consignes</span></button><button class="tile" onclick="openSheet('annonces')"><span class="ico">📻</span><span class="tl">Annonces</span><span class="hint">Sonneries &amp; infos</span></button><button class="tile" onclick="openSheet('securite')"><span class="ico">🛡️</span><span class="tl">Sécurité</span><span class="hint">Consignes à respecter</span></button></div>
+<button class="tile wide" onclick="openJeu()" style="margin-top:10px"><span class="ico">🐗</span><span class="txt"><span class="tl">La Course du Sanglier</span><br><span class="hint">Un peu long à ton poste ? Fais un score.</span></span><span class="go">→</span></button>
 <button class="tile wide ret" onclick="openSheet('retour')"><span class="ico">📋</span><span class="txt"><span class="tl">Envoyer mon retour</span><br><span class="hint">Dis à l'organisateur ce que tu as vu / tiré</span></span><span class="go">→</span></button>
 <div class="card" id="chefCard" style="display:none"><div class="pad"><h3 class="sec">👨‍✈️ Tu es chef de ligne</h3><p class="maphint">Postes sous ta responsabilité :</p><div id="chefPosts"></div><div id="chefTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0"></div><div class="map" id="chefMap" style="margin-top:8px;display:none"></div></div></div>
 <footer>Document en lecture seule — transmis par l'organisateur.</footer>
@@ -1377,6 +1378,29 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 <div class="sheet-back" id="sheet-poste" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth" id="postInfoTitle">📍 Ton poste</h2><div class="tabs" id="postTabs" style="margin-bottom:10px"></div><div id="postInfoCard"><div id="myChef" style="display:none;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:8px;padding:6px 10px;font-size:14px;font-weight:600;color:#1c1917;margin-bottom:8px"></div><div class="consigne" id="myConsigne" style="display:none"><b>⚠️ Consignes :</b><span></span></div><div id="myPhotos"></div></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-annonces" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🔔 Annonces &amp; sonneries</h2><ul class="list son" id="sonneries"></ul><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-securite" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🛡️ Consignes de sécurité</h2><ul class="list" id="consignes"></ul><button class="close" onclick="closeSheet()">Fermer</button></div></div>
+<div class="sheet-back" id="sheet-jeu" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🐗 La Course du Sanglier</h2>
+<div id="jeuPseudoBox" style="display:none;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:12px;margin-bottom:10px">
+  <p style="margin:0 0 8px;font-size:14px;color:#44403c">Choisis un pseudo pour signer tes scores.</p>
+  <div style="display:flex;gap:8px">
+    <input id="jeuPseudo" maxlength="14" placeholder="Ton pseudo" style="flex:1;min-width:0;border:1px solid #d6d3d1;border-radius:8px;padding:9px 11px;font-size:15px;background:#fff">
+    <button onclick="jeuSetPseudo()" style="background:var(--emerald);color:#fafaf9;border:0;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600">OK</button>
+  </div>
+  <p id="jeuPseudoErr" style="margin:6px 0 0;font-size:12px;color:#b91c1c;display:none"></p>
+</div>
+<div id="jeuBox" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+    <span style="font-size:13px;color:#78716c">Salut <b id="jeuMoi" style="color:#1c1917"></b> <button onclick="jeuChangePseudo()" style="background:none;border:0;color:#166534;font-size:12px;text-decoration:underline;padding:0 0 0 4px">changer</button></span>
+    <span style="font-size:13px;color:#78716c"><b id="jeuScore" style="color:#1c1917;font-size:15px">0</b> m · record <span id="jeuBest">0</span></span>
+  </div>
+  <canvas id="jeuCv" width="800" height="300" style="display:block;width:100%;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;touch-action:manipulation"></canvas>
+  <div style="display:flex;justify-content:space-between;font-size:11px;color:#78716c;margin:8px 0 4px"><span>Distance de la meute</span><span id="jeuDogTxt">à bonne distance</span></div>
+  <div style="height:7px;background:#e7e5e4;border-radius:4px;overflow:hidden"><i id="jeuDogBar" style="display:block;height:100%;background:var(--emerald);width:100%"></i></div>
+  <p style="font-size:12px;color:#a8a29e;text-align:center;margin:10px 0 0">Touche l'écran pour sauter. Trois fautes et les chiens te rattrapent.</p>
+  <h3 class="sec" style="margin-top:16px">🏆 Les cinq meilleurs</h3>
+  <ol id="jeuTop" style="margin:0;padding:0 0 0 22px;font-size:14px;color:#44403c"><li style="color:#a8a29e">chargement…</li></ol>
+  <p id="jeuSync" style="font-size:11px;color:#a8a29e;margin:8px 0 0;text-align:center"></p>
+</div>
+<button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-retour" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">📋 Ton retour</h2><div class="hownote">👉 Après ta traque, dis à l'organisateur ce qui s'est passé : indique tes balles tirées et l'état du mirador, poste par poste, puis envoie.</div><div id="feedbackCard"><div id="fbList"></div></div><div class="priv">🔒 Ton retour est privé, envoyé uniquement à l'organisateur.</div><button class="close" onclick="closeSheet()">Fermer</button></div></div></div>
 <script>var DATA = `;
 
@@ -1393,6 +1417,300 @@ function selectTraque(i){["tabs","mapTabs","postTabs"].forEach(function(id){var 
 function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
 function setHeroFor(index){var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
 function aesc(x){return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+/* ===================== La Course du Sanglier ===================== */
+var JEU = null;
+function jeuLS(k, v) {
+  try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; }
+}
+function jeuFacteur() { return String(DATA.fnUrl || "").replace(/\/+$/, ""); }
+
+function openJeu() {
+  openSheet("jeu");
+  var pseudo = jeuLS("cdc_pseudo");
+  if (pseudo) { jeuStart(pseudo); } else {
+    document.getElementById("jeuPseudoBox").style.display = "block";
+    document.getElementById("jeuBox").style.display = "none";
+  }
+  jeuLoadTop();
+  jeuFlush();
+}
+function jeuChangePseudo() {
+  document.getElementById("jeuPseudoBox").style.display = "block";
+  document.getElementById("jeuPseudo").value = jeuLS("cdc_pseudo") || "";
+}
+function jeuSetPseudo() {
+  var v = (document.getElementById("jeuPseudo").value || "").trim().slice(0, 14);
+  var err = document.getElementById("jeuPseudoErr");
+  if (v.length < 2) { err.textContent = "Deux caractères minimum."; err.style.display = "block"; return; }
+  err.style.display = "none";
+  jeuLS("cdc_pseudo", v);
+  document.getElementById("jeuPseudoBox").style.display = "none";
+  jeuStart(v);
+}
+
+/* --- classement --- */
+function jeuLoadTop() {
+  var ol = document.getElementById("jeuTop");
+  fetch(jeuFacteur() + "/scores").then(function (r) { return r.json(); }).then(function (d) {
+    var t = (d && d.top) || [];
+    if (!t.length) { ol.innerHTML = '<li style="color:#a8a29e">Personne pour l\'instant — à toi de jouer.</li>'; return; }
+    ol.innerHTML = t.map(function (e) {
+      var nom = String(e.p).replace(/[<>&]/g, "");
+      return '<li><b>' + nom + '</b> — ' + e.s + ' m</li>';
+    }).join("");
+  }).catch(function () {
+    ol.innerHTML = '<li style="color:#a8a29e">Classement indisponible hors réseau.</li>';
+  });
+}
+
+/* File d'attente : sans réseau, le score part plus tard. */
+function jeuQueue(score) {
+  var q = [];
+  try { q = JSON.parse(jeuLS("cdc_scoreq") || "[]"); } catch (e) { q = []; }
+  q.push(score); if (q.length > 20) q = q.slice(-20);
+  jeuLS("cdc_scoreq", JSON.stringify(q));
+  jeuSyncTxt("Score gardé de côté — il partira au retour du réseau.");
+}
+function jeuSyncTxt(m) { var el = document.getElementById("jeuSync"); if (el) el.textContent = m || ""; }
+
+function jeuSend(score) {
+  var pseudo = jeuLS("cdc_pseudo");
+  if (!pseudo) return;
+  fetch(jeuFacteur() + "/score", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pseudo: pseudo, score: score })
+  }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (!res.ok) {
+        if (res.d && res.d.reason === "refuse") { jeuSyncTxt("Ce pseudo a été refusé. Touche « changer » pour en choisir un autre."); return; }
+        jeuQueue(score); return;
+      }
+      jeuSyncTxt(res.d.rank ? "Tu es " + res.d.rank + (res.d.rank === 1 ? "er" : "e") + " au classement." : "");
+      if (res.d.top) {
+        document.getElementById("jeuTop").innerHTML = res.d.top.map(function (e) {
+          return '<li><b>' + String(e.p).replace(/[<>&]/g, "") + '</b> — ' + e.s + ' m</li>';
+        }).join("");
+      }
+    }).catch(function () { jeuQueue(score); });
+}
+
+function jeuFlush() {
+  var q = [];
+  try { q = JSON.parse(jeuLS("cdc_scoreq") || "[]"); } catch (e) { return; }
+  if (!q.length || !jeuLS("cdc_pseudo")) return;
+  var best = Math.max.apply(null, q);
+  fetch(jeuFacteur() + "/score", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pseudo: jeuLS("cdc_pseudo"), score: best })
+  }).then(function (r) { if (r.ok) { jeuLS("cdc_scoreq", "[]"); jeuSyncTxt("Scores en attente envoyés."); jeuLoadTop(); } }).catch(function () {});
+}
+window.addEventListener("online", jeuFlush);
+
+/* --- moteur --- */
+function jeuStart(pseudo) {
+  document.getElementById("jeuBox").style.display = "block";
+  document.getElementById("jeuMoi").textContent = pseudo;
+  var best = Number(jeuLS("cdc_best") || 0);
+  document.getElementById("jeuBest").textContent = best;
+  if (JEU) return;                       // moteur déjà lancé
+
+  var cv = document.getElementById("jeuCv"), ctx = cv.getContext("2d");
+  var W = 800, H = 300, GROUND = 232, GRAV = 0.62, JUMP = -13.2;
+  var AIR = (2 * Math.abs(JUMP)) / GRAV;
+  var elS = document.getElementById("jeuScore"), elBar = document.getElementById("jeuDogBar"), elDog = document.getElementById("jeuDogTxt");
+  var st;
+
+  function reset() {
+    st = { mode: "ready", x: 0, speed: 5.2, y: GROUND, vy: 0, onGround: true,
+           obs: [], spawnIn: 90, dist: 0, diff: 0, faults: 0, dogPush: 0, t: 0, shake: 0 };
+  }
+  reset();
+  JEU = { reset: reset };
+
+  function act() {
+    if (st.mode === "ready") { st.mode = "run"; return; }
+    if (st.mode === "over") { reset(); st.mode = "run"; return; }
+    if (st.onGround) { st.vy = JUMP; st.onGround = false; }
+  }
+  cv.addEventListener("pointerdown", function (e) { e.preventDefault(); act(); });
+
+  function spawn() {
+    var d = st.diff, r = Math.random();
+    if (r < 0.56) {
+      var n = 1;
+      if (st.dist > 380 && Math.random() < 0.20 + d * 0.22) n = 2;
+      if (st.dist > 900 && Math.random() < 0.10 + d * 0.14) n = 3;
+      var ox = W + 40;
+      for (var k = 0; k < n; k++) {
+        var h = (24 + d * 13) + Math.random() * (13 + d * 7);
+        var w = (22 + d * 7) + Math.random() * (14 + d * 5);
+        st.obs.push({ type: "ronce", x: ox, w: w, h: h }); ox += w - 2;
+      }
+    } else {
+      st.obs.push({ type: "fosse", x: W + 40, w: (44 + d * 20) + Math.random() * (32 + d * 22), h: 0 });
+    }
+    st.spawnIn = AIR * Math.max(1.08, (1.25 - d * 0.28) + Math.random() * (1.65 - d * 0.5));
+  }
+
+  function boar(x, y, t, running) {
+    ctx.save(); ctx.translate(x, y);
+    ctx.translate(0, running ? Math.sin(t * 1.04) * 1.1 : 0);
+    var D = "#292524", B = "#3f3f46", F = "#57534e";
+    function leg(hx, phase, col, top) {
+      var a = Math.sin(t * 0.52 + phase) * 10;
+      ctx.strokeStyle = col; ctx.lineCap = "round";
+      ctx.lineWidth = 7.2; ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx + 1 + a * 0.32, top + 10); ctx.stroke();
+      ctx.lineWidth = 4.7; ctx.beginPath(); ctx.moveTo(hx + 1 + a * 0.32, top + 10); ctx.lineTo(hx + a * 0.82, -1); ctx.stroke();
+      ctx.lineWidth = 5.5; ctx.beginPath(); ctx.moveTo(hx + a * 0.82, -1.6); ctx.lineTo(hx + a * 0.82 + 1.5, 0); ctx.stroke();
+    }
+    leg(-19, 0, F, -20); leg(11, Math.PI, F, -22);
+    ctx.strokeStyle = D; ctx.lineWidth = 2.2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-31, -34); ctx.quadraticCurveTo(-36, -28, -34, -19); ctx.stroke();
+    ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-34, -19); ctx.lineTo(-33.5, -15); ctx.stroke();
+    ctx.fillStyle = B; ctx.beginPath();
+    ctx.moveTo(-30, -36);
+    ctx.quadraticCurveTo(-26, -42, -14, -45); ctx.quadraticCurveTo(-2, -49, 8, -52);
+    ctx.quadraticCurveTo(15, -53, 21, -50); ctx.quadraticCurveTo(29, -47, 35, -40);
+    ctx.quadraticCurveTo(41, -35, 46, -31); ctx.quadraticCurveTo(50, -29, 50.5, -25.5);
+    ctx.quadraticCurveTo(50, -22, 46, -21.5); ctx.quadraticCurveTo(41, -21, 36, -22.5);
+    ctx.quadraticCurveTo(30, -21, 25, -21); ctx.quadraticCurveTo(20, -20, 15, -20.5);
+    ctx.quadraticCurveTo(8, -19, 2, -18); ctx.quadraticCurveTo(-8, -16.5, -16, -18);
+    ctx.quadraticCurveTo(-24, -20, -28, -26); ctx.quadraticCurveTo(-31, -31, -30, -36);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = D; ctx.beginPath();
+    var pts = [[-26,-40],[-20,-43],[-13,-45],[-6,-47],[1,-49],[8,-51],[15,-52],[20,-50]];
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 0; i < pts.length; i++) { ctx.lineTo(pts[i][0] + 1.5, pts[i][1] - 6.5 - (i % 2) * 2.5); ctx.lineTo(pts[i][0] + 3.4, pts[i][1] - 0.5); }
+    for (var j = pts.length - 1; j >= 0; j--) ctx.lineTo(pts[j][0] + 2, pts[j][1] + 2);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(19, -47); ctx.quadraticCurveTo(20, -56, 26, -55); ctx.quadraticCurveTo(28, -50, 25, -44); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#faf9f7"; ctx.beginPath(); ctx.ellipse(30, -43, 2.1, 1.6, -0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = D; ctx.beginPath(); ctx.arc(30.4, -43, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#faf9f7"; ctx.lineWidth = 2.3;
+    ctx.beginPath(); ctx.moveTo(41, -22.5); ctx.quadraticCurveTo(44, -26, 42.5, -29.5); ctx.stroke();
+    ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(36, -22.8); ctx.quadraticCurveTo(38, -25, 37, -27); ctx.stroke();
+    ctx.fillStyle = D; ctx.beginPath(); ctx.arc(48.4, -24.6, 1.1, 0, Math.PI * 2); ctx.fill();
+    leg(-14, Math.PI, B, -20); leg(16, 0, B, -22);
+    ctx.restore();
+  }
+
+  function dog(x, y, t, i) {
+    ctx.save(); ctx.translate(x, y);
+    var sw = Math.sin(t * 0.6 + i) * 6;
+    ctx.strokeStyle = "#57534e"; ctx.lineWidth = 3.4; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-8, -9); ctx.lineTo(-10 + sw, 0); ctx.moveTo(6, -9); ctx.lineTo(8 - sw, 0); ctx.stroke();
+    ctx.fillStyle = "#78716c";
+    ctx.beginPath(); ctx.ellipse(0, -16, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(14, -21, 7, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#57534e"; ctx.beginPath(); ctx.moveTo(11, -26); ctx.lineTo(15, -32); ctx.lineTo(17, -24); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#78716c"; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.moveTo(-13, -19); ctx.quadraticCurveTo(-21, -24, -18, -30); ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    if (st.shake > 0) ctx.translate((Math.random() - .5) * st.shake, (Math.random() - .5) * st.shake);
+    ctx.fillStyle = "#f5f5f4"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#e7e5e4";
+    for (var k = 0; k < 9; k++) {
+      var tx = ((k * 150 - st.x * 0.25) % (W + 220)) - 110;
+      ctx.beginPath(); ctx.moveTo(tx, GROUND - 6); ctx.lineTo(tx + 26, GROUND - 74); ctx.lineTo(tx + 52, GROUND - 6); ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = "#a8a29e"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(0, GROUND); ctx.lineTo(W, GROUND); ctx.stroke();
+    ctx.strokeStyle = "#d6d3d1"; ctx.lineWidth = 1.5;
+    for (var g = 0; g < 26; g++) {
+      var gx = ((g * 62 - st.x * 0.85) % (W + 70)) - 35;
+      ctx.beginPath(); ctx.moveTo(gx, GROUND + 9); ctx.lineTo(gx + 22, GROUND + 9); ctx.stroke();
+    }
+    for (var i = 0; i < st.obs.length; i++) {
+      var o = st.obs[i];
+      if (o.type === "ronce") {
+        ctx.save(); ctx.translate(o.x, GROUND);
+        ctx.fillStyle = "#14532d"; ctx.beginPath();
+        ctx.ellipse(o.w / 2, -o.h * 0.45, o.w * 0.62, o.h * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#166534"; ctx.lineWidth = 2.2; ctx.lineCap = "round";
+        for (var q = 0; q < 6; q++) {
+          var px = 3 + (o.w - 6) * (q / 5);
+          ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px + (q % 2 ? 4 : -4), -o.h); ctx.stroke();
+        }
+        ctx.restore();
+      } else {
+        ctx.fillStyle = "#292524"; ctx.beginPath();
+        ctx.moveTo(o.x, GROUND); ctx.lineTo(o.x + 5, GROUND + 26);
+        ctx.lineTo(o.x + o.w - 5, GROUND + 26); ctx.lineTo(o.x + o.w, GROUND);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    if (st.mode !== "ready") { var dx = -30 + st.dogPush * 62; for (var d2 = 0; d2 < 3; d2++) dog(dx - d2 * 34, GROUND, st.t, d2); }
+    boar(120, st.y, st.t, st.mode === "run");
+    ctx.restore();
+    ctx.textAlign = "center";
+    if (st.mode === "ready") {
+      ctx.fillStyle = "rgba(28,25,23,.06)"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#1c1917"; ctx.font = "600 26px -apple-system,sans-serif";
+      ctx.fillText("Touche pour partir", W / 2, 110);
+      ctx.fillStyle = "#78716c"; ctx.font = "15px -apple-system,sans-serif";
+      ctx.fillText("Saute les ronces et les fosses", W / 2, 140);
+    }
+    if (st.mode === "over") {
+      ctx.fillStyle = "rgba(28,25,23,.62)"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#fafaf9"; ctx.font = "600 30px -apple-system,sans-serif";
+      ctx.fillText("Les chiens t\u2019ont rattrap\u00e9", W / 2, 118);
+      ctx.font = "18px -apple-system,sans-serif";
+      ctx.fillText(Math.floor(st.dist) + " m\u00e8tres parcourus", W / 2, 152);
+      ctx.fillStyle = "#a8a29e"; ctx.font = "14px -apple-system,sans-serif";
+      ctx.fillText("Touche pour repartir", W / 2, 184);
+    }
+    ctx.textAlign = "left";
+  }
+
+  function hit() {
+    st.faults++; st.dogPush = st.faults; st.shake = 12;
+    if (st.faults >= 3) {
+      st.mode = "over";
+      var d = Math.floor(st.dist);
+      var b = Number(jeuLS("cdc_best") || 0);
+      if (d > b) { jeuLS("cdc_best", String(d)); document.getElementById("jeuBest").textContent = d; }
+      if (d > 0) jeuSend(d);
+    }
+  }
+
+  function step() {
+    st.t++;
+    if (st.shake > 0) st.shake *= 0.86;
+    if (st.mode === "run") {
+      st.speed = Math.min(13.5, 5.2 + st.dist / 230);
+      st.diff = Math.min(1, st.dist / 1000);
+      st.x += st.speed; st.dist += st.speed / 9;
+      elS.textContent = Math.floor(st.dist);
+      st.vy += GRAV; st.y += st.vy;
+      if (st.y >= GROUND) { st.y = GROUND; st.vy = 0; st.onGround = true; }
+      if (st.dogPush > 0) st.dogPush = Math.max(0, st.dogPush - 0.0016);
+      if (--st.spawnIn <= 0) spawn();
+      for (var i = st.obs.length - 1; i >= 0; i--) {
+        var o = st.obs[i];
+        o.x -= st.speed;
+        if (o.x + o.w < -60) { st.obs.splice(i, 1); continue; }
+        if (o.touched) continue;
+        if (!(120 + 34 > o.x && 120 - 20 < o.x + o.w)) continue;
+        if (o.type === "ronce") { if (st.y > GROUND - o.h + 4) { o.touched = true; hit(); } }
+        else { if (st.y >= GROUND - 2) { o.touched = true; hit(); } }
+      }
+      var ratio = Math.max(0, 1 - st.dogPush / 3);
+      elBar.style.width = (ratio * 100) + "%";
+      elBar.style.background = ratio > 0.66 ? "#166534" : ratio > 0.33 ? "#b45309" : "#b91c1c";
+      elDog.textContent = ratio > 0.66 ? "à bonne distance" : ratio > 0.33 ? "ils se rapprochent" : "ils sont sur toi !";
+    }
+    draw();
+    requestAnimationFrame(step);
+  }
+  step();
+}
+/* ================================================================ */
 var RETOUR_HELP=false;function openSheet(k){var el=document.getElementById("sheet-"+k);if(el)el.classList.add("open");if(k==="retour"&&!RETOUR_HELP){RETOUR_HELP=true;var rh=document.getElementById("retourHelp");if(rh)rh.style.display="flex";}}
 function closeSheet(){var ls=document.querySelectorAll(".sheet-back");for(var i=0;i<ls.length;i++)ls[i].classList.remove("open");}
 var SHOW_CONES=true;
@@ -1496,8 +1814,7 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token },
       body: JSON.stringify(body || {})
     });
-    if (r.status === 403) { const e = new Error("forbidden"); e.forbidden = true; throw e; }
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) { const t = await r.text(); throw new Error("HTTP " + r.status + " — " + String(t).slice(0, 160)); }
     return await r.json();
   };
 
