@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.25";
+const APP_VERSION = "v1.26";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1472,12 +1472,58 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
   const [orgName, setOrgName] = useState(github.orgName || "");
   const [pass, setPass] = useState(""); const [pwMsg, setPwMsg] = useState(""); const [pwBusy, setPwBusy] = useState(false);
   const [toast, setToast] = useState("");
+  // Classement du jeu : la vignette n'apparaît que si le facteur nous reconnaît
+  // comme administrateur (comparaison faite côté serveur, jamais ici).
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [board, setBoard] = useState([]);
+  const [boardBusy, setBoardBusy] = useState(false);
+  const [wipe, setWipe] = useState("");
 
   const email = (session && session.user && session.user.email) || "";
   const initials = (email.slice(0, 2) || "?").toUpperCase();
   const toggle = (id) => setOpen((o) => (o === id ? null : id));
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 1800); };
   const saveOrg = () => { setGithub({ ...github, orgName: orgName.trim() }); flash("Nom du groupe enregistré"); setOpen(null); };
+
+  const facteur = () => (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
+
+  const callBoard = async (route, body) => {
+    let sess = null;
+    try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
+    if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi.");
+    const r = await fetch(facteur() + route, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token },
+      body: JSON.stringify(body || {})
+    });
+    if (r.status === 403) { const e = new Error("forbidden"); e.forbidden = true; throw e; }
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  };
+
+  // Sondage discret à l'ouverture des Réglages : si le facteur répond, la vignette s'affiche.
+  useEffect(() => {
+    let vivant = true;
+    callBoard("/scores/list")
+      .then((d) => { if (vivant) { setIsAdmin(true); setBoard(d.all || []); } })
+      .catch(() => {});
+    return () => { vivant = false; };
+  }, []);
+
+  const removeScore = async (pseudo) => {
+    if (!window.confirm("Retirer « " + pseudo + " » du classement ?")) return;
+    setBoardBusy(true);
+    try { const d = await callBoard("/scores/delete", { pseudo: pseudo }); setBoard(d.all || []); flash("Ligne retirée"); }
+    catch (e) { window.alert("Impossible : " + ((e && e.message) || e)); }
+    finally { setBoardBusy(false); }
+  };
+
+  const wipeBoard = async () => {
+    setBoardBusy(true);
+    try { const d = await callBoard("/scores/reset", { confirm: "EFFACER" }); setBoard(d.all || []); setWipe(""); flash("Classement vidé"); }
+    catch (e) { window.alert("Impossible : " + ((e && e.message) || e)); }
+    finally { setBoardBusy(false); }
+  };
 
   const changePassword = async () => {
     if ((pass || "").length < 6) { setPwMsg("Choisis au moins 6 caractères."); return; }
@@ -1543,6 +1589,39 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
             <button onClick={onImportPick} className="w-full text-left text-sm text-stone-700 py-2">⬇ Importer une sauvegarde</button>
           </Panel>
         </Group>
+
+        {isAdmin && (<Group label="Le jeu">
+          <div className="grid grid-cols-2 gap-3">
+            <Tile open={open} onToggle={toggle} id="classement" emoji="🏆" title="Classement" sub={board.length ? board.length + " joueur" + (board.length > 1 ? "s" : "") : "personne pour l'instant"} />
+          </div>
+          <Panel open={open} id="classement">
+            <p className="text-sm text-stone-600 mb-3">Classement mondial du jeu du sanglier. Toi seul peux y faire le ménage.</p>
+            {board.length === 0 ? (
+              <p className="text-sm text-stone-500 italic">Aucun score enregistré.</p>
+            ) : (
+              <div className="border border-stone-200 rounded-lg divide-y divide-stone-100 max-h-72 overflow-auto">
+                {board.map((e, i) => (
+                  <div key={e.p + i} className="flex items-center gap-2 px-3 py-2">
+                    <span className="text-[11px] text-stone-400 w-5 shrink-0">{i + 1}</span>
+                    <span className="text-sm text-stone-800 flex-1 truncate">{e.p}</span>
+                    <span className="text-xs text-stone-500 shrink-0">{e.s} m</span>
+                    <button onClick={() => removeScore(e.p)} disabled={boardBusy} className="text-red-600 hover:text-red-800 disabled:text-stone-300 p-1 shrink-0" title="Retirer">
+                      <X size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {board.length > 0 && (<div className="border-t border-stone-100 mt-4 pt-3">
+              <p className="text-sm font-medium text-red-700">Tout effacer</p>
+              <p className="text-[11px] text-stone-400 mt-0.5 mb-2">Définitif. Écris EFFACER pour confirmer.</p>
+              <div className="flex gap-2">
+                <input value={wipe} onChange={(ev) => setWipe(ev.target.value)} placeholder="EFFACER" className="flex-1 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white" />
+                <button onClick={wipeBoard} disabled={wipe !== "EFFACER" || boardBusy} className="bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg shrink-0">Vider</button>
+              </div>
+            </div>)}
+          </Panel>
+        </Group>)}
 
         <Group label="L'application">
           <div className="grid grid-cols-2 gap-3">
