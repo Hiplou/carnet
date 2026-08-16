@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.29";
+const APP_VERSION = "v1.30";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1785,8 +1785,149 @@ function Group({ label, children }) {
   return (<div><p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2 px-1">{label}</p>{children}</div>);
 }
 
+// ---------- Écran d'aide ----------
+function HelpRow({ id, emoji, title, sub, open, onToggle, highlight }) {
+  const isOpen = open === id;
+  const base = isOpen ? "border-emerald-600 bg-emerald-50" : (highlight ? "border-emerald-300 bg-emerald-50/60" : "border-stone-200 bg-white");
+  return (<button onClick={() => onToggle(id)} className={`w-full rounded-xl border p-3.5 text-left flex items-center gap-3 transition-colors ${base}`}>
+    <span className="text-2xl shrink-0">{emoji}</span>
+    <span className="flex-1 min-w-0">
+      <span className="block text-sm font-medium text-stone-800">{title}</span>
+      <span className={`block text-[11px] mt-0.5 ${highlight ? "text-emerald-700" : "text-stone-400"}`}>{sub}</span>
+    </span>
+    <span className="text-stone-300 text-xs shrink-0">{isOpen ? "▲" : "▼"}</span>
+  </button>);
+}
+function HelpBody({ id, open, children }) {
+  if (open !== id) return null;
+  return <div className="mt-2.5 bg-white rounded-xl border border-emerald-600 p-4 text-sm text-stone-600 space-y-2">{children}</div>;
+}
+function HelpH({ children }) { return <p className="font-semibold text-stone-800 pt-1">{children}</p>; }
+
+function HelpSheet({ onClose }) {
+  const [open, setOpen] = useState(null);
+  const toggle = (id) => { if (id === "aide") { setShowHelp(true); return; } setOpen((o) => (o === id ? null : id)); };
+  const etapes = ["J'invite mes membres", "Je note les présents", "Je définis les attributions", "Je place les fusils", "Je partage le lien", "Les retours remontent tout seuls"];
+
+  return (<div className="fixed inset-0 z-[60] bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
+      <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Aide</h2>
+    </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-4 space-y-5">
+
+        <div className="bg-stone-800 text-stone-50 rounded-xl p-4">
+          <p className="font-serif text-base leading-snug">Tu prépares tes territoires et tes membres, puis pour chaque journée tu invites, tu places les chasseurs, tu partages un lien — et tout revient dans ton carnet.</p>
+        </div>
+
+        <div className="bg-white rounded-xl border border-stone-200 p-4">
+          <p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2.5">Le cycle d'une battue</p>
+          <div className="space-y-1.5 text-sm text-stone-700">
+            {etapes.map((t, i) => (<div key={i} className="flex gap-2.5 items-start">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+              <span>{t}</span>
+            </div>))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2 px-1">Tout savoir, écran par écran</p>
+          <div className="space-y-2.5">
+
+            <HelpRow id="h1" emoji="🚀" title="Premiers pas" sub="Connexion, sauvegarde, réglages" open={open} onToggle={toggle} />
+            <HelpBody id="h1" open={open}>
+              <HelpH>Se connecter</HelpH>
+              <p>Chaque compte a son carnet, privé et séparé. Aucun organisateur ne voit les données d'un autre.</p>
+              <HelpH>La sauvegarde</HelpH>
+              <p>Tout s'enregistre tout seul. Le témoin ☁ Enregistré en haut à droite le confirme. Il n'y a pas de bouton Sauvegarder : il ferait doublon.</p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-red-900 text-[13px]"><b>Bandeau rouge = rien n'est enregistré.</b> Recharge la page avant de continuer à saisir.</p>
+              </div>
+              <HelpH>L'engrenage ⚙️</HelpH>
+              <p>Ton compte, le nom du groupe, tes sauvegardes et cette aide.</p>
+            </HelpBody>
+
+            <HelpRow id="h2" emoji="👥" title="Membres" sub="Ton carnet d'adresses" open={open} onToggle={toggle} />
+            <HelpBody id="h2" open={open}>
+              <p>Pour chaque personne : prénom, nom, téléphone, email, permis, validation, assurance, un rôle (chasseur ou rabatteur), le type d'arme et la mobilité réduite éventuelle.</p>
+              <HelpH>Importer une liste</HelpH>
+              <p><b>Excel ou CSV</b> — nomme tes colonnes : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
+              <p><b>Contacts du téléphone (.vcf)</b> — exporte tes contacts et importe le fichier.</p>
+              <HelpH>Doublons</HelpH>
+              <p>L'app repère les doublons, même avec prénom et nom inversés. Tu peux fusionner deux fiches sans rien perdre.</p>
+            </HelpBody>
+
+            <HelpRow id="h3" emoji="🗺️" title="Territoires" sub="Cartes, postes, plan de chasse" open={open} onToggle={toggle} />
+            <HelpBody id="h3" open={open}>
+              <HelpH>La carte</HelpH>
+              <p>Importe ta photo ou ton plan, ou utilise la carte IGN : satellite et plan mélangeables, recherche d'adresse, recadrage.</p>
+              <HelpH>Traques et miradors</HelpH>
+              <p>Touche la carte pour poser un mirador : nom, priorité de 1 à 4 (le 1 se remplit en premier), photos, consignes, armes autorisées, accessibilité.</p>
+              <HelpH>Cônes de sécurité</HelpH>
+              <p>Trace les zones de tir interdites. L'app ajoute une marge hachurée de 30° et colore les secteurs autorisés en vert.</p>
+              <HelpH>Plan de chasse</HelpH>
+              <p>Espèces rangées par famille. Trois modes : Bracelets, Objectif, Proportionnel. Les jauges se remplissent seules avec la saison.</p>
+            </HelpBody>
+
+            <HelpRow id="h4" emoji="📅" title="Une journée de A à Z" sub="Le cœur de l'appli" open={open} onToggle={toggle} highlight />
+            <HelpBody id="h4" open={open}>
+              <p>Chaque journée s'ouvre sur une barre de progression : cinq étapes de préparation, dans l'ordre.</p>
+              <HelpH>1 · 📧 Invitations</HelpH>
+              <p>Coche les invités, personnalise le message, envoie via ta messagerie. Destinataires en copie cachée.</p>
+              <HelpH>2 · ✅ Présences</HelpH>
+              <p>Présent ou absent, le dîner, les accompagnants.</p>
+              <HelpH>3 · 🎯 Attributions</HelpH>
+              <p>Le canal talkie et ce qui peut être prélevé. Les deux s'affichent chez les chasseurs.</p>
+              <HelpH>4 · 🏚 Poster les fusils</HelpH>
+              <p>À la main, ou remplissage automatique qui respecte l'accessibilité, puis la priorité du poste, puis l'arme.</p>
+              <HelpH>5 · 👨‍✈️ Chefs de ligne</HelpH>
+              <p>Un chef par ligne, avec son point de rendez-vous après la traque.</p>
+              <HelpH>🖨️ Documents et 📤 Partager</HelpH>
+              <p>Postes, émargement, dîner. Puis publication instantanée et envoi WhatsApp.</p>
+              <HelpH>🦌 Tableau de chasse</HelpH>
+              <p>Un animal = une ligne. Les retours des chasseurs remontent tout seuls, sur fond vert.</p>
+            </HelpBody>
+
+            <HelpRow id="h5" emoji="📖" title="Carnet de chasse" sub="Bilan et exports" open={open} onToggle={toggle} />
+            <HelpBody id="h5" open={open}>
+              <p>Filtre par territoire et par saison. Totaux, détail par personne, par poste, par espèce, et l'historique des journées.</p>
+              <HelpH>Exporter</HelpH>
+              <p><b>Carnet de chasse</b> (en vert) — le bilan complet.</p>
+              <p><b>Fédération</b> (en gris) — une ligne par animal, prêt pour le retour à la fédération.</p>
+            </HelpBody>
+
+            <HelpRow id="h6" emoji="📱" title="Ce que voit le chasseur" sub="Et ce qu'il ne voit pas" open={open} onToggle={toggle} />
+            <HelpBody id="h6" open={open}>
+              <p>Il ouvre le lien, sans compte ni mot de passe : son poste, sa carte, les consignes, les participants, son retour à envoyer, et un petit jeu pour patienter.</p>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                <p className="text-emerald-900 text-[13px]">Sa page contient les <b>noms</b> des participants, mais <b>jamais</b> les téléphones, emails, permis ni assurances. L'accessibilité n'est visible que par toi.</p>
+              </div>
+              <p>Le lien n'est pas devinable et les moteurs de recherche ne l'indexent pas — mais il n'a pas de mot de passe. Ne le diffuse qu'aux personnes concernées.</p>
+            </HelpBody>
+
+            <HelpRow id="h7" emoji="💡" title="Astuces et dépannage" sub="Les pièges courants" open={open} onToggle={toggle} />
+            <HelpBody id="h7" open={open}>
+              <p>• Après tout changement, <b>republie le lien</b> : les chasseurs voient la version publiée, pas la tienne.</p>
+              <p>• Les retours arrivent tout seuls — reviens sur l'appli pour les voir.</p>
+              <p>• Un animal = une ligne (un bracelet par animal).</p>
+              <p>• Bandeau rouge = rien n'est enregistré. Recharge avant de saisir.</p>
+              <p>• Garde une sauvegarde de temps en temps : ⚙️ puis Sauvegarde puis Exporter.</p>
+            </HelpBody>
+
+          </div>
+        </div>
+
+        <p className="text-center text-[11px] text-stone-400 pb-4">Carnet de Chasse — {APP_VERSION}</p>
+      </div>
+    </div>
+  </div>);
+}
+
 function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExportExcel, onExportJson, onImportPick }) {
   const [open, setOpen] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
   const [orgName, setOrgName] = useState(github.orgName || "");
   const [pass, setPass] = useState(""); const [pwMsg, setPwMsg] = useState(""); const [pwBusy, setPwBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -1938,12 +2079,11 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
 
         <Group label="L'application">
           <div className="grid grid-cols-2 gap-3">
-            <Tile open={open} onToggle={toggle} id="aide" emoji="❓" title="Aide" sub="Guide d'utilisation" />
+            <Tile open={open} onToggle={toggle} id="aide" emoji="❓" title="Aide" sub="Le guide complet" />
             <Tile open={open} onToggle={toggle} id="contact" emoji="✉️" title="Nous écrire" sub="Une idée, un souci" />
             <Tile open={open} onToggle={toggle} id="confid" emoji="📜" title="Confidentialité" sub="Tes données" />
             <Tile open={open} onToggle={toggle} id="apropos" emoji="ℹ️" title="À propos" sub={"Version " + APP_VERSION} />
           </div>
-          <Panel open={open} id="aide"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
           <Panel open={open} id="contact"><p className="text-sm text-stone-600">Une idée, une remarque ? Écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a></p></Panel>
           <Panel open={open} id="confid"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
           <Panel open={open} id="apropos"><p className="text-sm text-stone-700">Carnet de Chasse</p><p className="text-sm text-stone-500 mt-0.5">Version {APP_VERSION}</p></Panel>
@@ -1953,6 +2093,7 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
       </div>
     </div>
 
+    {showHelp && <HelpSheet onClose={() => setShowHelp(false)} />}
     {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-stone-900 text-stone-50 text-sm px-4 py-2 rounded-full shadow-lg">{toast}</div>}
   </div>);
 }
