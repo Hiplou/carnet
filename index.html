@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.27";
+const APP_VERSION = "v1.28";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1423,7 +1423,7 @@ var JEU = null;
 function jeuLS(k, v) {
   try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; }
 }
-function jeuFacteur() { return String(DATA.fnUrl || "").replace(/\/+$/, ""); }
+function jeuFacteur() { return String(DATA.fnUrl || "").replace(/\\/+$/, ""); }
 
 function openJeu() {
   openSheet("jeu");
@@ -1454,7 +1454,7 @@ function jeuLoadTop() {
   var ol = document.getElementById("jeuTop");
   fetch(jeuFacteur() + "/scores").then(function (r) { return r.json(); }).then(function (d) {
     var t = (d && d.top) || [];
-    if (!t.length) { ol.innerHTML = '<li style="color:#a8a29e">Personne pour l\'instant — à toi de jouer.</li>'; return; }
+    if (!t.length) { ol.innerHTML = '<li style="color:#a8a29e">Personne pour l&rsquo;instant — à toi de jouer.</li>'; return; }
     ol.innerHTML = t.map(function (e) {
       var nom = String(e.p).replace(/[<>&]/g, "");
       return '<li><b>' + nom + '</b> — ' + e.s + ' m</li>';
