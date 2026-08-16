@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.28";
+const APP_VERSION = "v1.29";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1369,8 +1369,8 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 <div class="card hero"><div class="pad"><h3 class="sec">📍 Ton poste</h3><div id="extra" class="extra"></div><div id="myTraque" style="display:none"></div><div id="myPost" style="display:none"></div></div></div>
 <div class="card banner" id="attribsCard" style="display:none"><div class="pad"><h3 class="sec">🎯 Attributions du jour</h3><div id="attribs"></div></div></div>
 <div class="tilegrid"><button class="tile" onclick="openSheet('carte')"><span class="ico">🗺️</span><span class="tl">Ma carte</span><span class="hint">Où est mon poste</span></button><button class="tile" onclick="openSheet('poste')"><span class="ico">📸</span><span class="tl">Mon poste</span><span class="hint">Photo &amp; consignes</span></button><button class="tile" onclick="openSheet('annonces')"><span class="ico">📻</span><span class="tl">Annonces</span><span class="hint">Sonneries &amp; infos</span></button><button class="tile" onclick="openSheet('securite')"><span class="ico">🛡️</span><span class="tl">Sécurité</span><span class="hint">Consignes à respecter</span></button></div>
-<button class="tile wide" onclick="openJeu()" style="margin-top:10px"><span class="ico">🐗</span><span class="txt"><span class="tl">La Course du Sanglier</span><br><span class="hint">Un peu long à ton poste ? Fais un score.</span></span><span class="go">→</span></button>
 <button class="tile wide ret" onclick="openSheet('retour')"><span class="ico">📋</span><span class="txt"><span class="tl">Envoyer mon retour</span><br><span class="hint">Dis à l'organisateur ce que tu as vu / tiré</span></span><span class="go">→</span></button>
+<button class="tile wide" onclick="openJeu()" style="margin-top:10px"><span class="ico">🐗</span><span class="txt"><span class="tl">La Course du Sanglier</span><br><span class="hint">Un peu long à ton poste ? Fais un score.</span></span><span class="go">→</span></button>
 <div class="card" id="chefCard" style="display:none"><div class="pad"><h3 class="sec">👨‍✈️ Tu es chef de ligne</h3><p class="maphint">Postes sous ta responsabilité :</p><div id="chefPosts"></div><div id="chefTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0"></div><div class="map" id="chefMap" style="margin-top:8px;display:none"></div></div></div>
 <footer>Document en lecture seule — transmis par l'organisateur.</footer>
 </main>
@@ -1884,9 +1884,10 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
           </Panel>
         </Group>
 
-        <Group label="Ma société de chasse">
+        <Group label="Mon carnet">
           <div className="grid grid-cols-2 gap-3">
             <Tile open={open} onToggle={toggle} id="groupe" emoji="🏹" title="Nom du groupe" sub="Titre de la page chasseurs" />
+            <Tile open={open} onToggle={toggle} id="save" emoji="💾" title="Sauvegarde" sub="Exporter · Importer" />
           </div>
           <Panel open={open} id="groupe">
             <label className="text-[11px] uppercase tracking-wide text-stone-400">Nom affiché aux chasseurs</label>
@@ -1895,20 +1896,15 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
           </Panel>
         </Group>
 
-        <Group label="Mes données">
-          <div className="grid grid-cols-2 gap-3">
-            <Tile open={open} onToggle={toggle} id="save" emoji="💾" title="Sauvegarde" sub="Exporter · Importer" />
-          </div>
           <Panel open={open} id="save">
             <p className="text-sm text-stone-600 mb-3">Ton carnet est enregistré automatiquement. Tu peux aussi en garder une copie sur ton appareil.</p>
             <button onClick={onExportExcel} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en Excel</button>
             <button onClick={onExportJson} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en fichier de secours</button>
             <button onClick={onImportPick} className="w-full text-left text-sm text-stone-700 py-2">⬇ Importer une sauvegarde</button>
           </Panel>
-        </Group>
 
         {isAdmin && (<Group label="Le jeu">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <Tile open={open} onToggle={toggle} id="classement" emoji="🏆" title="Classement" sub={board.length ? board.length + " joueur" + (board.length > 1 ? "s" : "") : "personne pour l'instant"} />
           </div>
           <Panel open={open} id="classement">
