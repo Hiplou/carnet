@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.30";
+const APP_VERSION = "v1.31";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1777,9 +1777,11 @@ function Tile({ id, emoji, title, sub, open, onToggle }) {
     <div className="text-[11px] text-stone-400 mt-0.5">{sub}</div>
   </button>);
 }
+// Placé DANS la grille et étalé sur deux colonnes : le cadre s'ouvre ainsi
+// juste sous la rangée de la vignette touchée, et non sous tout le groupe.
 function Panel({ id, open, children }) {
   if (open !== id) return null;
-  return <div className="mt-3 bg-white rounded-xl border border-emerald-600 p-4">{children}</div>;
+  return <div className="col-span-2 bg-white rounded-xl border border-emerald-600 p-4">{children}</div>;
 }
 function Group({ label, children }) {
   return (<div><p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2 px-1">{label}</p>{children}</div>);
@@ -1991,6 +1993,9 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
     finally { setPwBusy(false); }
   };
 
+  // L'aide occupe tout l'écran : on la rend à la place des Réglages plutôt que par-dessus.
+  if (showHelp) return <HelpSheet onClose={() => setShowHelp(false)} />;
+
   return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
     <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
       <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
@@ -2004,8 +2009,7 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
           <div className="grid grid-cols-2 gap-3">
             <Tile open={open} onToggle={toggle} id="compte" emoji="👤" title="Mon compte" sub="Email, mot de passe" />
             <Tile open={open} onToggle={toggle} id="quitter" emoji="🚪" title="Déconnexion" sub="Quitter ce compte" />
-          </div>
-          <Panel open={open} id="compte">
+            <Panel open={open} id="compte">
             <div className="flex items-center gap-3 pb-3 mb-3 border-b border-stone-100">
               <div className="w-11 h-11 rounded-full bg-emerald-700 text-stone-50 flex items-center justify-center font-semibold shrink-0">{initials}</div>
               <div className="min-w-0"><p className="text-sm font-medium text-stone-800 truncate">{email}</p><p className="text-[11px] text-stone-400">Organisateur</p></div>
@@ -2019,36 +2023,35 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
               <p className="text-[11px] text-stone-400 mt-1">Bientôt disponible.</p>
             </div>
           </Panel>
-          <Panel open={open} id="quitter">
+            <Panel open={open} id="quitter">
             <p className="text-sm text-stone-600 mb-3">Ton carnet reste enregistré. Tu le retrouveras à la prochaine connexion.</p>
             <button onClick={onSignOut} className="w-full bg-stone-800 hover:bg-stone-900 text-stone-50 text-sm font-medium py-2.5 rounded-lg">Me déconnecter</button>
           </Panel>
+          </div>
         </Group>
 
         <Group label="Mon carnet">
           <div className="grid grid-cols-2 gap-3">
             <Tile open={open} onToggle={toggle} id="groupe" emoji="🏹" title="Nom du groupe" sub="Titre de la page chasseurs" />
             <Tile open={open} onToggle={toggle} id="save" emoji="💾" title="Sauvegarde" sub="Exporter · Importer" />
-          </div>
-          <Panel open={open} id="groupe">
+            <Panel open={open} id="groupe">
             <label className="text-[11px] uppercase tracking-wide text-stone-400">Nom affiché aux chasseurs</label>
             <input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 text-sm bg-white" />
             <button onClick={saveOrg} className="mt-3 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">Enregistrer</button>
           </Panel>
-        </Group>
-
-          <Panel open={open} id="save">
+            <Panel open={open} id="save">
             <p className="text-sm text-stone-600 mb-3">Ton carnet est enregistré automatiquement. Tu peux aussi en garder une copie sur ton appareil.</p>
             <button onClick={onExportExcel} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en Excel</button>
             <button onClick={onExportJson} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en fichier de secours</button>
             <button onClick={onImportPick} className="w-full text-left text-sm text-stone-700 py-2">⬇ Importer une sauvegarde</button>
           </Panel>
+          </div>
+        </Group>
 
         {isAdmin && (<Group label="Le jeu">
-          <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Tile open={open} onToggle={toggle} id="classement" emoji="🏆" title="Classement" sub={board.length ? board.length + " joueur" + (board.length > 1 ? "s" : "") : "personne pour l'instant"} />
-          </div>
-          <Panel open={open} id="classement">
+            <Panel open={open} id="classement">
             <p className="text-sm text-stone-600 mb-3">Classement mondial du jeu du sanglier. Toi seul peux y faire le ménage.</p>
             {board.length === 0 ? (
               <p className="text-sm text-stone-500 italic">Aucun score enregistré.</p>
@@ -2075,25 +2078,25 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
               </div>
             </div>)}
           </Panel>
+          </div>
         </Group>)}
 
         <Group label="L'application">
           <div className="grid grid-cols-2 gap-3">
             <Tile open={open} onToggle={toggle} id="aide" emoji="❓" title="Aide" sub="Le guide complet" />
             <Tile open={open} onToggle={toggle} id="contact" emoji="✉️" title="Nous écrire" sub="Une idée, un souci" />
+            <Panel open={open} id="contact"><p className="text-sm text-stone-600">Une idée, une remarque ? Écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a></p></Panel>
             <Tile open={open} onToggle={toggle} id="confid" emoji="📜" title="Confidentialité" sub="Tes données" />
             <Tile open={open} onToggle={toggle} id="apropos" emoji="ℹ️" title="À propos" sub={"Version " + APP_VERSION} />
+            <Panel open={open} id="confid"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
+            <Panel open={open} id="apropos"><p className="text-sm text-stone-700">Carnet de Chasse</p><p className="text-sm text-stone-500 mt-0.5">Version {APP_VERSION}</p></Panel>
           </div>
-          <Panel open={open} id="contact"><p className="text-sm text-stone-600">Une idée, une remarque ? Écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a></p></Panel>
-          <Panel open={open} id="confid"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
-          <Panel open={open} id="apropos"><p className="text-sm text-stone-700">Carnet de Chasse</p><p className="text-sm text-stone-500 mt-0.5">Version {APP_VERSION}</p></Panel>
         </Group>
 
         <p className="text-center text-[11px] text-stone-400 pt-1 pb-4">Carnet de Chasse — {APP_VERSION}</p>
       </div>
     </div>
 
-    {showHelp && <HelpSheet onClose={() => setShowHelp(false)} />}
     {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-stone-900 text-stone-50 text-sm px-4 py-2 rounded-full shadow-lg">{toast}</div>}
   </div>);
 }
