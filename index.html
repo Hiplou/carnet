@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.41";
+const APP_VERSION = "v1.42";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3389,6 +3389,48 @@ function AuthScreen() {
   </div>);
 }
 
+// ---------- Fenêtre d'accueil ----------
+// S'ouvre à chaque connexion tant que la case « ne plus afficher » n'est pas cochée.
+// Le choix est rangé dans les réglages locaux : il vaut pour cet appareil.
+// Sur un nouveau téléphone, l'accueil réapparaît une fois — ce qui est plutôt souhaitable.
+function AccueilModal({ onClose, onNePlusAfficher }) {
+  const [cache, setCache] = useState(false);
+  const etapes = [
+    { n: 1, emoji: "👥", t: "Tes membres", d: "Commence par saisir les chasseurs et rabatteurs de ta société. Tu peux importer un fichier Excel ou tes contacts." },
+    { n: 2, emoji: "🗺️", t: "Ton territoire", d: "Crée un territoire, ajoute sa carte, dessine tes traques et pose tes miradors." },
+    { n: 3, emoji: "📅", t: "Ta journée", d: "Choisis une date, invite tes membres, place les fusils, et envoie leurs postes aux chasseurs." }
+  ];
+  return (<div className="fixed inset-0 z-[70] bg-stone-900/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="bg-stone-50 w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden max-h-[92vh] flex flex-col">
+      <div className="bg-stone-900 text-stone-50 px-5 py-4 shrink-0">
+        <p className="text-2xl">🦌</p>
+        <h2 className="font-serif text-xl mt-1">Bienvenue dans Carnet de Chasse</h2>
+        <p className="text-stone-400 text-[13px] mt-1">Trois étapes pour organiser ta première battue.</p>
+      </div>
+
+      <div className="flex-1 overflow-auto p-4 space-y-2.5">
+        {etapes.map((e) => (<div key={e.n} className="bg-white border border-stone-200 rounded-xl p-3.5 flex gap-3">
+          <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center justify-center shrink-0">{e.n}</span>
+          <span className="text-2xl shrink-0">{e.emoji}</span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-stone-800">{e.t}</span>
+            <span className="block text-[12px] text-stone-500 mt-0.5 leading-snug">{e.d}</span>
+          </span>
+        </div>))}
+        <p className="text-[12px] text-stone-500 text-center pt-1">Tu retrouveras le détail à tout moment dans ⚙️ Réglages puis Aide.</p>
+      </div>
+
+      <div className="border-t border-stone-200 p-4 shrink-0 bg-white">
+        <label className="flex items-center gap-2.5 mb-3 cursor-pointer">
+          <input type="checkbox" checked={cache} onChange={(e) => setCache(e.target.checked)} className="w-4 h-4 accent-emerald-700" />
+          <span className="text-sm text-stone-600">Ne plus afficher ce message</span>
+        </label>
+        <button onClick={() => { if (cache) onNePlusAfficher(); onClose(); }} className="w-full bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium py-3 rounded-lg">C'est parti</button>
+      </div>
+    </div>
+  </div>);
+}
+
 function CarnetApp({ session, onSignOut }) {
   const [tab, setTab] = useState("journees");
   const [participants, setParticipants] = useState(initialParticipants);
@@ -3398,6 +3440,7 @@ function CarnetApp({ session, onSignOut }) {
   const [github, setGithub] = useState(DEFAULT_GITHUB);
   const [loaded, setLoaded] = useState(false);
   const [cloudOk, setCloudOk] = useState(true);
+  const [showAccueil, setShowAccueil] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showPub, setShowPub] = useState(false);
   const [ghStatus, setGhStatus] = useState("idle");
@@ -3448,6 +3491,9 @@ function CarnetApp({ session, onSignOut }) {
           setJournees((d.journees || []).map(normJournee));
           setSafety(normSafety(d.safety || DEFAULT_SAFETY));
         }
+        // On n'ouvre l'accueil qu'une fois le carnet chargé, pour ne pas
+        // masquer un éventuel bandeau d'erreur.
+        if (!(gh && gh.accueilVu)) setShowAccueil(true);
       } catch (e) { console.error(e); } finally { setLoaded(true); }
     })();
   }, []);
@@ -3604,6 +3650,7 @@ function CarnetApp({ session, onSignOut }) {
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
 
   return (<div className="min-h-screen bg-stone-100">
+    {showAccueil && <AccueilModal onClose={() => setShowAccueil(false)} onNePlusAfficher={() => setGithub((g) => ({ ...g, accueilVu: true }))} />}
     {showPub && <SettingsSheet poids={poids} github={github} setGithub={setGithub} onClose={() => setShowPub(false)} session={session} onSignOut={onSignOut} onExportExcel={exportExcel} onExportJson={exportJson} onImportPick={() => importFileRef.current && importFileRef.current.click()} />}
     <input ref={importFileRef} type="file" accept=".xlsx,.json" onChange={importFile} className="hidden" />
 
