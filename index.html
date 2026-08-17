@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.33";
+const APP_VERSION = "v1.34";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1927,9 +1927,108 @@ function HelpSheet({ onClose }) {
   </div>);
 }
 
+// ---------- Confidentialité & mentions légales ----------
+function LegalSheet({ onClose }) {
+  const [open, setOpen] = useState(null);
+  const toggle = (id) => setOpen((o) => (o === id ? null : id));
+
+  return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
+      <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Confidentialité</h2>
+    </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-4 space-y-5">
+
+        <div className="bg-stone-800 text-stone-50 rounded-xl p-4">
+          <p className="font-serif text-base leading-snug">Carnet de Chasse enregistre ce que tu y saisis, rien d'autre : aucun traceur, aucune publicité, aucune revente de données.</p>
+          <p className="text-stone-400 text-[11px] mt-2">Dernière mise à jour : 16 août 2026</p>
+        </div>
+
+        <div className="space-y-2.5">
+
+          <HelpRow id="l1" emoji="👤" title="Qui est responsable" sub="Éditeur et contact" open={open} onToggle={toggle} />
+          <HelpBody id="l1" open={open}>
+            <p>L'application est éditée à titre personnel et non professionnel par <b>Houdard</b>, joignable à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a>.</p>
+            <p>Chaque organisateur reste responsable des informations qu'il saisit sur les membres de sa société de chasse.</p>
+          </HelpBody>
+
+          <HelpRow id="l2" emoji="📝" title="Ce qui est enregistré" sub="Et à quoi ça sert" open={open} onToggle={toggle} />
+          <HelpBody id="l2" open={open}>
+            <p><b>Ton compte</b> — email et mot de passe, pour te connecter.</p>
+            <p><b>Tes membres</b> — identité et coordonnées pour les inviter et les contacter ; numéros de permis et d'assurance pour vérifier qu'ils sont en règle.</p>
+            <p><b>Tes territoires</b> — cartes, postes et consignes, pour préparer la journée et la sécurité des tirs.</p>
+            <p><b>Tes journées</b> — présences, dîner et tableau de chasse, pour le registre de la saison et les déclarations à la fédération.</p>
+            <HelpH>Base légale</HelpH>
+            <p>Pour les organisateurs, le traitement est nécessaire au service demandé. Pour les membres saisis par un organisateur, il repose sur l'intérêt légitime à organiser une battue en sécurité et sur les obligations pesant sur les sociétés de chasse.</p>
+          </HelpBody>
+
+          <HelpRow id="l3" emoji="🔑" title="Connexion avec Google" sub="Ce que Google transmet" open={open} onToggle={toggle} />
+          <HelpBody id="l3" open={open}>
+            <p>Si tu te connectes avec Google, Google transmet uniquement ton <b>nom, ta photo de profil et ton adresse email</b>.</p>
+            <p>Nous n'accédons à aucune autre donnée de ton compte Google, et nous ne publions jamais rien en ton nom. Tu peux retirer cette autorisation à tout moment depuis les paramètres de ton compte Google.</p>
+            <p>La connexion par email et mot de passe reste disponible si tu préfères.</p>
+          </HelpBody>
+
+          <HelpRow id="l4" emoji="🌍" title="Où sont mes données" sub="Hébergement" open={open} onToggle={toggle} />
+          <HelpBody id="l4" open={open}>
+            <p>La base de données est hébergée par Supabase dans l'Union européenne (Paris).</p>
+            <p>Deux prestataires sont établis aux États-Unis : Cloudflare, qui diffuse les pages des chasseurs, et Resend, qui envoie les emails de confirmation. Les données qui leur sont confiées se limitent au contenu de la page publiée et à ton adresse email. Ces transferts sont encadrés par les clauses contractuelles types de la Commission européenne.</p>
+            <p>Chaque compte est cloisonné : un organisateur ne peut ni voir ni modifier les données d'un autre.</p>
+          </HelpBody>
+
+          <HelpRow id="l5" emoji="📱" title="La page des chasseurs" sub="Ce qui y figure" open={open} onToggle={toggle} />
+          <HelpBody id="l5" open={open}>
+            <p>Quand tu publies une journée, la page devient accessible à toute personne disposant du lien.</p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+              <p className="text-emerald-900 text-[13px]"><b>Elle contient</b> les prénoms et noms des participants, le territoire, la carte, les postes, les consignes et les attributions. <b>Jamais</b> les téléphones, emails, permis ni assurances.</p>
+            </div>
+            <p>Son adresse n'est pas devinable et les moteurs de recherche ne l'indexent pas. Elle n'a toutefois pas de mot de passe : ne diffuse le lien qu'aux personnes concernées.</p>
+          </HelpBody>
+
+          <HelpRow id="l6" emoji="🐗" title="Le jeu" sub="Ce que garde le classement" open={open} onToggle={toggle} />
+          <HelpBody id="l6" open={open}>
+            <p>Si un joueur enregistre un score, seuls <b>un pseudonyme de son choix et une distance</b> sont conservés.</p>
+            <p>Aucun lien n'est fait avec son identité, son compte ou sa journée de chasse. Ce classement est visible par tous les joueurs.</p>
+          </HelpBody>
+
+          <HelpRow id="l7" emoji="⚖️" title="Tes droits" sub="Accès, correction, effacement" open={open} onToggle={toggle} />
+          <HelpBody id="l7" open={open}>
+            <p>Tu disposes d'un droit d'accès, de rectification, d'effacement, de portabilité, de limitation et d'opposition.</p>
+            <p>L'export se fait depuis Réglages puis Sauvegarde. Pour toute autre demande, écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a> : réponse sous un mois.</p>
+            <HelpH>Durée de conservation</HelpH>
+            <p>Tes données restent enregistrées tant que ton compte existe. À sa suppression, elles sont effacées sous 30 jours.</p>
+            <HelpH>Ta responsabilité envers tes membres</HelpH>
+            <p>En saisissant les informations d'un membre, tu t'engages à l'avoir informé que ses données figurent ici. Ces personnes peuvent te demander à tout moment de les consulter, corriger ou supprimer.</p>
+            <p>En cas de désaccord, tu peux saisir la CNIL (www.cnil.fr).</p>
+          </HelpBody>
+
+          <HelpRow id="l8" emoji="📜" title="Mentions légales" sub="Éditeur et hébergeurs" open={open} onToggle={toggle} />
+          <HelpBody id="l8" open={open}>
+            <HelpH>Éditeur</HelpH>
+            <p>Carnet de Chasse est édité par <b>Houdard</b>, à titre personnel et non professionnel. Contact : contact@carnetdechasse.fr</p>
+            <p className="text-[12px] text-stone-500">Conformément à l'article 6 III-2 de la loi pour la confiance dans l'économie numérique, l'éditeur non professionnel a communiqué ses coordonnées à son hébergeur et bénéficie du régime d'anonymat prévu par ce texte.</p>
+            <HelpH>Hébergement</HelpH>
+            <p>• Application : GitHub Pages — GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, États-Unis</p>
+            <p>• Base de données : Supabase Inc. — données stockées dans l'Union européenne (Paris)</p>
+            <p>• Domaine et diffusion : Cloudflare Inc., 101 Townsend St, San Francisco, CA 94107, États-Unis</p>
+            <HelpH>Propriété intellectuelle</HelpH>
+            <p>Le contenu de l'application est protégé. Les cartes proviennent de la Géoplateforme IGN et restent soumises à ses conditions d'utilisation.</p>
+          </HelpBody>
+
+        </div>
+
+        <p className="text-center text-[11px] text-stone-400 pb-4">Carnet de Chasse — {APP_VERSION}</p>
+      </div>
+    </div>
+  </div>);
+}
+
 function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExportExcel, onExportJson, onImportPick }) {
   const [open, setOpen] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showLegal, setShowLegal] = useState(false);
   const [orgName, setOrgName] = useState(github.orgName || "");
   const [pass, setPass] = useState(""); const [pwMsg, setPwMsg] = useState(""); const [pwBusy, setPwBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -1995,6 +2094,7 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
 
   // L'aide occupe tout l'écran : on la rend à la place des Réglages plutôt que par-dessus.
   if (showHelp) return <HelpSheet onClose={() => setShowHelp(false)} />;
+  if (showLegal) return <LegalSheet onClose={() => setShowLegal(false)} />;
 
   return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
     <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
@@ -2090,9 +2190,12 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
             </button>
             <Tile open={open} onToggle={toggle} id="contact" emoji="✉️" title="Nous écrire" sub="Une idée, un souci" />
             <Panel open={open} id="contact"><p className="text-sm text-stone-600">Une idée, une remarque ? Écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a></p></Panel>
-            <Tile open={open} onToggle={toggle} id="confid" emoji="📜" title="Confidentialité" sub="Tes données" />
+            <button onClick={() => setShowLegal(true)} className="rounded-xl border border-stone-200 bg-white hover:border-stone-300 p-3.5 text-left transition-colors">
+              <div className="text-2xl mb-1.5">📜</div>
+              <div className="text-sm font-medium text-stone-800">Confidentialité</div>
+              <div className="text-[11px] text-stone-400 mt-0.5">Tes données, mentions légales</div>
+            </button>
             <Tile open={open} onToggle={toggle} id="apropos" emoji="ℹ️" title="À propos" sub={"Version " + APP_VERSION} />
-            <Panel open={open} id="confid"><p className="text-sm text-stone-500">Bientôt disponible.</p></Panel>
             <Panel open={open} id="apropos"><p className="text-sm text-stone-700">Carnet de Chasse</p><p className="text-sm text-stone-500 mt-0.5">Version {APP_VERSION}</p></Panel>
           </div>
         </Group>
