@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.51";
+const APP_VERSION = "v1.52";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -427,21 +427,15 @@ function cropBgStyle(image, crop) { const fw = crop.w / 100, fh = crop.h / 100, 
 
 // ---------- Recadrage ----------
 function CropBox({ image, crop, setCrop }) {
-  const boxRef = useRef(null); const wrapRef = useRef(null); const drag = useRef(null); const cropRef = useRef(crop); cropRef.current = crop; const MIN = 8;
+  const boxRef = useRef(null); const drag = useRef(null); const cropRef = useRef(crop); cropRef.current = crop; const MIN = 8;
   const pct = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); return { x: Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)), y: Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)) }; };
   useEffect(() => {
     const onMove = (e) => {
-      if (zDrag.current !== null && boxRef.current) {
-        e.preventDefault(); moved.current = true;
-        const { gx, gy } = toGlobal(e.clientX, e.clientY);
-        const z = (zRef.current || []).slice(); z[zDrag.current] = { gx, gy };
-        updateTrack({ zone: z }); return;
-      }
       if (!drag.current || !boxRef.current) return; e.preventDefault(); const p = pct(e.clientX, e.clientY); const c = { ...cropRef.current }; const d = drag.current;
       if (d.type === "move") { c.x = Math.max(0, Math.min(100 - c.w, d.ox + (p.x - d.px))); c.y = Math.max(0, Math.min(100 - c.h, d.oy + (p.y - d.py))); }
       else { let x1 = c.x, y1 = c.y, x2 = c.x + c.w, y2 = c.y + c.h; if (d.type.includes("l")) x1 = Math.min(p.x, x2 - MIN); if (d.type.includes("r")) x2 = Math.max(p.x, x1 + MIN); if (d.type.includes("t")) y1 = Math.min(p.y, y2 - MIN); if (d.type.includes("b")) y2 = Math.max(p.y, y1 + MIN); c.x = x1; c.y = y1; c.w = x2 - x1; c.h = y2 - y1; }
       setCrop({ x: +c.x.toFixed(2), y: +c.y.toFixed(2), w: +c.w.toFixed(2), h: +c.h.toFixed(2) }); };
-    const onUp = () => { drag.current = null; zDrag.current = null; };
+    const onUp = () => { drag.current = null; };
     window.addEventListener("pointermove", onMove, { passive: false }); window.addEventListener("pointerup", onUp);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
   }, [setCrop]);
@@ -479,7 +473,7 @@ function ZoneSvg({ zone, crop, color }) {
 
 function PlaceMiradors({ image, track, updateTrack }) {
   const crop = track.crop || FULL_CROP; const ar = useImageAR(image);
-  const boxRef = useRef(null); const drag = useRef(null); const moved = useRef(false); const mRef = useRef(track.miradors); mRef.current = track.miradors;
+  const boxRef = useRef(null); const wrapRef = useRef(null); const drag = useRef(null); const moved = useRef(false); const mRef = useRef(track.miradors); mRef.current = track.miradors;
   const [mode, setMode] = useState("poste");          // poste | contour | deplacer
   // Zoom au pincement. La transformation est portée par la couche interne (boxRef),
   // si bien que toGlobal continue de fonctionner sans le moindre calcul supplémentaire.
@@ -492,8 +486,15 @@ function PlaceMiradors({ image, track, updateTrack }) {
   const zDrag = useRef(null); const [sel, setSel] = useState(null);
   const toGlobal = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); const lx = Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)); const ly = Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)); return { gx: crop.x + (lx / 100) * crop.w, gy: crop.y + (ly / 100) * crop.h }; };
   useEffect(() => {
-    const onMove = (e) => { if (!drag.current || !boxRef.current) return; e.preventDefault(); const { gx, gy } = toGlobal(e.clientX, e.clientY); moved.current = true; updateTrack({ miradors: mRef.current.map((m) => (m.id === drag.current ? { ...m, gx: +gx.toFixed(2), gy: +gy.toFixed(2) } : m)) }); };
-    const onUp = () => { drag.current = null; };
+    const onMove = (e) => {
+      if (zDrag.current !== null && boxRef.current) {
+        e.preventDefault(); moved.current = true;
+        const { gx, gy } = toGlobal(e.clientX, e.clientY);
+        const z = (zRef.current || []).slice(); z[zDrag.current] = { gx, gy };
+        updateTrack({ zone: z }); return;
+      }
+      if (!drag.current || !boxRef.current) return; e.preventDefault(); const { gx, gy } = toGlobal(e.clientX, e.clientY); moved.current = true; updateTrack({ miradors: mRef.current.map((m) => (m.id === drag.current ? { ...m, gx: +gx.toFixed(2), gy: +gy.toFixed(2) } : m)) }); };
+    const onUp = () => { drag.current = null; zDrag.current = null; };
     window.addEventListener("pointermove", onMove, { passive: false }); window.addEventListener("pointerup", onUp);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
   }, [updateTrack, crop.x, crop.y, crop.w, crop.h]);
