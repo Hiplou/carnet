@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import {
   Users, MapPin, CalendarDays, ChevronDown, ChevronRight, Plus, Check, X,
   Crosshair, ArrowLeft, Target, Trash2, Upload, Download, FolderOpen,
-  AlertTriangle, Crop, FileText, Shield, Bell, Phone, Send, Share2, Image as ImageIcon, BookOpen, Merge
+  AlertTriangle, Crop, FileText, Shield, Bell, Phone, Send, Share2, Image as ImageIcon, BookOpen, Merge,
+  Settings, Cloud
 } from "lucide-react";
 
 // ============================================================
@@ -43,16 +44,34 @@ const DEFAULT_SAFETY = {
 };
 
 const initialParticipants = [];
-const initialTerrains = [
-  { id: "t1", name: "Bois de l'Île (Mareil-en-Champagne)", planImage: null, tracks: [
-    { id: "trk1", name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] },
-    { id: "trk2", name: "Traque 2", color: "#2563eb", crop: { ...DEFAULT_CROP }, miradors: [] },
-    { id: "trk3", name: "Traque 3", color: "#ca8a04", crop: { ...DEFAULT_CROP }, miradors: [] },
-  ] },
-];
-const initialJournees = [{ id: "j1", date: "2026-11-08", terrainId: "t1", placements: {} }];
+const initialTerrains = [];
+const initialJournees = [];
 
 // ---------- Normalisation ----------
+function IconRayee({ size = 15, color = "#166534" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.8, strokeLinecap: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
+    React.createElement("circle", { cx: 12, cy: 12, r: 9 }),
+    React.createElement("circle", { cx: 12, cy: 12, r: 5.5, strokeWidth: 1.2 }),
+    React.createElement("path", { d: "M12 6.5v11M17.5 12h-11M15.9 8.1 8.1 15.9M15.9 15.9 8.1 8.1", strokeWidth: 1.2 }));
+}
+function IconLisse({ size = 15, color = "#166534" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.8, strokeLinecap: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
+    React.createElement("circle", { cx: 12, cy: 12, r: 9 }),
+    React.createElement("circle", { cx: 12, cy: 12, r: 5.5, strokeWidth: 1.2 }));
+}
+function IconArc({ size = 15, color = "#166534" }) {
+  return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
+    React.createElement("path", { d: "M17 3a13 13 0 0 1 0 18" }),
+    React.createElement("path", { d: "M17 3 6.5 12 17 21" }),
+    React.createElement("path", { d: "M3 12h12" }),
+    React.createElement("path", { d: "m12 9 3 3-3 3" }));
+}
+function ArmeIcon({ k, size = 15, color = "#166534" }) {
+  if (k === "rayee") return React.createElement(IconRayee, { size, color });
+  if (k === "lisse") return React.createElement(IconLisse, { size, color });
+  if (k === "arc") return React.createElement(IconArc, { size, color });
+  return null;
+}
 function Fauteuil({ size = 15, color = "#166534" }) {
   return React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round", style: { display: "inline-block", verticalAlign: "-2px" } },
     React.createElement("circle", { cx: 16, cy: 4, r: 1 }),
@@ -71,20 +90,89 @@ function Grip({ size = 16, className = "" }) {
     React.createElement("circle", { cx: 9, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 19, r: 1.4 }),
     React.createElement("circle", { cx: 15, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 19, r: 1.4 }));
 }
-function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, canal: j.canal || "" }; }
+function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, armes: j.armes || {}, rdv: j.rdv || {}, canal: j.canal || "" }; }
 function normTirZone(z) { z = z || {}; return { dir: ((Number(z.dir) || 0) % 360 + 360) % 360, width: Math.max(10, Math.min(360, Number(z.width) || 60)) }; }
-function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, tir: { zones: tz } }; }
-function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, miradors: (t.miradors || []).map(normMirador) }; }
+function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, armes: (Array.isArray(m.armes) ? m.armes : (m.arme && m.arme !== "indifferent" ? [m.arme] : [])).filter((k) => ARMES.some((x) => x.key === k)), tir: { zones: tz } }; }
+function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, zone: Array.isArray(t.zone) ? t.zone.filter((p) => p && isFinite(p.gx) && isFinite(p.gy)).slice(0, 60) : [], zoneFermee: !!t.zoneFermee, miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
 function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
+function splitFullName(full) { const parts = (full || "").trim().split(/\s+/).filter(Boolean); if (!parts.length) return { prenom: "", nom: "" }; if (parts.length === 1) return { prenom: parts[0], nom: "" }; return { prenom: parts[0], nom: parts.slice(1).join(" ") }; }
+function formatPhone(raw) { let d = (raw || "").replace(/\D/g, ""); if (d.length > 10 && d.slice(0, 2) === "33") d = "0" + d.slice(2); if (d.length === 9 && (d[0] === "6" || d[0] === "7")) d = "0" + d; d = d.slice(0, 10); return d.replace(/(\d{2})(?=\d)/g, "$1 ").trim(); }
+function fixPhone(raw) { const s = (raw || "").trim(); if (!s) return s; return formatPhone(s); }
+function isValidFrPhone(raw) { const d = (raw || "").replace(/\D/g, ""); if (!d) return true; return d.length === 10 && (d.slice(0, 2) === "06" || d.slice(0, 2) === "07"); }
+const ARMES = [{ key: "rayee", label: "Rayée", short: "R", emoji: "🎯" }, { key: "lisse", label: "Lisse", short: "L", emoji: "🔫" }, { key: "arc", label: "Arc", short: "A", emoji: "🏹" }];
+function armeLabel(k) { const f = ARMES.find((a) => a.key === k); return f ? f.label : ""; }
+function armeShort(k) { const f = ARMES.find((a) => a.key === k); return f ? f.short : ""; }
+function armesList(m) { if (Array.isArray(m && m.armes)) return m.armes; const a = m && m.arme; if (!a || a === "indifferent") return []; return [a]; }
+function armeOk(armes, hunterArme) { const list = Array.isArray(armes) ? armes : []; if (!list.length) return true; if (!hunterArme) return true; if (list.indexOf(hunterArme) >= 0) return true; if (hunterArme === "rayee" && list.indexOf("lisse") >= 0) return true; return false; }
+function armesLabel(armes) { const list = Array.isArray(armes) ? armes : []; if (!list.length) return "toutes armes"; return list.map(armeLabel).join(" / "); }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
-function normParticipant(p) { return { id: p.id, name: p.name || "", phone: p.phone || "", email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == null && nom == null) { const sp = splitFullName(p.name); prenom = sp.prenom; nom = sp.nom; } prenom = prenom || ""; nom = nom || ""; const name = (prenom + " " + nom).trim() || p.name || ""; return { id: p.id, prenom, nom, name, phone: fixPhone(p.phone || ""), email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, arme: p.arme || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], groupes: Array.isArray(p.groupes) ? p.groupes.filter((g) => typeof g === "string" && g.trim()).slice(0, 20) : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
-const ESPECES = [{ key: "chevreuil", label: "Chevreuil", emoji: "🦌" }, { key: "sanglier", label: "Sanglier", emoji: "🐗" }, { key: "renard", label: "Renard", emoji: "🦊" }, { key: "lievre", label: "Lièvre", emoji: "🐇" }, { key: "cerf", label: "Cerf indifférencié", emoji: "🦌" }, { key: "cerf_c1", label: "Cerf C1", emoji: "🦌" }, { key: "cerf_c2", label: "Cerf C2", emoji: "🦌" }, { key: "biche", label: "Biche", emoji: "🦌" }, { key: "faon", label: "Faon", emoji: "🦌" }, { key: "autre", label: "Autre", emoji: "🐾" }];
+const ESPECES = [
+  { key: "chevreuil", label: "Chevreuil", emoji: "🦌" },
+  { key: "sanglier", label: "Sanglier", emoji: "🐗" },
+  { key: "cerf", label: "Cerf indifférencié", emoji: "🦌" },
+  { key: "cerf_c1", label: "Cerf C1", emoji: "🦌" },
+  { key: "cerf_c2", label: "Cerf C2", emoji: "🦌" },
+  { key: "biche", label: "Biche", emoji: "🦌" },
+  { key: "faon", label: "Faon", emoji: "🦌" },
+  { key: "cerf_jcb", label: "JCB (jeune cerf biche)", emoji: "🦌" },
+  { key: "daim", label: "Daim", emoji: "🦌" },
+  { key: "lievre", label: "Lièvre d'Europe", emoji: "🐇" },
+  { key: "renard", label: "Renard", emoji: "🦊" },
+  { key: "faisan", label: "Faisan commun", emoji: "🐓" },
+  { key: "faisan_venere", label: "Faisan vénéré", emoji: "🐓" },
+  { key: "perdrix_grise", label: "Perdrix grise", emoji: "🐦" },
+  { key: "perdrix_rouge", label: "Perdrix rouge", emoji: "🐦" },
+  { key: "caille", label: "Caille des blés", emoji: "🐦" },
+  { key: "becasse", label: "Bécasse des bois", emoji: "🐦" },
+  { key: "merle", label: "Merle noir", emoji: "🐦" },
+  { key: "grive", label: "Grive", emoji: "🐦" },
+  { key: "pigeon", label: "Pigeon", emoji: "🕊️" },
+  { key: "alouette", label: "Alouette des champs", emoji: "🐦" },
+  { key: "canard_colvert", label: "Colvert", emoji: "🦆" },
+  { key: "canard_souchet", label: "Souchet", emoji: "🦆" },
+  { key: "canard_pilet", label: "Pilet", emoji: "🦆" },
+  { key: "canard_siffleur", label: "Siffleur", emoji: "🦆" },
+  { key: "canard_chipeau", label: "Chipeau", emoji: "🦆" },
+  { key: "sarcelle_hiver", label: "Sarcelle d'hiver", emoji: "🦆" },
+  { key: "sarcelle_ete", label: "Sarcelle d'été", emoji: "🦆" },
+  { key: "fuligule_milouin", label: "Fuligule milouin", emoji: "🦆" },
+  { key: "fuligule_morillon", label: "Fuligule morillon", emoji: "🦆" },
+  { key: "foulque", label: "Foulque macroule", emoji: "🦆" },
+  { key: "becassine", label: "Bécassine des marais", emoji: "🦆" },
+  { key: "oie", label: "Oie cendrée", emoji: "🦆" },
+  { key: "autre", label: "Autre", emoji: "🐾" }
+];
+const FAMILLES = [
+  { groupe: "Grand gibier", key: "f_chevreuil", label: "Chevreuil", emoji: "🦌", sous: ["chevreuil"] },
+  { groupe: "Grand gibier", key: "f_sanglier", label: "Sanglier", emoji: "🐗", sous: ["sanglier"] },
+  { groupe: "Grand gibier", key: "f_cerf", label: "Cerf", emoji: "🦌", sous: ["cerf", "cerf_c1", "cerf_c2", "cerf_jcb", "biche", "faon"] },
+  { groupe: "Grand gibier", key: "f_daim", label: "Daim", emoji: "🦌", sous: ["daim"] },
+  { groupe: "Petit gibier", key: "f_lievre", label: "Lièvre d'Europe", emoji: "🐇", sous: ["lievre"] },
+  { groupe: "Petit gibier", key: "f_renard", label: "Renard", emoji: "🦊", sous: ["renard"] },
+  { groupe: "Petit gibier", key: "f_faisan", label: "Faisan", emoji: "🐓", sous: ["faisan", "faisan_venere"] },
+  { groupe: "Petit gibier", key: "f_perdrix", label: "Perdrix", emoji: "🐦", sous: ["perdrix_grise", "perdrix_rouge"] },
+  { groupe: "Petit gibier", key: "f_caille", label: "Caille des blés", emoji: "🐦", sous: ["caille"] },
+  { groupe: "Petit gibier", key: "f_becasse", label: "Bécasse des bois", emoji: "🐦", sous: ["becasse"] },
+  { groupe: "Petit gibier", key: "f_merle", label: "Merle noir", emoji: "🐦", sous: ["merle"] },
+  { groupe: "Petit gibier", key: "f_grive", label: "Grive", emoji: "🐦", sous: ["grive"] },
+  { groupe: "Petit gibier", key: "f_pigeon", label: "Pigeon", emoji: "🕊️", sous: ["pigeon"] },
+  { groupe: "Petit gibier", key: "f_alouette", label: "Alouette des champs", emoji: "🐦", sous: ["alouette"] },
+  { groupe: "Gibier d'eau", key: "f_canard", label: "Canard", emoji: "🦆", sous: ["canard_colvert", "canard_souchet", "canard_pilet", "canard_siffleur", "canard_chipeau"] },
+  { groupe: "Gibier d'eau", key: "f_sarcelle", label: "Sarcelle", emoji: "🦆", sous: ["sarcelle_hiver", "sarcelle_ete"] },
+  { groupe: "Gibier d'eau", key: "f_fuligule", label: "Fuligule", emoji: "🦆", sous: ["fuligule_milouin", "fuligule_morillon"] },
+  { groupe: "Gibier d'eau", key: "f_foulque", label: "Foulque macroule", emoji: "🦆", sous: ["foulque"] },
+  { groupe: "Gibier d'eau", key: "f_becassine", label: "Bécassine des marais", emoji: "🦆", sous: ["becassine"] },
+  { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
+];
+function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
+const APP_VERSION = "v1.55";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -137,6 +225,38 @@ function extractRowsFromExcel(arrayBuffer) {
   const ws = wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws, { defval: "" });
 }
+function parseVCards(text) {
+  const out = [];
+  const raw = String(text || "").replace(/\r\n[ \t]/g, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const blocks = raw.split(/BEGIN:VCARD/i).slice(1);
+  const decode = (v, params) => {
+    let s = String(v || "");
+    const p = (params || "").toUpperCase();
+    if (p.indexOf("ENCODING=QUOTED-PRINTABLE") >= 0) { s = s.replace(/=\n/g, "").replace(/=([0-9A-F]{2})/gi, (m, h) => String.fromCharCode(parseInt(h, 16))); try { s = decodeURIComponent(escape(s)); } catch (e) {} }
+    return s.replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\n/gi, " ").trim();
+  };
+  blocks.forEach((blk) => {
+    const body = blk.split(/END:VCARD/i)[0];
+    let prenom = "", nom = "", fullName = "", phone = "", email = "";
+    body.split("\n").forEach((line) => {
+      if (!line.trim()) return;
+      const idx = line.indexOf(":"); if (idx < 0) return;
+      const left = line.slice(0, idx), value = line.slice(idx + 1);
+      const parts = left.split(";"); const key = (parts[0] || "").toUpperCase().replace(/^ITEM\d+\./, "");
+      const params = parts.slice(1).join(";");
+      const val = decode(value, params);
+      if (key === "N" && !nom && !prenom) { const seg = val.split(";"); nom = (seg[0] || "").trim(); prenom = (seg[1] || "").trim(); }
+      else if (key === "FN" && !fullName) fullName = val;
+      else if (key === "TEL" && !phone) phone = val;
+      else if (key === "EMAIL" && !email) email = val;
+    });
+    if (!prenom && !nom && fullName) { const sp = splitFullName(fullName); prenom = sp.prenom; nom = sp.nom; }
+    const name = (prenom + " " + nom).trim() || fullName;
+    if (!name && !phone && !email) return;
+    out.push({ name, prenom, nom, phone, email, permis: "", validation: "", assurance: "", role: "chasseur", mobility: null });
+  });
+  return out;
+}
 function rowsToGuests(rows) {
   if (!rows.length) return [];
   const headers = Object.keys(rows[0]);
@@ -156,6 +276,8 @@ function rowsToGuests(rows) {
     let name = "";
     if (cPrenom || cNom) name = [g(r, cPrenom), g(r, cNom)].filter(Boolean).join(" ").trim();
     if (!name) { const first = headers.length ? g(r, headers[0]) : ""; if (/[a-zA-ZÀ-ÿ]/.test(first)) name = first; }
+    const prenom = cPrenom ? g(r, cPrenom) : "";
+    const nom = cNom ? g(r, cNom) : "";
     const email = g(r, cMail);
     let phone = g(r, cTel); if (phone) phone = phone.replace(/[ .\-]/g, "");
     const mobRaw = g(r, cMob).toLowerCase();
@@ -163,7 +285,7 @@ function rowsToGuests(rows) {
     const roleRaw = g(r, cRole).toLowerCase();
     const role = roleRaw.indexOf("rabatteur") >= 0 ? "rabatteur" : "chasseur";
     if (!name && !email && !phone) return;
-    out.push({ name, phone, email, permis: g(r, cPermis), validation: g(r, cValid), assurance: g(r, cAssur), role, mobility });
+    out.push({ name, prenom, nom, phone, email, permis: g(r, cPermis), validation: g(r, cValid), assurance: g(r, cAssur), role, mobility });
   });
   return out;
 }
@@ -220,7 +342,8 @@ function CropBox({ image, crop, setCrop }) {
   const boxRef = useRef(null); const drag = useRef(null); const cropRef = useRef(crop); cropRef.current = crop; const MIN = 8;
   const pct = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); return { x: Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)), y: Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)) }; };
   useEffect(() => {
-    const onMove = (e) => { if (!drag.current || !boxRef.current) return; e.preventDefault(); const p = pct(e.clientX, e.clientY); const c = { ...cropRef.current }; const d = drag.current;
+    const onMove = (e) => {
+      if (!drag.current || !boxRef.current) return; e.preventDefault(); const p = pct(e.clientX, e.clientY); const c = { ...cropRef.current }; const d = drag.current;
       if (d.type === "move") { c.x = Math.max(0, Math.min(100 - c.w, d.ox + (p.x - d.px))); c.y = Math.max(0, Math.min(100 - c.h, d.oy + (p.y - d.py))); }
       else { let x1 = c.x, y1 = c.y, x2 = c.x + c.w, y2 = c.y + c.h; if (d.type.includes("l")) x1 = Math.min(p.x, x2 - MIN); if (d.type.includes("r")) x2 = Math.max(p.x, x1 + MIN); if (d.type.includes("t")) y1 = Math.min(p.y, y2 - MIN); if (d.type.includes("b")) y2 = Math.max(p.y, y1 + MIN); c.x = x1; c.y = y1; c.w = x2 - x1; c.h = y2 - y1; }
       setCrop({ x: +c.x.toFixed(2), y: +c.y.toFixed(2), w: +c.w.toFixed(2), h: +c.h.toFixed(2) }); };
@@ -238,27 +361,216 @@ function CropBox({ image, crop, setCrop }) {
     </div></div>);
 }
 
+// Contour de traque : trait fin doublé d'un liseré blanc, pour rester visible
+// sur toutes les cartes. Les postes passent par-dessus, avec leur propre halo.
+function zonePath(zone, crop, fermee) {
+  const pts = (zone || []).map((p) => ({
+    x: ((p.gx - crop.x) / crop.w) * 100,
+    y: ((p.gy - crop.y) / crop.h) * 100
+  }));
+  if (pts.length < 2) return "";
+  let d = "M " + pts[0].x + " " + pts[0].y;
+  for (let i = 1; i < pts.length; i++) d += " L " + pts[i].x + " " + pts[i].y;
+  if (fermee && pts.length >= 3) d += " Z";
+  return d;
+}
+function ZoneSvg({ zone, crop, color, fermee }) {
+  const d = zonePath(zone, crop, fermee);
+  if (!d) return null;
+  return (<svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+    <path d={d} fill="none" stroke="#ffffff" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" opacity="0.55" vectorEffect="non-scaling-stroke" />
+    <path d={d} fill="none" stroke={color || "#dc2626"} strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" opacity="0.85" vectorEffect="non-scaling-stroke" />
+  </svg>);
+}
+
+// Distance d'un point à un segment, pour savoir si l'on a touché une ligne du contour.
+function distSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
 function PlaceMiradors({ image, track, updateTrack }) {
   const crop = track.crop || FULL_CROP; const ar = useImageAR(image);
-  const boxRef = useRef(null); const drag = useRef(null); const moved = useRef(false); const mRef = useRef(track.miradors); mRef.current = track.miradors; const [sel, setSel] = useState(null);
+  const boxRef = useRef(null); const wrapRef = useRef(null); const drag = useRef(null); const moved = useRef(false); const mRef = useRef(track.miradors); mRef.current = track.miradors;
+  const [mode, setMode] = useState("poste");          // poste | contour
+  // Zoom au pincement. La transformation est portée par la couche interne (boxRef),
+  // si bien que toGlobal continue de fonctionner sans le moindre calcul supplémentaire.
+  const [vue, setVue] = useState({ z: 1, tx: 0, ty: 0 });
+  const doigts = useRef(new Map());
+  const pinch = useRef(null);
+  const vueRef = useRef(vue); vueRef.current = vue;
+  const modeRef = useRef(mode); modeRef.current = mode;
+  const zRef = useRef(track.zone || []); zRef.current = track.zone || [];
+  const zDrag = useRef(null);
+  const longTimer = useRef(null); const longRef = useRef(false); const hStart = useRef(null); const [sel, setSel] = useState(null);
   const toGlobal = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); const lx = Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)); const ly = Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)); return { gx: crop.x + (lx / 100) * crop.w, gy: crop.y + (ly / 100) * crop.h }; };
   useEffect(() => {
-    const onMove = (e) => { if (!drag.current || !boxRef.current) return; e.preventDefault(); const { gx, gy } = toGlobal(e.clientX, e.clientY); moved.current = true; updateTrack({ miradors: mRef.current.map((m) => (m.id === drag.current ? { ...m, gx: +gx.toFixed(2), gy: +gy.toFixed(2) } : m)) }); };
-    const onUp = () => { drag.current = null; };
+    const onMove = (e) => {
+      if (zDrag.current !== null && boxRef.current) {
+        e.preventDefault(); moved.current = true;
+        if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; }
+        const { gx, gy } = toGlobal(e.clientX, e.clientY);
+        const z = (zRef.current || []).slice(); z[zDrag.current] = { gx, gy };
+        updateTrack({ zone: z }); return;
+      }
+      if (!drag.current || !boxRef.current) return; e.preventDefault(); const { gx, gy } = toGlobal(e.clientX, e.clientY); moved.current = true; updateTrack({ miradors: mRef.current.map((m) => (m.id === drag.current ? { ...m, gx: +gx.toFixed(2), gy: +gy.toFixed(2) } : m)) }); };
+    const onUp = () => { drag.current = null; zDrag.current = null; };
     window.addEventListener("pointermove", onMove, { passive: false }); window.addEventListener("pointerup", onUp);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
   }, [updateTrack, crop.x, crop.y, crop.w, crop.h]);
-  const onClick = (e) => { if (moved.current) { moved.current = false; return; } const { gx, gy } = toGlobal(e.clientX, e.clientY); const id = `m-${Date.now()}`; updateTrack({ miradors: [...track.miradors, { id, label: `Poste ${track.miradors.length + 1}`, gx: +gx.toFixed(2), gy: +gy.toFixed(2), photos: [], consignes: "" }] }); setSel(id); };
+  const tap = useRef(null);
+  const majDoigt = (e) => doigts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const onDown = (e) => {
+    majDoigt(e);
+    // Un toucher est validé au relâcher, pas par l'événement « clic » :
+    // Safari annule le clic dès que le doigt bouge de quelques pixels.
+    if (doigts.current.size === 1) tap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now() };
+    else tap.current = null;
+    if (doigts.current.size === 2) {
+      const [a, b] = Array.from(doigts.current.values());
+      pinch.current = {
+        d0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2,
+        v0: { ...vueRef.current }
+      };
+      moved.current = true;              // empêche la pose d'un point à la fin du geste
+      drag.current = null; zDrag.current = null;
+    }
+  };
+  const onPinchMove = (e) => {
+    if (!doigts.current.has(e.pointerId)) return;
+    majDoigt(e);
+    if (doigts.current.size < 2 || !pinch.current || !wrapRef.current) return;
+    e.preventDefault();
+    const [a, b] = Array.from(doigts.current.values());
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const P = pinch.current;
+    const z = Math.max(1, Math.min(6, P.v0.z * (d / P.d0)));
+    const r = wrapRef.current.getBoundingClientRect();
+    // Le point pincé reste sous les doigts
+    const ox = P.mx - r.left, oy = P.my - r.top;
+    let tx = mx - r.left - ((ox - P.v0.tx) / P.v0.z) * z;
+    let ty = my - r.top - ((oy - P.v0.ty) / P.v0.z) * z;
+    const maxX = 0, minX = r.width - r.width * z;
+    const maxY = 0, minY = r.height - r.height * z;
+    tx = Math.max(minX, Math.min(maxX, tx));
+    ty = Math.max(minY, Math.min(maxY, ty));
+    setVue({ z, tx, ty });
+  };
+  const onFin = (e) => {
+    const t = tap.current;
+    if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; }
+    doigts.current.delete(e.pointerId);
+    if (doigts.current.size < 2) pinch.current = null;
+    if (!t || t.id !== e.pointerId) { tap.current = null; return; }
+    tap.current = null;
+    if (drag.current !== null || zDrag.current !== null || longRef.current) return;
+    // 12 pixels de tolérance : un doigt ne reste jamais parfaitement immobile
+    if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > 12) return;
+    if (Date.now() - t.t > 700) return;
+    onTap(e);
+  };
+
+  const onTap = (e) => { if (moved.current) { moved.current = false; return; }
+    if (modeRef.current === "contour") {
+      const z = track.zone || [];
+      const r = boxRef.current.getBoundingClientRect();
+      const ecran = (pt) => ({
+        x: r.left + ((pt.gx - crop.x) / crop.w) * r.width,
+        y: r.top + ((pt.gy - crop.y) / crop.h) * r.height
+      });
+      // Une ligne touchée de près : on y insère un point
+      if (z.length >= 2) {
+        let best = -1, bd = 18;
+        const nb = track.zoneFermee ? z.length : z.length - 1;   // le segment de fermeture n'existe que si fermé
+        for (let i = 0; i < nb; i++) {
+          const a = ecran(z[i]), b = ecran(z[(i + 1) % z.length]);
+          const d = distSegment(e.clientX, e.clientY, a.x, a.y, b.x, b.y);
+          if (d < bd) { bd = d; best = i; }
+        }
+        if (best >= 0) {
+          const { gx, gy } = toGlobal(e.clientX, e.clientY);
+          const nz = z.slice(); nz.splice(best + 1, 0, { gx, gy });
+          updateTrack({ zone: nz }); return;
+        }
+      }
+      // Une fois fermé, un toucher à l'écart ne fait plus rien
+      if (track.zoneFermee) return;
+      const { gx, gy } = toGlobal(e.clientX, e.clientY);
+      updateTrack({ zone: [...z, { gx, gy }] }); return;
+    }
+    const { gx, gy } = toGlobal(e.clientX, e.clientY); const id = `m-${Date.now()}`; updateTrack({ miradors: [...track.miradors, { id, label: `Poste ${track.miradors.length + 1}`, gx: +gx.toFixed(2), gy: +gy.toFixed(2), photos: [], consignes: "" }] }); setSel(id); };
   return (<div>
-    <p className="text-xs uppercase tracking-wide text-stone-400 mb-1.5">Clique pour poser un mirador · glisse une pastille pour la déplacer</p>
-    <div ref={boxRef} onClick={onClick} style={{ ...cropWrapperStyle(crop, ar), touchAction: "none" }} className="border border-stone-300 cursor-crosshair select-none">
+    <div className="flex gap-1.5 mb-2">
+      {[["poste", "📍 Postes"], ["contour", "✏️ Contour"]].map(([k, lab]) => (
+        <button key={k} onClick={() => setMode(k)} className={`flex-1 text-[12px] font-medium py-1.5 rounded-md border ${mode === k ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-white text-stone-700 border-stone-300"}`}>{lab}</button>
+      ))}
+    </div>
+    <p className="text-[11px] text-stone-500 mb-1.5">
+      {mode === "poste"
+        ? "Touche la carte pour poser un mirador, glisse une pastille pour la déplacer. Pince à deux doigts pour zoomer."
+        : "Touche pour poser un point · retouche le premier ou le dernier pour fermer · glisse pour déplacer · touche la ligne pour insérer · appui long pour supprimer."}
+    </p>
+    {mode === "contour" && (<div className="flex gap-1.5 mb-2">
+      <button onClick={() => updateTrack({ zone: (track.zone || []).slice(0, -1) })} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-stone-600 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">↶ Dernier point</button>
+      <button onClick={() => updateTrack({ zoneFermee: !track.zoneFermee })} disabled={(track.zone || []).length < 3} className="flex-1 text-[11px] text-stone-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">{track.zoneFermee ? "↔ Rouvrir" : "⭘ Fermer"}</button>
+      <button onClick={() => { if ((track.zone || []).length && !window.confirm("Effacer le contour de cette traque ?")) return; updateTrack({ zone: [], zoneFermee: false }); }} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-red-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">🗑 Effacer</button>
+    </div>)}
+    {vue.z > 1.02 && (<div className="flex items-center justify-between mb-1.5 bg-stone-100 border border-stone-200 rounded-md px-2.5 py-1.5">
+      <span className="text-[11px] text-stone-500">Zoom ×{vue.z.toFixed(1)}</span>
+      <button onClick={() => setVue({ z: 1, tx: 0, ty: 0 })} className="text-[11px] text-emerald-800 underline">Revoir toute la traque</button>
+    </div>)}
+    <div ref={wrapRef}
+      onPointerDown={onDown} onPointerMove={onPinchMove} onPointerUp={onFin} onPointerCancel={onFin}
+      style={{ ...cropWrapperStyle(crop, ar), touchAction: "none", overflow: "hidden", position: "relative" }}
+      className="border border-stone-300 select-none relative">
+      <div ref={boxRef}
+        style={{ position: "absolute", inset: 0, transform: `translate(${vue.tx}px, ${vue.ty}px) scale(${vue.z})`, transformOrigin: "0 0", cursor: "crosshair" }}>
       <div style={cropBgStyle(image, crop)} />
+      <ZoneSvg zone={track.zone} crop={crop} color={track.color} fermee={track.zoneFermee} />
+      {mode === "contour" && (track.zone || []).map((pt, i) => {
+        const lx = ((pt.gx - crop.x) / crop.w) * 100, ly = ((pt.gy - crop.y) / crop.h) * 100;
+        if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null;
+        const gros = true;
+        return (<div key={"z" + i}
+          onPointerDown={(e) => {
+            if (mode !== "contour") return;
+            e.stopPropagation(); zDrag.current = i; longRef.current = false;
+            hStart.current = { i: i, x: e.clientX, y: e.clientY };
+            if (longTimer.current) clearTimeout(longTimer.current);
+            longTimer.current = setTimeout(() => {
+              longRef.current = true; zDrag.current = null;
+              updateTrack({ zone: (zRef.current || []).filter((_, k) => k !== i) });
+            }, 600);
+          }}
+          onPointerUp={(e) => {
+            if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; }
+            const h = hStart.current; hStart.current = null;
+            if (!h || h.i !== i || longRef.current) return;
+            if (Math.hypot(e.clientX - h.x, e.clientY - h.y) > 12) return;
+            const z = zRef.current || [];
+            // Retoucher le premier ou le dernier point referme le tracé
+            if (!track.zoneFermee && z.length >= 3 && (i === 0 || i === z.length - 1)) {
+              zDrag.current = null;
+              updateTrack({ zoneFermee: true });
+            }
+          }}
+          style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "contour" ? "auto" : "none" }}
+          className="-translate-x-1/2 -translate-y-1/2">
+          <span className={`block rounded-full shadow ${gros ? "w-5 h-5 bg-white border-[3px]" : "w-2.5 h-2.5 border-2 border-white"}`}
+            style={gros ? { borderColor: track.color || "#dc2626" } : { backgroundColor: track.color || "#dc2626" }} />
+        </div>);
+      })}
       {track.miradors.map((m) => { const lx = ((m.gx - crop.x) / crop.w) * 100, ly = ((m.gy - crop.y) / crop.h) * 100; if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null; const s = sel === m.id;
-        return (<div key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none" }} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5" onClick={(e) => { e.stopPropagation(); setSel(m.id); }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSel(m.id); drag.current = m.id; moved.current = false; }}>
+        return (<div key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "poste" ? "auto" : "none" }} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5" onClick={(e) => { if (mode !== "poste") return; e.stopPropagation(); setSel(m.id); }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSel(m.id); drag.current = m.id; moved.current = false; }}>
           <span className={`rounded-full border-2 shadow ${s ? "border-stone-900 w-4 h-4" : "border-white w-3.5 h-3.5"}`} style={{ backgroundColor: track.color }} />
           <span className="text-[9px] leading-tight bg-stone-900/70 text-stone-50 px-1 rounded whitespace-nowrap">{m.label}{(m.photos && m.photos.length) ? " 📷" : ""}</span>
         </div>); })}
-    </div></div>);
+    </div></div></div>);
 }
 
 // Editeur d'un mirador (nom, consignes, photos)
@@ -305,6 +617,7 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
         <button onClick={() => setOpen((o) => !o)} className="flex-1 text-left text-sm text-stone-800 min-w-0 flex items-center gap-1.5"><Target size={12} className="text-amber-800 shrink-0" /><span className="truncate">{m.label}</span>{open ? <ChevronDown size={13} className="text-stone-400 shrink-0" /> : <ChevronRight size={13} className="text-stone-400 shrink-0" />}</button>
       )}
       {(m.accFauteuil || m.accCanne) ? <span className="text-[11px] shrink-0" title="Accessible mobilité réduite">{m.accFauteuil ? <Fauteuil size={13} /> : "🦯"}</span> : null}
+      {armesList(m).length ? <span className="shrink-0 flex items-center gap-0.5" title={"Armes acceptées : " + armesLabel(armesList(m))}>{armesList(m).map((k) => <ArmeIcon key={k} k={k} size={13} color="#b45309" />)}</span> : null}
       {(m.photos && m.photos.length) ? <span className="text-[10px] text-stone-400 shrink-0">📷{m.photos.length}</span> : null}
       {inCommon ? <span className="text-[10px] shrink-0" title="Reçoit une consigne commune">🔗</span> : null}
       <button onClick={() => setRenaming((r) => !r)} title="Renommer" className="shrink-0 text-stone-400 hover:text-amber-700 p-0.5"><Pencil size={14} /></button>
@@ -320,6 +633,11 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
           <button onClick={() => patch({ accCanne: !m.accCanne })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${m.accCanne ? "bg-emerald-100 text-emerald-800 border-emerald-500" : "bg-white text-stone-500 border-stone-300"}`}>{m.accCanne ? "✓ " : ""}🦯 Canne</button>
         </div>
         <p className="text-[10px] text-stone-400 mt-1">Un poste fauteuil accepte aussi une canne. Visible par toi seulement (jamais côté chasseur).</p></div>
+      <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Armes acceptées sur ce poste</label>
+        <div className="flex gap-1.5 mt-1 flex-wrap">
+          {ARMES.map((a) => { const cur = armesList(m); const on = cur.indexOf(a.key) >= 0; return (<button key={a.key} onClick={() => patch({ armes: on ? cur.filter((k) => k !== a.key) : cur.concat([a.key]) })} className={`flex-1 min-w-[70px] px-2 py-2 rounded-md text-xs font-medium border flex items-center justify-center gap-1 ${on ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{on ? "✓ " : ""}<ArmeIcon k={a.key} size={14} color={on ? "#fff" : "#166534"} />{a.label}</button>); })}
+        </div>
+        <p className="text-[10px] text-stone-400 mt-1">{armesList(m).length === 0 ? "Aucune cochée = toutes les armes acceptées." : "Accepté : " + armesLabel(armesList(m)) + (armesList(m).indexOf("lisse") >= 0 && armesList(m).indexOf("rayee") < 0 ? " (carabine tolérée en dernier recours)" : "")}</p></div>
       <div className="border-t border-stone-100 pt-2"><label className="text-[10px] uppercase tracking-wide text-stone-400">🎯 Zones de tir interdites (affichées au chasseur)</label>
         {image && <div className="mt-1"><TirPreview image={image} crop={crop} m={m} miradors={track.miradors} /></div>}
         <p className="text-[10px] text-stone-400 mt-1">Dessine les zones interdites (rouge). Le reste devient autorisé (vert) automatiquement, avec une marge de 30° hachurée de chaque côté.</p>
@@ -381,40 +699,208 @@ function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsigne
   </div>);
 }
 
+const IGN_WMTS = "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}";
+const IGN_FONDS = [
+  { key: "ortho", label: "🛰️ Satellite", wmts: "HR.ORTHOIMAGERY.ORTHOPHOTOS", wms: "ORTHOIMAGERY.ORTHOPHOTOS", fmt: "image/jpeg" },
+  { key: "plan", label: "🗺️ Plan IGN", wmts: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", wms: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", fmt: "image/png" }
+];
+function IgnMapPicker({ onCapture, onCancel }) {
+  const mapRef = useRef(null); const divRef = useRef(null); const layersRef = useRef({});
+  const [op, setOp] = useState({ ortho: 100, plan: 0 });
+  const [q, setQ] = useState(""); const [res, setRes] = useState([]); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const ORTHO = IGN_FONDS[0], PLAN = IGN_FONDS[1];
+  useEffect(() => {
+    if (typeof L === "undefined" || !divRef.current) { setErr("La carte n'a pas pu se charger (connexion ?)."); return; }
+    const map = L.map(divRef.current, { zoomControl: true }).setView([46.6, 2.5], 6);
+    mapRef.current = map;
+    IGN_FONDS.forEach((f, i) => { const ly = f.wmts ? L.tileLayer(IGN_WMTS + "&LAYER=" + f.wmts + "&FORMAT=" + f.fmt, { maxZoom: 19, opacity: i === 0 ? 1 : 0, attribution: i === 0 ? "© IGN" : undefined }) : L.tileLayer.wms("https://data.geopf.fr/wms-r/wms", { layers: f.wms, format: f.fmt, transparent: true, version: "1.3.0", maxZoom: 19, opacity: 0 }); ly.addTo(map); layersRef.current[f.key] = ly; });
+    let nOk = 0;
+    layersRef.current.ortho.on("tileload", () => { nOk++; setErr(""); });
+    layersRef.current.ortho.on("tileerror", () => { if (nOk === 0) setErr("Les images IGN ne se chargent pas (connexion ?)."); });
+    [60, 250, 700, 1500].forEach((d) => setTimeout(() => { try { map.invalidateSize(); } catch (e) {} }, d));
+    return () => { try { map.remove(); } catch (e) {} };
+  }, []);
+  useEffect(() => { IGN_FONDS.forEach((f) => { const ly = layersRef.current[f.key]; if (ly) ly.setOpacity((op[f.key] || 0) / 100); }); }, [op]);
+  const skipRef = useRef(false);
+  const search = async (text) => {
+    const t = (text != null ? text : q).trim();
+    if (!t) { setRes([]); return; }
+    setErr("");
+    try {
+      const r = await fetch("https://data.geopf.fr/geocodage/completion?text=" + encodeURIComponent(t) + "&type=PositionOfInterest,StreetAddress&maximumResponses=8");
+      const j = await r.json();
+      let list = (j.results || []).map((it) => ({ label: it.fulltext || it.city || "", lon: it.x, lat: it.y })).filter((x) => x.label && isFinite(x.lat) && isFinite(x.lon));
+      if (!list.length) {
+        const r2 = await fetch("https://data.geopf.fr/geocodage/search?q=" + encodeURIComponent(t) + "&limit=8");
+        const j2 = await r2.json();
+        list = (j2.features || []).map((ft) => ({ label: ft.properties.label, lon: ft.geometry.coordinates[0], lat: ft.geometry.coordinates[1] }));
+      }
+      setRes(list);
+    } catch (e) { setRes([]); }
+  };
+  useEffect(() => {
+    if (skipRef.current) { skipRef.current = false; return; }
+    const t = q.trim();
+    if (t.length < 3) { setRes([]); return; }
+    const id = setTimeout(() => search(t), 300);
+    return () => clearTimeout(id);
+  }, [q]);
+  const goTo = (r) => { const map = mapRef.current; if (map) map.setView([r.lat, r.lon], 15); setRes([]); skipRef.current = true; setQ(r.label); };
+  const loadWms = (layer, fmt, sw, ne, W, H) => new Promise((resolve, reject) => {
+    const url = "https://data.geopf.fr/wms-r/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=" + layer + "&STYLES=&CRS=EPSG:3857&BBOX=" + sw.x + "," + sw.y + "," + ne.x + "," + ne.y + "&WIDTH=" + W + "&HEIGHT=" + H + "&FORMAT=" + fmt + "&TRANSPARENT=true";
+    const img = new Image(); img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Téléchargement de la carte impossible."));
+    img.src = url;
+  });
+  const capture = async () => {
+    const map = mapRef.current; if (!map) return;
+    setBusy(true); setErr("");
+    try {
+      const b = map.getBounds(); const sw = L.CRS.EPSG3857.project(b.getSouthWest()); const ne = L.CRS.EPSG3857.project(b.getNorthEast());
+      const ratio = (ne.y - sw.y) / (ne.x - sw.x);
+      const W = 1600, H = Math.max(400, Math.min(1600, Math.round(W * ratio)));
+      const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const ctx = cv.getContext("2d");
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+      for (let fi = 0; fi < IGN_FONDS.length; fi++) {
+        const f = IGN_FONDS[fi]; const a = (op[f.key] || 0) / 100; if (a <= 0) continue;
+        try { const imX = await loadWms(f.wms, fi === 0 ? f.fmt : "image/png", sw, ne, W, H); ctx.globalAlpha = a; ctx.drawImage(imX, 0, 0, W, H); ctx.globalAlpha = 1; } catch (e) { if (fi === 0) throw e; }
+      }
+      onCapture(cv.toDataURL("image/jpeg", 0.85));
+    } catch (e) { setErr("Capture impossible : " + (e.message || e) + " Réessaie ou importe une image."); } finally { setBusy(false); }
+  };
+  const [panel, setPanel] = useState(false);
+  return (<div className="fixed inset-0 z-50 bg-white flex flex-col">
+    <div className="shrink-0 p-2 border-b border-stone-200 space-y-2" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
+      <div className="flex gap-2 items-center">
+        <button onClick={onCancel} aria-label="Retour" className="shrink-0 flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={18} /> Retour</button>
+        <span className="text-sm font-semibold text-stone-800 flex-1 text-right">Choisir la zone</span>
+      </div>
+      <div className="flex gap-1.5 border border-stone-300 rounded-lg px-3 py-2 items-center bg-white">
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} placeholder="Commune, lieu-dit…" autoComplete="off" autoCorrect="off" className="flex-1 min-w-0 bg-transparent outline-none" style={{ fontSize: 16 }} />
+        {q && <button onClick={() => { setQ(""); setRes([]); }} aria-label="Effacer" className="shrink-0 w-7 h-7 rounded-full bg-stone-200 text-stone-600 flex items-center justify-center"><X size={15} /></button>}
+      </div>
+      {res.length > 0 && <div className="border border-stone-200 rounded-lg divide-y max-h-44 overflow-y-auto">{res.map((r, i) => <button key={i} onClick={() => goTo(r)} className="w-full text-left px-3 py-2.5 text-sm">{r.label}</button>)}</div>}
+    </div>
+
+    <div ref={divRef} className="flex-1 min-h-0" style={{ minHeight: 220, background: "#e7e5e4" }} />
+
+    <div className="shrink-0 border-t border-stone-200 p-2 space-y-2" style={{ paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}>
+      {err && <p className="text-xs text-white bg-red-700 rounded-lg px-3 py-2">{err}</p>}
+      <button onClick={() => setPanel(!panel)} className="w-full flex items-center justify-between text-sm font-semibold text-stone-800">
+        <span>{IGN_FONDS.filter((f) => (op[f.key] || 0) > 0).map((f) => f.label + " " + op[f.key] + "%").join(" + ") || "Aucun fond"}</span>
+        <span className="text-xs font-normal text-stone-500">{panel ? "Masquer ▾" : "Réglage des fonds ▴"}</span>
+      </button>
+      {panel && (<div className="space-y-1.5">
+        {IGN_FONDS.map((f) => (<div key={f.key}>
+          <div className="flex justify-between text-[11px]"><span className="font-medium text-stone-700">{f.label}</span><span className="font-bold text-emerald-800">{op[f.key] || 0}%</span></div>
+          <input type="range" min="0" max="100" step="5" value={op[f.key] || 0} onChange={(e) => setOp({ ...op, [f.key]: Number(e.target.value) })} className="w-full" style={{ height: 30 }} />
+        </div>))}
+        <div className="flex gap-1.5 pt-1">
+          {[["🛰️ Satellite", { ortho: 100, plan: 0 }], ["Sat + Plan", { ortho: 100, plan: 55 }], ["🗺️ Plan IGN", { ortho: 0, plan: 100 }]].map(([lbl, v]) => <button key={lbl} onClick={() => setOp(v)} className="flex-1 text-[11px] font-medium px-1.5 py-2 rounded-lg border bg-white text-stone-600 border-stone-300">{lbl}</button>)}
+        </div>
+      </div>)}
+      <button onClick={capture} disabled={busy} className="w-full bg-emerald-800 disabled:bg-stone-400 text-white font-bold px-3 py-3 rounded-lg text-base">{busy ? "Capture…" : "📸 Utiliser cette vue"}</button>
+    </div>
+  </div>);
+}
+
 function PlanImagePicker({ image, onChange }) {
-  const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [ign, setIgn] = useState(false);
+  const [cropMode, setCropMode] = useState(false); const [crop, setCrop] = useState({ x: 0, y: 0, w: 100, h: 100 });
+  const applyCrop = async () => {
+    if (!image) return; setBusy(true); setErr("");
+    try {
+      const im = await new Promise((res, rej) => { const i2 = new Image(); i2.onload = () => res(i2); i2.onerror = () => rej(new Error("Image illisible.")); i2.src = image; });
+      const sx = Math.round(im.naturalWidth * crop.x / 100), sy = Math.round(im.naturalHeight * crop.y / 100);
+      const sw = Math.max(1, Math.round(im.naturalWidth * crop.w / 100)), sh = Math.max(1, Math.round(im.naturalHeight * crop.h / 100));
+      const cv = document.createElement("canvas"); cv.width = sw; cv.height = sh;
+      cv.getContext("2d").drawImage(im, sx, sy, sw, sh, 0, 0, sw, sh);
+      onChange(cv.toDataURL("image/jpeg", 0.85));
+      setCrop({ x: 0, y: 0, w: 100, h: 100 }); setCropMode(false);
+    } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+  };
   const onFile = async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); setErr(""); try { onChange(await downscaleImage(file)); } catch (ex) { setErr(ex.message); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } };
+  if (ign) return <IgnMapPicker onCancel={() => setIgn(false)} onCapture={(d) => { onChange(d); setIgn(false); }} />;
   return (<div className="space-y-2"><input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
-    <div className="flex gap-2 items-center"><button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Upload size={16} /> {image ? "Changer la photo" : "Importer la photo du territoire"}</button>{image && <button onClick={() => onChange(null)} className="text-sm text-red-700">Retirer</button>}</div>
+    <div className="flex gap-2 items-center flex-wrap"><button onClick={() => setIgn(true)} className="flex items-center gap-2 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><MapPin size={16} /> Choisir sur la carte IGN</button><button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Upload size={16} /> {image ? "Changer la photo" : "Importer une image"}</button>{image && <button onClick={() => { setCrop({ x: 0, y: 0, w: 100, h: 100 }); setCropMode(true); }} className="flex items-center gap-2 bg-stone-100 border border-stone-300 text-stone-700 text-sm font-medium px-3 py-2 rounded-md"><Crop size={16} /> Rogner</button>}{image && <button onClick={() => onChange(null)} className="text-sm text-red-700">Retirer</button>}</div>
     {busy && <p className="text-sm text-stone-500">Préparation…</p>}{err && <p className="text-sm text-red-700">{err}</p>}
-    {image ? <img src={image} alt="" className="w-full rounded-md border border-stone-300" /> : <MapNotice>Importe une seule photo (capture satellite d'ensemble). Chaque traque en sera un recadrage.</MapNotice>}</div>);
+    {cropMode && image ? (<div className="space-y-2">
+      <p className="text-xs text-stone-500">Déplace le rectangle et tire ses coins pour garder la zone utile. Le reste sera supprimé définitivement.</p>
+      <CropBox image={image} crop={crop} setCrop={setCrop} />
+      <div className="flex gap-2">
+        <button onClick={() => setCropMode(false)} className="flex-1 bg-stone-100 border border-stone-300 text-stone-700 text-sm font-medium px-3 py-2 rounded-md">Annuler</button>
+        <button onClick={applyCrop} disabled={busy} className="flex-1 bg-emerald-800 disabled:bg-stone-400 text-white text-sm font-semibold px-3 py-2 rounded-md">{busy ? "…" : "✓ Rogner"}</button>
+      </div>
+    </div>) : image ? <img src={image} alt="" className="w-full rounded-md border border-stone-300" /> : <MapNotice>Importe une seule photo (capture satellite d'ensemble). Chaque traque en sera un recadrage.</MapNotice>}</div>);
 }
 
 function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
   const curSeason = seasonOf(new Date().toISOString());
+  const [openFam, setOpenFam] = useState(null);
   const kills = {};
   (journees || []).filter((j) => j.terrainId === tid && seasonOf(j.date) === curSeason).forEach((j) => (j.tableau || []).forEach((k) => { kills[k.espece] = (kills[k.espece] || 0) + (Number(k.quantite) || 0); }));
   const chevCap = (planChasse.chevreuil && planChasse.chevreuil.enabled && planChasse.chevreuil.target) || 0;
   const setCfg = (key, patch) => setPlanChasse({ ...planChasse, [key]: { ...planChasse[key], ...patch } });
   const capOf = (cfg) => (cfg.mode === "proportionnel") ? chevCap : (cfg.target || 0);
-  return (<div className="space-y-2">
+  const isOn = (k) => !!(planChasse[k] && planChasse[k].enabled);
+  const nbOn = (fam) => fam.sous.filter(isOn).length;
+  const setFamille = (fam, on) => { const next = { ...planChasse }; fam.sous.forEach((k) => { next[k] = { ...(next[k] || { mode: "proportionnel", target: 0 }), enabled: on }; }); setPlanChasse(next); };
+
+  const especeBlock = (k, compact) => {
+    const e = especeOf(k);
+    const cfg = planChasse[k] || { enabled: false, mode: "proportionnel", target: 0 };
+    const tue = kills[k] || 0; const cap = capOf(cfg);
+    const pct = cap > 0 ? Math.min(100, Math.round((tue / cap) * 100)) : (tue > 0 ? 100 : 0);
+    const over = cap > 0 && tue >= cap;
+    return (<div key={k} className={compact ? "border-t border-stone-100 pt-2 mt-2" : ""}>
+      <button onClick={() => setCfg(k, { enabled: !cfg.enabled })} className="flex items-center gap-2 text-sm font-medium text-stone-800"><span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${cfg.enabled ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{cfg.enabled ? "✓" : ""}</span>{compact ? e.label : (e.emoji + " " + e.label)}</button>
+      {cfg.enabled && (<div className="mt-2 space-y-2 pl-6">
+        <div className="flex gap-1.5">{[["bracelets", "Bracelets"], ["objectif", "Objectif"], ["proportionnel", "Proportionnel"]].map(([m, lbl]) => (<button key={m} onClick={() => setCfg(k, { mode: m })} className={`flex-1 px-2 py-1 rounded text-[11px] font-medium border ${cfg.mode === m ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{lbl}</button>))}</div>
+        {cfg.mode !== "proportionnel" ? (<div className="flex items-center gap-2 text-sm"><label className="text-xs text-stone-500">{cfg.mode === "bracelets" ? "Bracelets attribués" : "Objectif"} :</label><input type="number" inputMode="numeric" value={cfg.target || 0} onChange={(ev) => setCfg(k, { target: Math.max(0, parseInt(ev.target.value || "0", 10) || 0) })} onFocus={(ev) => ev.target.select()} className="w-20 border border-stone-300 rounded px-2 py-1 bg-white" /></div>)
+          : <p className="text-[11px] text-stone-400">Mesuré sur l'échelle du chevreuil (plafond {chevCap || "à définir"}).</p>}
+        <div><div className="flex justify-between text-[11px] mb-0.5"><span className="text-stone-500">Prélevés cette saison</span><span className={over ? "text-red-700 font-semibold" : "text-stone-700 font-semibold"}>{tue}{cap > 0 ? " / " + cap : ""}</span></div><div className="h-2.5 rounded-full bg-stone-200 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: pct + "%", background: over ? "#b91c1c" : "#166534" }} /></div></div>
+      </div>)}
+    </div>);
+  };
+
+  const groupes = ["Grand gibier", "Petit gibier", "Gibier d'eau"];
+  return (<div className="space-y-3">
     <p className="text-xs text-stone-500">Active les espèces présentes sur ce territoire : elles apparaîtront dans le tableau, les prélèvements des chasseurs et les stats. Les jauges cumulent la saison {curSeason}.</p>
-    {ESPECES.filter((e) => e.key !== "autre").map((e) => {
-      const cfg = planChasse[e.key] || { enabled: false, mode: "proportionnel", target: 0 };
-      const tue = kills[e.key] || 0;
-      const cap = capOf(cfg);
-      const pct = cap > 0 ? Math.min(100, Math.round((tue / cap) * 100)) : (tue > 0 ? 100 : 0);
-      const over = cap > 0 && tue >= cap;
-      return (<div key={e.key} className={`border rounded-lg p-2.5 ${cfg.enabled ? "bg-white border-stone-300" : "bg-stone-50 border-stone-200"}`}>
-        <button onClick={() => setCfg(e.key, { enabled: !cfg.enabled })} className="flex items-center gap-2 text-sm font-medium text-stone-800"><span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${cfg.enabled ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{cfg.enabled ? "✓" : ""}</span>{e.emoji} {e.label}</button>
-        {cfg.enabled && (<div className="mt-2 space-y-2">
-          <div className="flex gap-1.5">{[["bracelets", "Bracelets"], ["objectif", "Objectif"], ["proportionnel", "Proportionnel"]].map(([m, lbl]) => (<button key={m} onClick={() => setCfg(e.key, { mode: m })} className={`flex-1 px-2 py-1 rounded text-[11px] font-medium border ${cfg.mode === m ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-stone-100 text-stone-600 border-stone-200"}`}>{lbl}</button>))}</div>
-          {cfg.mode !== "proportionnel" ? (<div className="flex items-center gap-2 text-sm"><label className="text-xs text-stone-500">{cfg.mode === "bracelets" ? "Bracelets attribués" : "Objectif"} :</label><input type="number" inputMode="numeric" value={cfg.target || 0} onChange={(ev) => setCfg(e.key, { target: Math.max(0, parseInt(ev.target.value || "0", 10) || 0) })} onFocus={(ev) => ev.target.select()} className="w-20 border border-stone-300 rounded px-2 py-1 bg-white" /></div>)
-            : <p className="text-[11px] text-stone-400">Mesuré sur l'échelle du chevreuil (plafond {chevCap || "à définir"}).</p>}
-          <div><div className="flex justify-between text-[11px] mb-0.5"><span className="text-stone-500">Prélevés cette saison</span><span className={over ? "text-red-700 font-semibold" : "text-stone-700 font-semibold"}>{tue}{cap > 0 ? " / " + cap : ""}</span></div><div className="h-2.5 rounded-full bg-stone-200 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: pct + "%", background: over ? "#b91c1c" : "#166534" }} /></div></div>
-        </div>)}
-      </div>);
-    })}
+    {groupes.map((g) => (<div key={g}>
+      <p className="text-[11px] uppercase tracking-wide text-stone-400 font-semibold mb-1.5">{g}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {FAMILLES.filter((f) => f.groupe === g).map((fam) => {
+          const single = fam.sous.length === 1;
+          const on = nbOn(fam) > 0;
+          const open = openFam === fam.key;
+          if (single) {
+            const k = fam.sous[0];
+            const cfg = planChasse[k] || { enabled: false };
+            return (<button key={fam.key} onClick={() => setCfg(k, { enabled: !cfg.enabled })} className={`text-left rounded-lg p-2.5 border flex items-center gap-2 ${cfg.enabled ? "bg-white border-emerald-500" : "bg-stone-50 border-stone-200"}`}>
+              <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${cfg.enabled ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{cfg.enabled ? "✓" : ""}</span>
+              <span className="text-sm font-medium text-stone-800 leading-tight">{fam.emoji} {fam.label}</span>
+            </button>);
+          }
+          const allOn = nbOn(fam) === fam.sous.length;
+          return (<React.Fragment key={fam.key}>
+            <button onClick={() => { if (allOn) { setFamille(fam, false); setOpenFam(null); } else { setFamille(fam, true); setOpenFam(fam.key); } }} className={`text-left rounded-lg p-2.5 border flex items-center gap-2 ${on ? "bg-white border-emerald-500" : "bg-stone-50 border-stone-200"}`}>
+              <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${on ? "bg-emerald-700 border-emerald-700 text-white" : "border-stone-300"}`}>{allOn ? "✓" : on ? "–" : ""}</span>
+              <span className="text-sm font-medium text-stone-800 leading-tight flex-1">{fam.emoji} {fam.label}{on ? <span className="text-[10px] text-emerald-700 font-normal"> · {nbOn(fam)}</span> : null}</span>
+              {open ? <ChevronDown size={14} className="text-stone-400 shrink-0" /> : <ChevronRight size={14} className="text-stone-400 shrink-0" />}
+            </button>
+            {open && (<div className="col-span-2 border border-emerald-300 bg-white rounded-lg p-2.5">
+              <div className="flex items-center justify-between mb-1"><p className="text-xs font-semibold text-emerald-800">{fam.emoji} {fam.label} — choisis les espèces présentes</p><button onClick={() => setOpenFam(null)} className="text-stone-400 hover:text-stone-600"><X size={14} /></button></div>
+              {fam.sous.map((k) => especeBlock(k, true))}
+            </div>)}
+          </React.Fragment>);
+        })}
+      </div>
+    </div>))}
+    {FAMILLES.filter((f) => f.sous.length === 1 && isOn(f.sous[0])).length > 0 && (<div className="border-t border-stone-200 pt-2">
+      <p className="text-[11px] uppercase tracking-wide text-stone-400 font-semibold mb-1.5">Réglages des espèces activées</p>
+      <div className="space-y-2">{FAMILLES.filter((f) => f.sous.length === 1 && isOn(f.sous[0])).map((f) => (<div key={f.key} className="border border-stone-200 rounded-lg p-2.5 bg-white">{especeBlock(f.sous[0], false)}</div>))}</div>
+    </div>)}
   </div>);
 }
 function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete, onLiveCommit }) {
@@ -448,13 +934,203 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
   </SectionCard>);
 }
 
-function TerrainsView({ terrains, setTerrains, journees }) {
+// ---------- Partage de territoire entre comptes ----------
+// Copie indépendante : le destinataire reçoit un double qu'il modifie librement,
+// sans que ses changements ne remontent chez l'expéditeur.
+function nouvelId(prefixe) { return prefixe + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+// Régénère tous les identifiants : sans ça, un territoire copié pourrait entrer
+// en collision avec un territoire existant et mélanger les journées passées.
+function copierTerritoire(t) {
+  return {
+    id: nouvelId("t"),
+    name: (t.name || "Territoire") + " (copie)",
+    planImage: t.planImage || null,
+    consignesCommunes: (t.consignesCommunes || []).map((c) => ({ id: nouvelId("cc"), text: c.text || "", miradorIds: [] })),
+    planChasse: t.planChasse || {},
+    tracks: (t.tracks || []).map((tr) => ({
+      id: nouvelId("tr"),
+      name: tr.name || "Traque",
+      color: tr.color || "#dc2626",
+      crop: tr.crop || null,
+      zone: Array.isArray(tr.zone) ? tr.zone.map((p) => ({ gx: p.gx, gy: p.gy })) : [], zoneFermee: !!tr.zoneFermee,
+      miradors: (tr.miradors || []).map((m) => Object.assign({}, m, { id: nouvelId("m"), useCommon: false }))
+    }))
+  };
+}
+
+// Allège un territoire trop lourd. On ne touche jamais aux traques ni aux postes :
+// seules les photos partent, car elles pèsent l'essentiel du poids.
+function allegerTerritoire(t, niveau) {
+  const out = Object.assign({}, t);
+  if (niveau === "postes" || niveau === "tout") {
+    out.tracks = (t.tracks || []).map((tr) => Object.assign({}, tr, {
+      miradors: (tr.miradors || []).map((m) => Object.assign({}, m, { photos: [] }))
+    }));
+  }
+  if (niveau === "tout") out.planImage = null;
+  return out;
+}
+function poidsDe(obj) { try { return JSON.stringify(obj).length; } catch (e) { return 0; } }
+function ko(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + " Mo" : Math.round(n / 1024) + " Ko"; }
+
+function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
+  const [onglet, setOnglet] = useState("envoyer");
+  const [choisi, setChoisi] = useState("");
+  const [code, setCode] = useState(null);
+  const [saisie, setSaisie] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [niveau, setNiveau] = useState("complet");   // complet | postes | tout
+  const LIMITE = 24 * 1024 * 1024;
+
+  const facteur = () => (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
+  const appel = async (route, corps) => {
+    let sess = null;
+    try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
+    if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi.");
+    const r = await fetch(facteur() + route, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token },
+      body: JSON.stringify(corps)
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (d.reason === "lourd") throw new Error("Ce territoire pèse " + ko(d.taille) + ", au-delà du maximum de " + ko(d.max) + ". Choisis ci-dessous d'envoyer une version allégée.");
+      const raisons = { introuvable: "Code inconnu ou expiré.", vide: "Territoire introuvable.", illisible: "Partage illisible." };
+      throw new Error(raisons[d.reason] || ("Erreur " + r.status));
+    }
+    return d;
+  };
+
+  const envoyer = async () => {
+    const t = terrains.find((x) => x.id === choisi);
+    if (!t) { setMsg("Choisis d'abord un territoire."); return; }
+    setBusy(true); setMsg(""); setCode(null);
+    try {
+      const d = await appel("/share/create", { territoire: allegerTerritoire(t, niveau) });
+      setCode(d);
+    } catch (e) { setMsg((e && e.message) || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const recevoir = async () => {
+    const c = saisie.trim().toUpperCase();
+    if (c.length < 4) { setMsg("Saisis le code reçu."); return; }
+    setBusy(true); setMsg("");
+    try {
+      const d = await appel("/share/get", { code: c });
+      const copie = copierTerritoire(d.territoire);
+      setTerrains((prev) => [...prev, copie]);
+      setMsg("✅ « " + copie.name + " » a été ajouté à tes territoires.");
+      setSaisie("");
+    } catch (e) { setMsg((e && e.message) || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const partagerCode = () => {
+    if (!code) return;
+    const txt = "Voici le code pour récupérer mon territoire dans Carnet de Chasse :\n\n" + code.code + "\n\nDans l'app : Territoires → Partager → Recevoir. Valable " + code.jours + " jours.";
+    window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
+  };
+
+  return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
+      <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Partager un territoire</h2>
+    </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-4 space-y-4">
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <button onClick={() => { setOnglet("envoyer"); setMsg(""); }} className={`rounded-xl border p-3.5 text-left transition-colors ${onglet === "envoyer" ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white"}`}>
+            <div className="text-2xl mb-1.5">📤</div>
+            <div className="text-sm font-medium text-stone-800">Envoyer</div>
+            <div className="text-[11px] text-stone-400 mt-0.5">Obtenir un code</div>
+          </button>
+          <button onClick={() => { setOnglet("recevoir"); setMsg(""); }} className={`rounded-xl border p-3.5 text-left transition-colors ${onglet === "recevoir" ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white"}`}>
+            <div className="text-2xl mb-1.5">📥</div>
+            <div className="text-sm font-medium text-stone-800">Recevoir</div>
+            <div className="text-[11px] text-stone-400 mt-0.5">Saisir un code</div>
+          </button>
+        </div>
+
+        {onglet === "envoyer" && (<div className="bg-white rounded-xl border border-stone-200 p-4 space-y-3">
+          <p className="text-sm text-stone-600">Choisis le territoire à transmettre. Tu obtiendras un code à donner à l'autre organisateur.</p>
+          <select value={choisi} onChange={(e) => { setChoisi(e.target.value); setCode(null); setNiveau("complet"); setMsg(""); }} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+            <option value="">Choisir un territoire…</option>
+            {[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.tracks || []).length} traque(s))</option>)}
+          </select>
+          {choisi && (() => {
+            const t = terrains.find((x) => x.id === choisi);
+            if (!t) return null;
+            const pComplet = poidsDe(t);
+            const pPostes = poidsDe(allegerTerritoire(t, "postes"));
+            const pTout = poidsDe(allegerTerritoire(t, "tout"));
+            const tropLourd = pComplet > LIMITE;
+            const options = [
+              { k: "complet", t: "Tout envoyer", d: "Carte, photos des postes, traques et plan de chasse", p: pComplet },
+              { k: "postes", t: "Sans les photos des postes", d: "La carte du territoire est conservée", p: pPostes },
+              { k: "tout", t: "Sans aucune photo", d: "Traques, postes et plan de chasse uniquement", p: pTout }
+            ];
+            return (<div className="space-y-2">
+              {tropLourd && (<div className="bg-amber-50 border border-amber-300 rounded-lg p-3">
+                <p className="text-[13px] text-amber-900"><b>Ce territoire est trop lourd</b> ({ko(pComplet)}) pour être envoyé en une fois. Le maximum est de {ko(LIMITE)}.</p>
+                <p className="text-[12px] text-amber-800 mt-1">Choisis une version allégée : les traques, les postes et le plan de chasse sont <b>toujours</b> conservés, seules les photos varient.</p>
+              </div>)}
+              <div className="space-y-1.5">
+                {options.map((o) => {
+                  const trop = o.p > LIMITE;
+                  const on = niveau === o.k;
+                  return (<button key={o.k} onClick={() => !trop && setNiveau(o.k)} disabled={trop}
+                    className={`w-full text-left rounded-lg border p-2.5 transition-colors ${on ? "border-emerald-600 bg-emerald-50" : trop ? "border-stone-200 bg-stone-50 opacity-60" : "border-stone-200 bg-white"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-stone-800">{on ? "✓ " : ""}{o.t}</span>
+                      <span className={`text-[11px] shrink-0 ${trop ? "text-red-600" : "text-stone-400"}`}>{ko(o.p)}{trop ? " · trop lourd" : ""}</span>
+                    </div>
+                    <div className="text-[11px] text-stone-400 mt-0.5">{o.d}</div>
+                  </button>);
+                })}
+              </div>
+            </div>);
+          })()}
+          <button onClick={envoyer} disabled={busy || !choisi} className="w-full bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium py-2.5 rounded-lg">{busy ? "Envoi en cours…" : "Obtenir un code"}</button>
+
+          {code && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-4 text-center">
+            <p className="text-[11px] uppercase tracking-widest text-emerald-700">Code de partage</p>
+            <p className="font-serif text-3xl text-emerald-900 tracking-wider my-2">{code.code}</p>
+            <p className="text-[11px] text-stone-500 mb-3">Valable {code.jours} jours · {Math.round(code.taille / 1024)} Ko</p>
+            <button onClick={partagerCode} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium py-2.5 rounded-lg"><Send size={14} /> Envoyer sur WhatsApp</button>
+          </div>)}
+        </div>)}
+
+        {onglet === "recevoir" && (<div className="bg-white rounded-xl border border-stone-200 p-4 space-y-3">
+          <p className="text-sm text-stone-600">Saisis le code reçu. Le territoire sera copié chez toi avec ses traques, ses postes, ses photos et son plan de chasse.</p>
+          <input value={saisie} onChange={(e) => setSaisie(e.target.value.toUpperCase())} placeholder="CHENE-4271" className="w-full border border-stone-300 rounded-lg px-3 py-3 text-center font-serif text-xl tracking-wider bg-white" />
+          <button onClick={recevoir} disabled={busy || saisie.trim().length < 4} className="w-full bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium py-2.5 rounded-lg">{busy ? "Récupération…" : "Récupérer le territoire"}</button>
+          <div className="bg-stone-50 border border-stone-200 rounded-lg p-3">
+            <p className="text-[13px] text-stone-600">La copie est <b>indépendante</b> : tu peux la modifier librement, l'original de l'expéditeur n'en saura rien.</p>
+          </div>
+        </div>)}
+
+        {msg && <div className="bg-white border border-stone-200 rounded-lg p-3"><p className="text-sm text-stone-700">{msg}</p></div>}
+      </div>
+    </div>
+  </div>);
+}
+
+function TerrainsView({ terrains, setTerrains, journees, github }) {
   const [editorState, setEditorState] = useState(null);
+  const [partage, setPartage] = useState(false);
   const commitTerrain = (terrain) => setTerrains((prev) => { const exists = prev.some((t) => t.id === terrain.id); return exists ? prev.map((t) => (t.id === terrain.id ? terrain : t)) : [...prev, terrain]; });
   const saveTerrain = (terrain) => { commitTerrain(terrain); setEditorState(null); };
   const deleteTerrain = (id) => { if (window.confirm("Supprimer ce territoire ?")) { setTerrains((prev) => prev.filter((t) => t.id !== id)); setEditorState(null); } };
+  if (partage) return <PartageTerritoire terrains={terrains} setTerrains={setTerrains} github={github} onClose={() => setPartage(false)} />;
+
   return (<div className="space-y-3">
-    <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Territoires</h2>{!editorState && <button onClick={() => setEditorState("new")} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouveau territoire</button>}</div>
+    <div className="flex items-center justify-between gap-2"><h2 className="font-serif text-xl text-stone-800">Territoires</h2>
+      {!editorState && <button onClick={() => setPartage(true)} className="flex items-center gap-1.5 border border-stone-300 bg-white text-stone-700 text-sm font-medium px-3 py-1.5 rounded-md"><Share2 size={14} /> Partager</button>}{!editorState && <button onClick={() => setEditorState("new")} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouveau territoire</button>}</div>
     {editorState ? (<TerritoryEditor initialTerrain={editorState === "new" ? null : editorState} journees={journees} onSave={saveTerrain} onCancel={() => setEditorState(null)} onDelete={() => deleteTerrain(editorState.id)} onLiveCommit={commitTerrain} />)
       : (<div className="grid sm:grid-cols-2 gap-3">{terrains.length === 0 && <p className="text-sm text-stone-500 italic sm:col-span-2">Aucun territoire. Clique « Nouveau territoire ».</p>}
         {[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
@@ -476,21 +1152,127 @@ function PrintOverlay({ html, onClose }) {
     <iframe ref={ref} srcDoc={html} title="Aperçu" className="flex-1 w-full border-0" />
   </div>);
 }
+// ---------- Groupes de membres ----------
+// La liste des groupes est déduite des membres : pas de nouveau champ à sauvegarder,
+// donc aucun risque pour les données existantes. Un groupe sans membre disparaît.
+const GROUPE_COULEURS = ["#047857", "#b45309", "#0369a1", "#7c3aed", "#be123c", "#4d7c0f", "#a16207", "#0f766e"];
+function groupeCouleur(nom) {
+  let h = 0; const s = String(nom || "");
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return GROUPE_COULEURS[h % GROUPE_COULEURS.length];
+}
+function tousLesGroupes(participants) {
+  const m = new Map();
+  (participants || []).forEach((p) => (p.groupes || []).forEach((g) => {
+    const k = g.trim(); if (!k) return;
+    m.set(k, (m.get(k) || 0) + 1);
+  }));
+  return Array.from(m.entries()).map(([nom, n]) => ({ nom, n })).sort((a, b) => byNom(a.nom, b.nom));
+}
+function PastilleGroupe({ nom, actif, compte, onClick, small }) {
+  const c = groupeCouleur(nom);
+  return (<button onClick={onClick} className={`flex items-center gap-1.5 rounded-full border transition-colors ${small ? "pl-2 pr-2.5 py-1 text-[12px]" : "pl-2.5 pr-3 py-1.5 text-sm"}`}
+    style={actif ? { background: c, borderColor: c, color: "#fff" } : { background: "#fff", borderColor: "#d6d3d1", color: "#44403c" }}>
+    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: actif ? "rgba(255,255,255,.85)" : c }} />
+    {nom}
+    {compte != null && <span className={actif ? "text-[11px] text-white/70" : "text-[11px] text-stone-400"}>{compte}</span>}
+  </button>);
+}
+function PointsGroupes({ groupes }) {
+  const list = (groupes || []).slice(0, 4);
+  if (!list.length) return null;
+  return (<span className="flex gap-1 shrink-0">
+    {list.map((g) => <span key={g} className="w-2 h-2 rounded-full" style={{ background: groupeCouleur(g) }} title={g} />)}
+  </span>);
+}
+
 function ParticipantsView({ participants, setParticipants }) {
   const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
   const [search, setSearch] = useState(""); const [selected, setSelected] = useState({}); const [dupPanel, setDupPanel] = useState(false); const [mergePanel, setMergePanel] = useState(false);
   const nrm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
   const dg = (s) => (s || "").replace(/\D/g, "");
-  const dupPairs = (() => { const out = []; for (let i = 0; i < participants.length; i++) for (let j = i + 1; j < participants.length; j++) { const a = participants[i], b = participants[j]; if ((a.dupIgnore || []).indexOf(b.id) >= 0 || (b.dupIgnore || []).indexOf(a.id) >= 0) continue; const na = foldName(a.name), nb = foldName(b.name); const pa = dg(a.phone), pb = dg(b.phone); const ea = nrm(a.email), eb = nrm(b.email); let reason = ""; if (na && na === nb) reason = "Même nom"; else if (pa && pa === pb) reason = "Même téléphone"; else if (ea && ea === eb) reason = "Même email"; else if (na && nb && na.length >= 3 && nb.length >= 3 && levDist(na, nb) <= 2) reason = "Noms très proches"; if (reason) out.push({ a, b, reason }); } return out; })();
-  const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; return true; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const dupPairs = useMemo(() => {
+    const norm = participants.map((p) => {
+      const folded = foldName(p.name);
+      const tokens = folded.split(" ").filter(Boolean);
+      return { p, folded, swapKey: tokens.length > 1 ? tokens.slice().sort().join(" ") : folded, phone: dg(p.phone), email: nrm(p.email) };
+    });
+    const out = [];
+    for (let i = 0; i < norm.length; i++) {
+      for (let j = i + 1; j < norm.length; j++) {
+        const A = norm[i], B = norm[j], a = A.p, b = B.p;
+        if ((a.dupIgnore || []).indexOf(b.id) >= 0 || (b.dupIgnore || []).indexOf(a.id) >= 0) continue;
+        let reason = "";
+        if (A.folded && A.folded === B.folded) reason = "Même nom";
+        else if (A.phone && A.phone === B.phone) reason = "Même téléphone";
+        else if (A.email && A.email === B.email) reason = "Même email";
+        else if (A.swapKey && A.swapKey === B.swapKey) reason = "Prénom/nom inversés ?";
+        else if (A.folded.length >= 4 && B.folded.length >= 4 && Math.abs(A.folded.length - B.folded.length) <= 2) {
+          const maxLen = Math.max(A.folded.length, B.folded.length);
+          const tolerance = maxLen <= 6 ? 1 : 2;
+          if (levDist(A.folded, B.folded) <= tolerance) reason = "Noms très proches";
+        }
+        if (reason) out.push({ a, b, reason });
+      }
+    }
+    return out;
+  }, [participants]);
   const selCount = Object.keys(selected).filter((id) => selected[id]).length;
+  // ---- Groupes ----
+  const [grpPanel, setGrpPanel] = useState(false);
+  const [grpNouveau, setGrpNouveau] = useState("");
+  const [grpFiltre, setGrpFiltre] = useState(null);
+  const groupes = useMemo(() => tousLesGroupes(participants), [participants]);
+  const selIdsList = () => Object.keys(selected).filter((id) => selected[id]);
+
+  const affecterGroupe = (nom) => {
+    const ids = selIdsList();
+    if (!ids.length) { window.alert("Coche d'abord des membres, puis touche un groupe pour les y ajouter."); return; }
+    const tous = participants.filter((p) => ids.indexOf(p.id) >= 0).every((p) => (p.groupes || []).indexOf(nom) >= 0);
+    setParticipants((prev) => prev.map((p) => {
+      if (ids.indexOf(p.id) < 0) return p;
+      const g = p.groupes || [];
+      return { ...p, groupes: tous ? g.filter((x) => x !== nom) : (g.indexOf(nom) >= 0 ? g : g.concat([nom])) };
+    }));
+  };
+  const creerGroupe = () => {
+    const nom = grpNouveau.trim().slice(0, 24);
+    if (!nom) return;
+    const ids = selIdsList();
+    if (!ids.length) { window.alert("Coche d'abord les membres à mettre dans « " + nom + " »."); return; }
+    setParticipants((prev) => prev.map((p) => (ids.indexOf(p.id) < 0 ? p : { ...p, groupes: (p.groupes || []).indexOf(nom) >= 0 ? p.groupes : (p.groupes || []).concat([nom]) })));
+    setGrpNouveau("");
+  };
+  const renommerGroupe = (ancien) => {
+    const nom = (window.prompt("Nouveau nom du groupe :", ancien) || "").trim().slice(0, 24);
+    if (!nom || nom === ancien) return;
+    setParticipants((prev) => prev.map((p) => ({ ...p, groupes: (p.groupes || []).map((g) => (g === ancien ? nom : g)).filter((g, i, a) => a.indexOf(g) === i) })));
+    if (grpFiltre === ancien) setGrpFiltre(nom);
+  };
+  const supprimerGroupe = (nom) => {
+    if (!window.confirm("Supprimer le groupe « " + nom + " » ?\n\nAucun membre ne sera supprimé, seule l'étiquette disparaît.")) return;
+    setParticipants((prev) => prev.map((p) => ({ ...p, groupes: (p.groupes || []).filter((g) => g !== nom) })));
+    if (grpFiltre === nom) setGrpFiltre(null);
+  };
+  const toggleGroupeMembre = (pid, nom) => setParticipants((prev) => prev.map((p) => {
+    if (p.id !== pid) return p;
+    const g = p.groupes || [];
+    return { ...p, groupes: g.indexOf(nom) >= 0 ? g.filter((x) => x !== nom) : g.concat([nom]) };
+  }));
+
+  // Calculé ici, après grpFiltre, pour que le filtre par groupe soit disponible.
+  const filtered = participants.filter((p) => {
+    if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false;
+    if (grpFiltre && (p.groupes || []).indexOf(grpFiltre) < 0) return false;
+    return true;
+  }).sort((a, b) => byNom(a.name || "", b.name || ""));
   const toggleSel = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }));
   const deleteSelected = () => { const ids = Object.keys(selected).filter((id) => selected[id]); if (!ids.length) return; if (!window.confirm("Supprimer " + ids.length + " membre(s) sélectionné(s) ?")) return; setParticipants((prev) => prev.filter((p) => !ids.includes(p.id))); setSelected({}); };
-  const mergeMembers = (keepId, dropId) => { setParticipants((prev) => { const keep = prev.find((p) => p.id === keepId), drop = prev.find((p) => p.id === dropId); if (!keep || !drop) return prev; const merged = { ...keep }; ["name", "phone", "email", "permis", "validation", "assurance"].forEach((f) => { if (!(merged[f] || "").trim() && (drop[f] || "").trim()) merged[f] = drop[f]; }); if (!merged.mobility && drop.mobility) merged.mobility = drop.mobility; if (!merged.role && drop.role) merged.role = drop.role; return prev.filter((p) => p.id !== dropId).map((p) => (p.id === keepId ? merged : p)); }); };
+  const mergeMembers = (keepId, dropId) => { setParticipants((prev) => { const keep = prev.find((p) => p.id === keepId), drop = prev.find((p) => p.id === dropId); if (!keep || !drop) return prev; const merged = { ...keep }; ["prenom", "nom", "phone", "email", "permis", "validation", "assurance"].forEach((f) => { if (!(merged[f] || "").trim() && (drop[f] || "").trim()) merged[f] = drop[f]; }); merged.name = ((merged.prenom || "") + " " + (merged.nom || "")).trim() || merged.name; if (!merged.mobility && drop.mobility) merged.mobility = drop.mobility; if (!merged.role && drop.role) merged.role = drop.role; return prev.filter((p) => p.id !== dropId).map((p) => (p.id === keepId ? merged : p)); }); };
   const dismissPair = (aId, bId) => { setParticipants((prev) => prev.map((p) => { if (p.id === aId) return { ...p, dupIgnore: [...(p.dupIgnore || []), bId] }; if (p.id === bId) return { ...p, dupIgnore: [...(p.dupIgnore || []), aId] }; return p; })); };
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
-  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, prenom: "", nom: "", name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, arme: null, diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
   const [dinerPrint, setDinerPrint] = useState(null);
@@ -513,7 +1295,8 @@ function ParticipantsView({ participants, setParticipants }) {
       else if (n.endsWith(".docx")) guests = parseGuestList(await extractDocxText(await file.arrayBuffer()));
       else if (n.endsWith(".pdf")) guests = parseGuestList(await extractPdfText(new Uint8Array(await file.arrayBuffer())));
       else if (n.endsWith(".txt")) guests = parseGuestList(await file.text());
-      else throw new Error("Format non reconnu. Utilise Excel (.xlsx), CSV, Word (.docx), PDF ou texte (.txt).");
+      else if (n.endsWith(".vcf") || n.endsWith(".vcard")) guests = parseVCards(await file.text());
+      else throw new Error("Format non reconnu. Utilise Excel (.xlsx), CSV, Word (.docx), PDF, texte (.txt) ou fiche contact (.vcf).");
       if (!guests.length) throw new Error("Aucun membre détecté dans le fichier.");
       let added = 0, skipped = 0;
       const norm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -527,7 +1310,8 @@ function ParticipantsView({ participants, setParticipants }) {
           const nk = norm(gs.name), pk = dig(gs.phone), mk = norm(gs.email);
           if ((nk && (existName.has(nk) || seen.has("n:" + nk))) || (pk && (existPhone.has(pk) || seen.has("p:" + pk))) || (mk && (existMail.has(mk) || seen.has("m:" + mk)))) { skipped++; return; }
           if (nk) seen.add("n:" + nk); if (pk) seen.add("p:" + pk); if (mk) seen.add("m:" + mk);
-          additions.push({ id: `p-imp-${Date.now()}-${i}`, name: gs.name || "", phone: gs.phone || "", email: gs.email || "", permis: gs.permis || "", validation: gs.validation || "", assurance: gs.assurance || "", participe: false, invitation: true, role: gs.role || "chasseur", mobility: gs.mobility || null, diner: { vient: false, invitesSupplementaires: 0 } });
+          const spn = (gs.prenom || gs.nom) ? { prenom: gs.prenom || "", nom: gs.nom || "" } : splitFullName(gs.name);
+          additions.push({ id: `p-imp-${Date.now()}-${i}`, prenom: spn.prenom, nom: spn.nom, name: gs.name || "", phone: fixPhone(gs.phone || ""), email: gs.email || "", permis: gs.permis || "", validation: gs.validation || "", assurance: gs.assurance || "", participe: false, invitation: true, role: gs.role || "chasseur", mobility: gs.mobility || null, diner: { vient: false, invitesSupplementaires: 0 } });
         });
         added = additions.length; return [...prev, ...additions];
       });
@@ -553,41 +1337,81 @@ function ParticipantsView({ participants, setParticipants }) {
       </div>))}
     </div>);
   }
-  if (mergePanel) { const ids = Object.keys(selected).filter((id) => selected[id]); const ma = participants.find((p) => p.id === ids[0]); const mb = participants.find((p) => p.id === ids[1]);
-    if (!ma || !mb) { setMergePanel(false); return null; }
+  if (mergePanel) {
+    const selIds = Object.keys(selected).filter((id) => selected[id]);
+    const ma = participants.find((p) => p.id === selIds[0]) || null;
+    const mb = participants.find((p) => p.id === selIds[1]) || null;
     const doMerge = (keepId, dropId) => { mergeMembers(keepId, dropId); setMergePanel(false); setSelected({}); };
     return (<div className="space-y-3">
-      <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Fusionner 2 membres</h2><button onClick={() => setMergePanel(false)} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button></div>
-      <div className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 space-y-2">
+      <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Fusionner 2 membres</h2><button onClick={() => { setMergePanel(false); }} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button></div>
+      {(!ma || !mb) ? (<SectionCard className="p-6 text-center"><p className="text-sm text-stone-600">Sélection invalide. Reviens et choisis exactement 2 membres.</p></SectionCard>) : (<div className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 space-y-2">
         <p className="text-xs font-medium text-amber-800">Choisis lequel garder — l'autre sera fusionné dedans puis supprimé</p>
         <div className="flex gap-2 items-stretch">{col(ma, mb, () => doMerge(ma.id, mb.id))}{col(mb, ma, () => doMerge(mb.id, ma.id))}</div>
-      </div>
+      </div>)}
     </div>);
   }
   return (<div className="space-y-6">
     {dinerPrint && <PrintOverlay html={dinerPrint} onClose={() => setDinerPrint(null)} />}    <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2"><h2 className="font-serif text-xl text-stone-800">Membres <span className="text-sm font-sans text-stone-400">({participants.length})</span></h2>
-        <div className="flex gap-2 flex-wrap"><input ref={listFileRef} type="file" accept=".xlsx,.xls,.csv,.docx,.pdf,.txt" onChange={onImportList} className="hidden" />
+        <div className="flex gap-2 flex-wrap"><input ref={listFileRef} type="file" accept=".xlsx,.xls,.csv,.docx,.pdf,.txt,.vcf,.vcard,text/vcard" onChange={onImportList} className="hidden" />
           <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer"}</button>
           <button onClick={addParticipant} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Ajouter</button></div></div>
       <div className="flex items-center gap-2 flex-wrap">
+        {(groupes.length > 0 || selCount > 0) && (<div className="w-full bg-stone-50 border border-stone-200 rounded-lg p-2.5 mb-1">
+          <div className="flex items-baseline justify-between mb-1.5">
+            <span className="text-[11px] uppercase tracking-widest text-stone-400">Mes groupes</span>
+            <button onClick={() => setGrpPanel(!grpPanel)} className="text-[11px] text-emerald-800 underline">{grpPanel ? "Fermer" : "Gérer"}</button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {groupes.length === 0 && <span className="text-[11px] text-stone-400 italic">Coche des membres puis crée un groupe ci-dessous.</span>}
+            {groupes.map((g) => (<PastilleGroupe key={g.nom} nom={g.nom} compte={g.n} small
+              actif={selCount > 0 ? participants.filter((x) => selected[x.id]).every((x) => (x.groupes || []).indexOf(g.nom) >= 0) : grpFiltre === g.nom}
+              onClick={() => { if (selCount > 0) affecterGroupe(g.nom); else setGrpFiltre(grpFiltre === g.nom ? null : g.nom); }} />))}
+          </div>
+          <p className="text-[11px] text-stone-400 mt-1.5">{selCount > 0 ? "Touche un groupe pour y ajouter ou retirer les " + selCount + " membre(s) cochés." : "Touche un groupe pour filtrer la liste. Coche des membres pour les y affecter."}</p>
+
+          {grpPanel && (<div className="mt-2.5 pt-2.5 border-t border-stone-200 space-y-2">
+            {groupes.map((g) => (<div key={g.nom} className="flex items-center gap-2 bg-white border border-stone-200 rounded px-2.5 py-1.5">
+              <span className="w-3 h-3 rounded-full shrink-0" style={{ background: groupeCouleur(g.nom) }} />
+              <span className="text-sm text-stone-800 flex-1 truncate">{g.nom}</span>
+              <span className="text-[11px] text-stone-400">{g.n}</span>
+              <button onClick={() => renommerGroupe(g.nom)} className="text-stone-400 px-1 text-sm">✎</button>
+              <button onClick={() => supprimerGroupe(g.nom)} className="text-red-600 px-1 text-sm">✕</button>
+            </div>))}
+            <div className="flex gap-2">
+              <input value={grpNouveau} onChange={(e) => setGrpNouveau(e.target.value)} placeholder="Nom du nouveau groupe" maxLength={24} className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+              <button onClick={creerGroupe} className="shrink-0 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-xs font-medium px-3 py-1.5 rounded">Créer</button>
+            </div>
+            <p className="text-[11px] text-stone-400">Supprimer un groupe n'efface aucun membre : seule l'étiquette disparaît.</p>
+          </div>)}
+        </div>)}
+
         <div className="relative flex-1 min-w-[160px]"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded-md px-3 py-1.5 text-sm bg-white" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 text-sm">✕</button>}</div>
         <button onClick={() => setDupPanel(true)} className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-md border shrink-0 bg-white text-stone-600 border-stone-300">⚠️ Doublons{dupPairs.length ? " (" + dupPairs.length + ")" : ""}</button>
       </div>
       {selCount > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-md px-3 py-2"><span className="text-sm text-red-800 font-medium">{selCount} sélectionné(s)</span><div className="flex gap-3 items-center">{selCount === 2 && <button onClick={() => setMergePanel(true)} className="flex items-center gap-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Merge size={13} /> Fusionner</button>}<button onClick={() => setSelected({})} className="text-xs text-stone-600">Annuler</button><button onClick={deleteSelected} className="flex items-center gap-1 bg-red-700 hover:bg-red-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-md"><Trash2 size={13} /> Supprimer la sélection</button></div></div>}
       {importErr && <p className="text-sm text-red-700">{importErr}</p>}
-      <p className="text-xs text-stone-400">Import : Excel (.xlsx), CSV, Word (.docx), PDF ou texte. Colonnes reconnues : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
+      <p className="text-xs text-stone-400">Import : Excel (.xlsx), CSV, Word (.docx), PDF, texte ou fiche contact (.vcf). Colonnes reconnues : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
+      <p className="text-xs text-stone-400">📇 Depuis un contact iPhone : Contacts → la fiche → <b>Partager le contact</b> → <b>Enregistrer dans Fichiers</b>, puis « Importer » ici. (Tu peux en partager plusieurs d'un coup.)</p>
       {participants.length === 0 && <p className="text-sm text-stone-500 italic">Aucun membre. Clique « Ajouter » ou importe ta liste.</p>}
       {participants.length > 0 && filtered.length === 0 && <p className="text-sm text-stone-500 italic">Aucun résultat.</p>}
       {filtered.map((p) => { const isOpen = expanded === p.id;
         return (<SectionCard key={p.id}>
           <div className="flex items-center px-4 py-3 gap-2">
             <input type="checkbox" checked={!!selected[p.id]} onChange={() => toggleSel(p.id)} className="w-4 h-4 shrink-0 accent-red-700" />
-            <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0 flex-1">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button>
+            <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0 flex-1">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button><PointsGroupes groupes={p.groupes} />
           </div>
           {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
-            <div><label className="text-xs uppercase tracking-wide text-stone-400">Prénom et nom</label><input value={p.name} onChange={(e) => update(p.id, { name: e.target.value })} placeholder="Prénom Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
-            <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label><input value={p.phone || ""} onChange={(e) => update(p.id, { phone: e.target.value })} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="text-xs uppercase tracking-wide text-stone-400">Prénom</label><input value={p.prenom || ""} onChange={(e) => update(p.id, { prenom: e.target.value, name: (e.target.value + " " + (p.nom || "")).trim() })} placeholder="Prénom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+              <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom</label><input value={p.nom || ""} onChange={(e) => update(p.id, { nom: e.target.value, name: ((p.prenom || "") + " " + e.target.value).trim() })} placeholder="Nom" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+            </div>
+            <div><label className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1"><Phone size={11} /> Téléphone (pour WhatsApp)</label>
+              <div className="flex items-center gap-2 mt-1">
+                <input value={p.phone || ""} onChange={(e) => { const raw = e.target.value; const prev = p.phone || ""; const endsWithSpace = /\s$/.test(raw); const isDeleting = raw.length < prev.length; update(p.id, { phone: isDeleting && endsWithSpace ? raw.replace(/\s+$/, "") : formatPhone(raw) }); }} placeholder="06 12 34 56 78" inputMode="tel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+                {!isValidFrPhone(p.phone) && <span title="Numéro non valide (attendu : 06 ou 07 + 8 chiffres)" className="shrink-0 w-6 h-6 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-xs font-bold">✕</span>}
+              </div>
+            </div>
             <div><label className="text-xs uppercase tracking-wide text-stone-400">Email (pour les invitations)</label><input value={p.email || ""} onChange={(e) => update(p.id, { email: e.target.value })} placeholder="prenom.nom@email.fr" inputMode="email" autoCapitalize="none" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
             <div className="grid grid-cols-2 gap-2">
               <div><label className="text-xs uppercase tracking-wide text-stone-400">N° de permis</label><input value={p.permis || ""} onChange={(e) => update(p.id, { permis: e.target.value })} placeholder="Permis de chasser" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
@@ -598,7 +1422,25 @@ function ParticipantsView({ participants, setParticipants }) {
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Mobilité réduite (placement adapté)</p><div className="flex gap-2">
               {[{ v: null, l: "Aucune" }, { v: "canne", l: "🦯 Canne", ic: "c" }, { v: "fauteuil", l: "Fauteuil", ic: "f" }].map((o) => (<button key={o.l} onClick={() => update(p.id, { mobility: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${(p.mobility || null) === o.v ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.ic === "f" ? <Fauteuil size={13} color={(p.mobility || null) === o.v ? "#fff" : "#166534"} /> : null} {o.l}</button>))}
             </div><p className="text-[11px] text-stone-400 mt-1">Fauteuil = accès aux postes fauteuil. Canne = postes canne ou fauteuil.</p></div>
-            <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
+            <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Arme habituelle</p><div className="flex gap-2">
+              {[{ v: null, l: "Non renseignée" }].concat(ARMES.map((a) => ({ v: a.key, l: a.label }))).map((o) => { const on = (p.arme || null) === o.v; return (<button key={o.l} onClick={() => update(p.id, { arme: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border flex items-center justify-center gap-1 ${on ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.v && <ArmeIcon k={o.v} size={14} color={on ? "#fff" : "#166534"} />}{o.l}</button>); })}
+            </div><p className="text-[11px] text-stone-400 mt-1">Sert au placement : une carabine (rayée) peut aller sur un poste lisse, l'inverse est interdit.</p></div>
+            <div className="pt-1">
+              <label className="text-[10px] uppercase tracking-wide text-stone-400">Groupes</label>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {groupes.length === 0 && <span className="text-[11px] text-stone-400 italic">Aucun groupe créé pour l'instant.</span>}
+                {groupes.map((g) => (<PastilleGroupe key={g.nom} nom={g.nom} small actif={(p.groupes || []).indexOf(g.nom) >= 0} onClick={() => toggleGroupeMembre(p.id, g.nom)} />))}
+              </div>
+              <div className="flex gap-2 mt-2">
+                <input value={grpNouveau} onChange={(e) => setGrpNouveau(e.target.value)} placeholder="Nouveau groupe…" maxLength={24} className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+                <button onClick={() => { const nom = grpNouveau.trim().slice(0, 24); if (!nom) return; toggleGroupeMembre(p.id, nom); setGrpNouveau(""); }} className="shrink-0 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-xs font-medium px-3 py-1.5 rounded">Ajouter</button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
+              <button onClick={() => setExpanded(null)} className="flex items-center gap-1 bg-emerald-800 hover:bg-emerald-900 text-white text-sm font-medium px-4 py-2 rounded-md"><Check size={15} /> Terminé</button>
+            </div>
           </div>)}
         </SectionCard>); })}
     </div>
@@ -652,10 +1494,20 @@ function SafetyGate({ safety, onAccept }) {
 }
 
 // ---------- Poster les fusils ----------
-function HunterList({ pending, selectedHunter, setSelectedHunter }) {
+function HunterList({ pending, selectedHunter, setSelectedHunter, armeOf, onSetArme }) {
+  const [armeEdit, setArmeEdit] = useState(null);
   return (<SectionCard className="p-3 sm:col-span-1"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Fusils à placer</p>
     <div className="space-y-1.5">{pending.length === 0 && <p className="text-sm text-stone-400 italic">Tous les fusils sont placés 🎯</p>}
-      {pending.map((p) => (<button key={p.id} onClick={() => setSelectedHunter(p.id)} className={`w-full text-left px-2.5 py-1.5 rounded text-sm flex items-center gap-2 border ${selectedHunter === p.id ? "bg-amber-800 text-stone-50 border-amber-800" : "bg-white border-stone-300 text-stone-700"}`}>🦌 {p.name}</button>))}</div>
+      {pending.map((p) => { const a = armeOf ? armeOf(p) : (p.arme || null); const isEdit = armeEdit === p.id;
+        return (<div key={p.id}>
+          <div className={`w-full rounded border flex items-center gap-1 ${selectedHunter === p.id ? "bg-amber-800 border-amber-800" : "bg-white border-stone-300"}`}>
+            <button onClick={() => setSelectedHunter(p.id)} className={`flex-1 text-left px-2.5 py-1.5 text-sm ${selectedHunter === p.id ? "text-stone-50" : "text-stone-700"}`}>🦌 {p.name}</button>
+            <button onClick={() => setArmeEdit(isEdit ? null : p.id)} title="Arme du jour" className={`shrink-0 mr-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${a ? (selectedHunter === p.id ? "bg-white/20 text-stone-50 border-white/40" : "bg-stone-100 text-stone-600 border-stone-300") : (selectedHunter === p.id ? "bg-white/10 text-stone-200 border-white/30" : "bg-white text-stone-400 border-stone-200")}`}>{a ? armeShort(a) : "—"}</button>
+          </div>
+          {isEdit && onSetArme && (<div className="flex gap-1 mt-1 mb-1.5 flex-wrap">
+            {[{ v: null, l: "—" }].concat(ARMES.map((x) => ({ v: x.key, l: x.label }))).map((o) => (<button key={o.l} onClick={() => { onSetArme(p.id, o.v); setArmeEdit(null); }} className={`px-2 py-1 rounded text-[11px] font-medium border flex items-center gap-1 ${a === o.v ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.v && <ArmeIcon k={o.v} size={12} color={a === o.v ? "#fff" : "#166534"} />}{o.l}</button>))}
+          </div>)}
+        </div>); })}</div>
     {selectedHunter && <p className="text-xs text-amber-800 mt-2">Clique un poste pour l'y placer.</p>}</SectionCard>);
 }
 const ARROW_COLORS = ["#2563eb", "#dc2626", "#ea580c", "#7c3aed", "#059669", "#111827", "#f59e0b"];
@@ -680,7 +1532,7 @@ function ChefAssign({ terrain, journee, chefId, chefName, participants, onToggle
     </div>
   </div>);
 }
-function AssignSurface({ image, track, placements, participants, selectedHunter, setSelectedHunter, onAssign, onUnassign, recommendedIds, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
+function AssignSurface({ image, track, placements, participants, selectedHunter, setSelectedHunter, onAssign, onUnassign, recommendedIds, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow, flagMode, rdvList, onSetRdv }) {
   const crop = track.crop || FULL_CROP; const ar = useImageAR(image);
   const [draw, setDraw] = useState(false); const [draft, setDraft] = useState(null); const mapRef = useRef(null);
   const [dims, setDims] = useState({ w: 0, h: 0 });
@@ -690,7 +1542,7 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
   useEffect(() => { const el = mapRef.current; if (!el) return; const upd = () => setDims({ w: el.clientWidth, h: el.clientHeight }); upd(); let ro; try { ro = new ResizeObserver(upd); ro.observe(el); } catch (e) {} return () => { try { ro && ro.disconnect(); } catch (e) {} }; }, [crop, ar]);
   const arr = arrows || [];
   const toG = (cx, cy) => { const r = mapRef.current.getBoundingClientRect(); const lx = Math.max(0, Math.min(100, (cx - r.left) / r.width * 100)); const ly = Math.max(0, Math.min(100, (cy - r.top) / r.height * 100)); return { gx: crop.x + lx / 100 * crop.w, gy: crop.y + ly / 100 * crop.h }; };
-  const down = (e) => { if (!draw) return; e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSelArrow(null); const g = toG(e.clientX, e.clientY); setDraft({ x1: g.gx, y1: g.gy, x2: g.gx, y2: g.gy, color: arrowColor }); };
+  const down = (e) => { if (flagMode) { e.preventDefault(); const g = toG(e.clientX, e.clientY); onSetRdv && onSetRdv(g); return; } if (!draw) return; e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSelArrow(null); const g = toG(e.clientX, e.clientY); setDraft({ x1: g.gx, y1: g.gy, x2: g.gx, y2: g.gy, color: arrowColor }); };
   const move = (e) => { if (!draw) return; const g = toG(e.clientX, e.clientY); if (dragH.current) { const h = dragH.current; onUpdateArrow(h.i, h.which === 1 ? { x1: g.gx, y1: g.gy } : { x2: g.gx, y2: g.gy }); return; } if (draft) setDraft((d) => ({ ...d, x2: g.gx, y2: g.gy })); };
   const up = () => { if (dragH.current) { dragH.current = null; return; } if (draft) { if (Math.abs(draft.x2 - draft.x1) + Math.abs(draft.y2 - draft.y1) > 2) onAddArrow({ ...draft }); setDraft(null); } };
   const selectArrow = (i) => (e) => { e.stopPropagation(); e.preventDefault(); setSelArrow(i); };
@@ -711,12 +1563,22 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
       return (<button key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, opacity: dim ? 0.4 : 1, pointerEvents: draw ? "none" : "auto" }} onClick={() => clickPost(m)} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
         <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border-2 shadow ${reco ? "border-emerald-400 ring-2 ring-emerald-400" : (m.accFauteuil || m.accCanne) ? "border-emerald-500" : "border-white"}`} style={{ backgroundColor: hunter ? "#b45309" : track.color }}>{hunter ? "🦌" : (m.priority || 1)}</span>
         <span className="text-[9px] bg-stone-900/70 text-stone-50 px-1 rounded leading-tight text-center max-w-[92px] break-words">{(m.accFauteuil || m.accCanne) ? (m.accFauteuil ? <Fauteuil size={9} color="#fff" /> : "🦯") : null}{(m.accFauteuil || m.accCanne) ? " " : ""}{hunter ? hunter.name : m.label}</span></button>); })}
+    {(rdvList || []).map((r) => { const flx = ((r.gx - crop.x) / crop.w) * 100, fly = ((r.gy - crop.y) / crop.h) * 100; if (flx < -3 || flx > 103 || fly < -3 || fly > 103) return null;
+      return (<div key={"rdv" + r.chefId} style={{ position: "absolute", left: `${flx}%`, top: `${fly}%`, transform: "translate(-50%,-100%)", pointerEvents: "none", zIndex: 4 }} className="flex flex-col items-center">
+        <span className="text-[10px] font-bold bg-amber-700 text-white px-1.5 py-0.5 rounded shadow whitespace-nowrap">🚩 {r.chefName}</span>
+        <span style={{ width: 2, height: 10, background: "#b45309" }} />
+      </div>); })}
     {dims.w > 0 && allArrows.length > 0 && <svg viewBox={`0 0 ${dims.w} ${dims.h}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}><defs>{ARROW_COLORS.map((c) => <marker key={c} id={mid(c)} markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="13" refY="9" orient="auto"><path d="M1,1 L17,9 L1,17 Z" fill={c} stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" /></marker>)}</defs>{allArrows.map((a, i) => { const p1 = gl(a.x1, a.y1), p2 = gl(a.x2, a.y2); const col = a.color || "#2563eb"; const isSel = draw && i === selArrow; return (<g key={i}><line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#fff" strokeWidth={isSel ? 12 : 9} strokeLinecap="round" /><line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={col} strokeWidth={isSel ? 6.5 : 5} strokeLinecap="round" markerEnd={`url(#${mid(col)})`} />{draw && i < arr.length && <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth="24" style={{ pointerEvents: "stroke", cursor: "pointer" }} onPointerDown={selectArrow(i)} />}</g>); })}{selA && (() => { const p1 = gl(selA.x1, selA.y1), p2 = gl(selA.x2, selA.y2); return (<g><circle cx={p1.x} cy={p1.y} r="10" fill="#fff" stroke={selA.color || "#2563eb"} strokeWidth="3" style={{ pointerEvents: "auto", cursor: "move" }} onPointerDown={startHandle(selArrow, 1)} /><circle cx={p2.x} cy={p2.y} r="10" fill="#fff" stroke={selA.color || "#2563eb"} strokeWidth="3" style={{ pointerEvents: "auto", cursor: "move" }} onPointerDown={startHandle(selArrow, 2)} /></g>); })()}</svg>}
     </div>
   </div>);
 }
-function PosterFusils({ terrain, track, placements, participants, presentIds, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
+function PosterFusils({ terrain, track, placements, participants, presentIds, journeeArmes, onSetArme, chefs, chefLignes, rdv, onSetRdv, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const [selectedHunter, setSelectedHunter] = useState(null);
+  const [flagChef, setFlagChef] = useState(null);
+  const chefList = (chefs || []).map((cid) => participants.find((p) => p.id === cid)).filter(Boolean);
+  const rdvList = Object.entries(rdv || {}).map(([cid, pos]) => { const c = participants.find((p) => p.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean);
+  const armeOfHunter = (h) => ((journeeArmes && journeeArmes[h.id]) || h.arme || null);
+  const assignWithCheck = (hid, mid) => { const h = participants.find((x) => x.id === hid); const m = track.miradors.find((x) => x.id === mid); if (h && m && !armeOk(armesList(m), armeOfHunter(h))) { if (!window.confirm("⚠️ " + (h.name || "Ce chasseur") + " est en " + (armeLabel(armeOfHunter(h)) || "arme non renseignée") + " et le poste " + m.label + " accepte : " + armesLabel(armesList(m)) + ".\n\nPlacer quand même ?")) return; } onAssign(hid, mid); };
   const assignedIds = Object.keys(placements);
   const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id)).sort((a, b) => byNom(a.name || "", b.name || ""));
   const freeMiradors = track.miradors.filter((m) => !Object.values(placements).includes(m.id));
@@ -729,12 +1591,18 @@ function PosterFusils({ terrain, track, placements, participants, presentIds, on
   const hasPlacements = Object.keys(placements).length > 0;
   return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={14} /> Retour à la journée</button>
     <h3 className="font-serif text-lg text-stone-800">Poster les fusils — {track.name}</h3>
-    <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} />
+    <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} armeOf={armeOfHunter} onSetArme={onSetArme} />
       <SectionCard className="p-3 sm:col-span-2">
         <div className="flex items-center justify-between mb-2 gap-2 flex-wrap"><p className="text-xs uppercase tracking-wide text-stone-400">Le chiffre = priorité · liseré vert = à utiliser</p><div className="flex gap-1.5">{pending.length > 0 && freeMiradors.length > 0 && <button onClick={() => onAutoFill(track, pending, sortedFree)} className="text-xs font-medium bg-emerald-700 text-stone-50 px-2.5 py-1 rounded">Remplir par priorité</button>}{hasPlacements && <button onClick={() => onClearAll(track)} className="text-xs font-medium bg-stone-200 hover:bg-stone-300 text-stone-700 px-2.5 py-1 rounded">Décocher tous</button>}</div></div>
+        {chefList.length > 0 && (<div className="mb-2 bg-amber-50 border border-amber-200 rounded-md p-2">
+          <p className="text-[11px] font-semibold text-amber-800 mb-1.5">🚩 Lieu de RDV après la traque — choisis un chef puis tape la carte</p>
+          <div className="flex gap-1.5 flex-wrap">{chefList.map((c) => { const on = flagChef === c.id; const has = (rdv || {})[c.id]; return (<button key={c.id} onClick={() => setFlagChef(on ? null : c.id)} className={`text-xs font-medium px-2 py-1 rounded border ${on ? "bg-amber-700 text-white border-amber-700" : "bg-white text-stone-700 border-stone-300"}`}>{has ? "🚩 " : ""}{c.name}</button>); })}
+            {flagChef && (rdv || {})[flagChef] && <button onClick={() => { onSetRdv(flagChef, null); }} className="text-xs text-red-700 px-2 py-1 rounded border border-red-200 bg-white">Retirer</button>}</div>
+          {flagChef && <p className="text-[11px] text-amber-700 mt-1">Tape la carte pour poser le drapeau de {(chefList.find((c) => c.id === flagChef) || {}).name}.</p>}
+        </div>)}
         {!terrain.planImage ? <MapNotice>Photo manquante. Importe ta sauvegarde ou rajoute la photo (onglet Territoires).</MapNotice>
           : track.miradors.length === 0 ? <MapNotice>Cette traque n'a pas de miradors (onglet Territoires).</MapNotice>
-          : <AssignSurface image={terrain.planImage} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={onAssign} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} />}</SectionCard></div>
+          : <AssignSurface image={terrain.planImage} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={assignWithCheck} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} flagMode={!!flagChef} rdvList={rdvList} onSetRdv={(g) => { if (flagChef) { onSetRdv(flagChef, g); setFlagChef(null); } }} />}</SectionCard></div>
   </div>);
 }
 
@@ -797,6 +1665,9 @@ async function githubPutFile(opts) {
 
 const SHARED_HEAD = `<!doctype html><html lang="fr"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex"/>
+<meta name="googlebot" content="noindex, nofollow"/>
+<meta name="referrer" content="no-referrer"/>
 <title>Postes — Battue</title><style>
 :root{--stone-900:#1c1917;--stone-700:#44403c;--stone-500:#78716c;--stone-400:#a8a29e;--stone-200:#e7e5e4;--stone-100:#f5f5f4;--paper:#faf9f7;--emerald:#166534;--emerald-d:#14532d;--amber-l:#b45309}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -874,6 +1745,7 @@ h3.sec{font-family:Georgia,serif;font-size:17px;margin:0 0 4px;display:flex;alig
 .map{position:relative;width:100%;height:0;overflow:hidden;border-radius:10px;border:1px solid var(--stone-200);background:#ddd}
 .map-bg{position:absolute;inset:0;background-repeat:no-repeat}
 .marker{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px}
+.marker .halo{position:absolute;left:50%;top:0;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.92);pointer-events:none}
 .marker .dot{width:14px;height:14px;border-radius:50%;background:var(--c,#dc2626);border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)}
 .marker .lbl{font-size:10px;line-height:1.1;background:rgba(28,25,23,.78);color:#fff;padding:1px 5px;border-radius:4px;white-space:nowrap}
 .marker.mine .dot{width:22px;height:22px;background:var(--amber-l);border-width:3px;box-shadow:0 0 0 6px rgba(180,83,9,.28)}
@@ -920,13 +1792,37 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 <div class="card banner" id="attribsCard" style="display:none"><div class="pad"><h3 class="sec">🎯 Attributions du jour</h3><div id="attribs"></div></div></div>
 <div class="tilegrid"><button class="tile" onclick="openSheet('carte')"><span class="ico">🗺️</span><span class="tl">Ma carte</span><span class="hint">Où est mon poste</span></button><button class="tile" onclick="openSheet('poste')"><span class="ico">📸</span><span class="tl">Mon poste</span><span class="hint">Photo &amp; consignes</span></button><button class="tile" onclick="openSheet('annonces')"><span class="ico">📻</span><span class="tl">Annonces</span><span class="hint">Sonneries &amp; infos</span></button><button class="tile" onclick="openSheet('securite')"><span class="ico">🛡️</span><span class="tl">Sécurité</span><span class="hint">Consignes à respecter</span></button></div>
 <button class="tile wide ret" onclick="openSheet('retour')"><span class="ico">📋</span><span class="txt"><span class="tl">Envoyer mon retour</span><br><span class="hint">Dis à l'organisateur ce que tu as vu / tiré</span></span><span class="go">→</span></button>
+<button class="tile wide" onclick="openJeu()" style="margin-top:10px"><span class="ico">🐗</span><span class="txt"><span class="tl">La Course du Sanglier</span><br><span class="hint">Un peu long à ton poste ? Fais un score.</span></span><span class="go">→</span></button>
 <div class="card" id="chefCard" style="display:none"><div class="pad"><h3 class="sec">👨‍✈️ Tu es chef de ligne</h3><p class="maphint">Postes sous ta responsabilité :</p><div id="chefPosts"></div><div id="chefTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0"></div><div class="map" id="chefMap" style="margin-top:8px;display:none"></div></div></div>
 <footer>Document en lecture seule — transmis par l'organisateur.</footer>
 </main>
-<div class="sheet-back" id="sheet-carte" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🗺️ Ma carte</h2><p class="maphint">Ton poste est surligné en orange.</p><div class="tabs" id="mapTabs" style="margin-bottom:10px"></div><div class="map" id="map"></div><label class="conetoggle"><input type="checkbox" id="coneToggle" checked onchange="toggleCones(this.checked)"> <span>Afficher les zones de sécurité</span></label><div class="conelegend"><span class="lg"><i class="sw green"></i> Tir autorisé</span><span class="lg"><i class="sw hatch"></i> Angle 30° — ne pas tirer</span><span class="lg"><i class="sw red"></i> Interdit — ne jamais tirer</span></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
+<div class="sheet-back" id="sheet-carte" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🗺️ Ma carte</h2><p class="maphint">Ton poste est surligné en orange.</p><div class="tabs" id="mapTabs" style="margin-bottom:10px"></div><div class="map" id="map"></div><label class="conetoggle"><input type="checkbox" id="coneToggle" checked onchange="toggleCones(this.checked)"> <span>Afficher les zones de sécurité</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="rdvToggle" onchange="toggleRdv(this.checked)"> <span>🚩 Afficher le RDV après la traque</span></label><div class="conelegend"><span class="lg"><i class="sw green"></i> Tir autorisé</span><span class="lg"><i class="sw hatch"></i> Angle 30° — ne pas tirer</span><span class="lg"><i class="sw red"></i> Interdit — ne jamais tirer</span></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-poste" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth" id="postInfoTitle">📍 Ton poste</h2><div class="tabs" id="postTabs" style="margin-bottom:10px"></div><div id="postInfoCard"><div id="myChef" style="display:none;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:8px;padding:6px 10px;font-size:14px;font-weight:600;color:#1c1917;margin-bottom:8px"></div><div class="consigne" id="myConsigne" style="display:none"><b>⚠️ Consignes :</b><span></span></div><div id="myPhotos"></div></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-annonces" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🔔 Annonces &amp; sonneries</h2><ul class="list son" id="sonneries"></ul><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-securite" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🛡️ Consignes de sécurité</h2><ul class="list" id="consignes"></ul><button class="close" onclick="closeSheet()">Fermer</button></div></div>
+<div class="sheet-back" id="sheet-jeu" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🐗 La Course du Sanglier</h2>
+<div id="jeuPseudoBox" style="display:none;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:12px;margin-bottom:10px">
+  <p style="margin:0 0 8px;font-size:14px;color:#44403c">Choisis un pseudo pour signer tes scores.</p>
+  <div style="display:flex;gap:8px">
+    <input id="jeuPseudo" maxlength="14" placeholder="Ton pseudo" style="flex:1;min-width:0;border:1px solid #d6d3d1;border-radius:8px;padding:9px 11px;font-size:15px;background:#fff">
+    <button onclick="jeuSetPseudo()" style="background:var(--emerald);color:#fafaf9;border:0;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600">OK</button>
+  </div>
+  <p id="jeuPseudoErr" style="margin:6px 0 0;font-size:12px;color:#b91c1c;display:none"></p>
+</div>
+<div id="jeuBox" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+    <span style="font-size:13px;color:#78716c">Salut <b id="jeuMoi" style="color:#1c1917"></b> <button onclick="jeuChangePseudo()" style="background:none;border:0;color:#166534;font-size:12px;text-decoration:underline;padding:0 0 0 4px">changer</button></span>
+    <span style="font-size:13px;color:#78716c"><b id="jeuScore" style="color:#1c1917;font-size:15px">0</b> m · record <span id="jeuBest">0</span></span>
+  </div>
+  <canvas id="jeuCv" width="800" height="300" style="display:block;width:100%;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;touch-action:manipulation"></canvas>
+  <div style="display:flex;justify-content:space-between;font-size:11px;color:#78716c;margin:8px 0 4px"><span>Distance de la meute</span><span id="jeuDogTxt">à bonne distance</span></div>
+  <div style="height:7px;background:#e7e5e4;border-radius:4px;overflow:hidden"><i id="jeuDogBar" style="display:block;height:100%;background:var(--emerald);width:100%"></i></div>
+  <p style="font-size:12px;color:#a8a29e;text-align:center;margin:10px 0 0">Touche l'écran pour sauter. Trois fautes et les chiens te rattrapent.</p>
+  <h3 class="sec" style="margin-top:16px">🏆 Les cinq meilleurs</h3>
+  <ol id="jeuTop" style="margin:0;padding:0 0 0 22px;font-size:14px;color:#44403c"><li style="color:#a8a29e">chargement…</li></ol>
+  <p id="jeuSync" style="font-size:11px;color:#a8a29e;margin:8px 0 0;text-align:center"></p>
+</div>
+<button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-retour" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">📋 Ton retour</h2><div class="hownote">👉 Après ta traque, dis à l'organisateur ce qui s'est passé : indique tes balles tirées et l'état du mirador, poste par poste, puis envoie.</div><div id="feedbackCard"><div id="fbList"></div></div><div class="priv">🔒 Ton retour est privé, envoyé uniquement à l'organisateur.</div><button class="close" onclick="closeSheet()">Fermer</button></div></div></div>
 <script>var DATA = `;
 
@@ -938,15 +1834,311 @@ function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s;}
 function fmtDate(d){try{return cap(new Date(d).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));}catch(e){return d;}}
 function myMir(ti){if(!me)return null;for(var k=0;k<me.posts.length;k++){if(me.posts[k].traqueIndex===ti)return me.posts[k].miradorId;}return null;}
 var MAP_I=0;
-function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}function tirRenderJS(zones){var n=zones.length;if(!n)return{reds:[],bands:[]};var Z=zones.map(function(z){return {l:((z.dir-z.width/2)%360+360)%360,r:((z.dir+z.width/2)%360+360)%360,w:z.width,dir:z.dir};});Z.sort(function(a,b){return a.dir-b.dir;});var ml=[],mr=[];for(var i=0;i<n;i++){var j=(i+1)%n;var g=((Z[j].l-Z[i].r)%360+360)%360;var me=Math.min(30,Math.max(0,(g-12)/2));mr[i]=me;ml[j]=me;}var reds=[],bands=[];for(var k=0;k<n;k++){reds.push({start:Z[k].l,width:Z[k].w});if(ml[k]>0.5)bands.push({start:Z[k].l-ml[k],width:ml[k]});if(mr[k]>0.5)bands.push({start:Z[k].r,width:mr[k]});}return {reds:reds,bands:bands};}var myId=myMir(index);if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}}
+function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='halo'></span><span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}}
 function selectTraque(i){["tabs","mapTabs","postTabs"].forEach(function(id){var c=$(id);if(!c)return;var ks=c.children;for(var k=0;k<ks.length;k++)ks[k].classList.toggle("active",k===i);});renderMap(i);renderPostInfo(i);setHeroFor(i);}
 function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
 function setHeroFor(index){var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
 function aesc(x){return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+/* ===================== La Course du Sanglier ===================== */
+var JEU = null;
+function jeuLS(k, v) {
+  try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; }
+}
+function jeuFacteur() { return String(DATA.fnUrl || "").replace(/\\/+$/, ""); }
+
+function openJeu() {
+  openSheet("jeu");
+  var pseudo = jeuLS("cdc_pseudo");
+  if (pseudo) { jeuStart(pseudo); } else {
+    document.getElementById("jeuPseudoBox").style.display = "block";
+    document.getElementById("jeuBox").style.display = "none";
+  }
+  jeuLoadTop();
+  jeuFlush();
+}
+function jeuChangePseudo() {
+  document.getElementById("jeuPseudoBox").style.display = "block";
+  document.getElementById("jeuPseudo").value = jeuLS("cdc_pseudo") || "";
+}
+function jeuSetPseudo() {
+  var v = (document.getElementById("jeuPseudo").value || "").trim().slice(0, 14);
+  var err = document.getElementById("jeuPseudoErr");
+  if (v.length < 2) { err.textContent = "Deux caractères minimum."; err.style.display = "block"; return; }
+  err.style.display = "none";
+  jeuLS("cdc_pseudo", v);
+  document.getElementById("jeuPseudoBox").style.display = "none";
+  jeuStart(v);
+}
+
+/* --- classement --- */
+function jeuLoadTop() {
+  var ol = document.getElementById("jeuTop");
+  fetch(jeuFacteur() + "/scores").then(function (r) { return r.json(); }).then(function (d) {
+    var t = (d && d.top) || [];
+    if (!t.length) { ol.innerHTML = '<li style="color:#a8a29e">Personne pour l&rsquo;instant — à toi de jouer.</li>'; return; }
+    ol.innerHTML = t.map(function (e) {
+      var nom = String(e.p).replace(/[<>&]/g, "");
+      return '<li><b>' + nom + '</b> — ' + e.s + ' m</li>';
+    }).join("");
+  }).catch(function () {
+    ol.innerHTML = '<li style="color:#a8a29e">Classement indisponible hors réseau.</li>';
+  });
+}
+
+/* File d'attente : sans réseau, le score part plus tard. */
+function jeuQueue(score) {
+  var q = [];
+  try { q = JSON.parse(jeuLS("cdc_scoreq") || "[]"); } catch (e) { q = []; }
+  q.push(score); if (q.length > 20) q = q.slice(-20);
+  jeuLS("cdc_scoreq", JSON.stringify(q));
+  jeuSyncTxt("Score gardé de côté — il partira au retour du réseau.");
+}
+function jeuSyncTxt(m) { var el = document.getElementById("jeuSync"); if (el) el.textContent = m || ""; }
+
+function jeuSend(score) {
+  var pseudo = jeuLS("cdc_pseudo");
+  if (!pseudo) return;
+  fetch(jeuFacteur() + "/score", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pseudo: pseudo, score: score })
+  }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (!res.ok) {
+        if (res.d && res.d.reason === "refuse") { jeuSyncTxt("Ce pseudo a été refusé. Touche « changer » pour en choisir un autre."); return; }
+        jeuQueue(score); return;
+      }
+      jeuSyncTxt(res.d.rank ? "Tu es " + res.d.rank + (res.d.rank === 1 ? "er" : "e") + " au classement." : "");
+      if (res.d.top) {
+        document.getElementById("jeuTop").innerHTML = res.d.top.map(function (e) {
+          return '<li><b>' + String(e.p).replace(/[<>&]/g, "") + '</b> — ' + e.s + ' m</li>';
+        }).join("");
+      }
+    }).catch(function () { jeuQueue(score); });
+}
+
+function jeuFlush() {
+  var q = [];
+  try { q = JSON.parse(jeuLS("cdc_scoreq") || "[]"); } catch (e) { return; }
+  if (!q.length || !jeuLS("cdc_pseudo")) return;
+  var best = Math.max.apply(null, q);
+  fetch(jeuFacteur() + "/score", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pseudo: jeuLS("cdc_pseudo"), score: best })
+  }).then(function (r) { if (r.ok) { jeuLS("cdc_scoreq", "[]"); jeuSyncTxt("Scores en attente envoyés."); jeuLoadTop(); } }).catch(function () {});
+}
+window.addEventListener("online", jeuFlush);
+
+/* --- moteur --- */
+function jeuStart(pseudo) {
+  document.getElementById("jeuBox").style.display = "block";
+  document.getElementById("jeuMoi").textContent = pseudo;
+  var best = Number(jeuLS("cdc_best") || 0);
+  document.getElementById("jeuBest").textContent = best;
+  if (JEU) return;                       // moteur déjà lancé
+
+  var cv = document.getElementById("jeuCv"), ctx = cv.getContext("2d");
+  var W = 800, H = 300, GROUND = 232, GRAV = 0.62, JUMP = -13.2;
+  var AIR = (2 * Math.abs(JUMP)) / GRAV;
+  var elS = document.getElementById("jeuScore"), elBar = document.getElementById("jeuDogBar"), elDog = document.getElementById("jeuDogTxt");
+  var st;
+
+  function reset() {
+    st = { mode: "ready", x: 0, speed: 5.2, y: GROUND, vy: 0, onGround: true,
+           obs: [], spawnIn: 90, dist: 0, diff: 0, faults: 0, dogPush: 0, t: 0, shake: 0 };
+  }
+  reset();
+  JEU = { reset: reset };
+
+  function act() {
+    if (st.mode === "ready") { st.mode = "run"; return; }
+    if (st.mode === "over") { reset(); st.mode = "run"; return; }
+    if (st.onGround) { st.vy = JUMP; st.onGround = false; }
+  }
+  cv.addEventListener("pointerdown", function (e) { e.preventDefault(); act(); });
+
+  function spawn() {
+    var d = st.diff, r = Math.random();
+    if (r < 0.56) {
+      var n = 1;
+      if (st.dist > 380 && Math.random() < 0.20 + d * 0.22) n = 2;
+      if (st.dist > 900 && Math.random() < 0.10 + d * 0.14) n = 3;
+      var ox = W + 40;
+      for (var k = 0; k < n; k++) {
+        var h = (24 + d * 13) + Math.random() * (13 + d * 7);
+        var w = (22 + d * 7) + Math.random() * (14 + d * 5);
+        st.obs.push({ type: "ronce", x: ox, w: w, h: h }); ox += w - 2;
+      }
+    } else {
+      st.obs.push({ type: "fosse", x: W + 40, w: (44 + d * 20) + Math.random() * (32 + d * 22), h: 0 });
+    }
+    st.spawnIn = AIR * Math.max(1.08, (1.25 - d * 0.28) + Math.random() * (1.65 - d * 0.5));
+  }
+
+  function boar(x, y, t, running) {
+    ctx.save(); ctx.translate(x, y);
+    ctx.translate(0, running ? Math.sin(t * 1.04) * 1.1 : 0);
+    var D = "#292524", B = "#3f3f46", F = "#57534e";
+    function leg(hx, phase, col, top) {
+      var a = Math.sin(t * 0.52 + phase) * 10;
+      ctx.strokeStyle = col; ctx.lineCap = "round";
+      ctx.lineWidth = 7.2; ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx + 1 + a * 0.32, top + 10); ctx.stroke();
+      ctx.lineWidth = 4.7; ctx.beginPath(); ctx.moveTo(hx + 1 + a * 0.32, top + 10); ctx.lineTo(hx + a * 0.82, -1); ctx.stroke();
+      ctx.lineWidth = 5.5; ctx.beginPath(); ctx.moveTo(hx + a * 0.82, -1.6); ctx.lineTo(hx + a * 0.82 + 1.5, 0); ctx.stroke();
+    }
+    leg(-19, 0, F, -20); leg(11, Math.PI, F, -22);
+    ctx.strokeStyle = D; ctx.lineWidth = 2.2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-31, -34); ctx.quadraticCurveTo(-36, -28, -34, -19); ctx.stroke();
+    ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-34, -19); ctx.lineTo(-33.5, -15); ctx.stroke();
+    ctx.fillStyle = B; ctx.beginPath();
+    ctx.moveTo(-30, -36);
+    ctx.quadraticCurveTo(-26, -42, -14, -45); ctx.quadraticCurveTo(-2, -49, 8, -52);
+    ctx.quadraticCurveTo(15, -53, 21, -50); ctx.quadraticCurveTo(29, -47, 35, -40);
+    ctx.quadraticCurveTo(41, -35, 46, -31); ctx.quadraticCurveTo(50, -29, 50.5, -25.5);
+    ctx.quadraticCurveTo(50, -22, 46, -21.5); ctx.quadraticCurveTo(41, -21, 36, -22.5);
+    ctx.quadraticCurveTo(30, -21, 25, -21); ctx.quadraticCurveTo(20, -20, 15, -20.5);
+    ctx.quadraticCurveTo(8, -19, 2, -18); ctx.quadraticCurveTo(-8, -16.5, -16, -18);
+    ctx.quadraticCurveTo(-24, -20, -28, -26); ctx.quadraticCurveTo(-31, -31, -30, -36);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = D; ctx.beginPath();
+    var pts = [[-26,-40],[-20,-43],[-13,-45],[-6,-47],[1,-49],[8,-51],[15,-52],[20,-50]];
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 0; i < pts.length; i++) { ctx.lineTo(pts[i][0] + 1.5, pts[i][1] - 6.5 - (i % 2) * 2.5); ctx.lineTo(pts[i][0] + 3.4, pts[i][1] - 0.5); }
+    for (var j = pts.length - 1; j >= 0; j--) ctx.lineTo(pts[j][0] + 2, pts[j][1] + 2);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(19, -47); ctx.quadraticCurveTo(20, -56, 26, -55); ctx.quadraticCurveTo(28, -50, 25, -44); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#faf9f7"; ctx.beginPath(); ctx.ellipse(30, -43, 2.1, 1.6, -0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = D; ctx.beginPath(); ctx.arc(30.4, -43, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#faf9f7"; ctx.lineWidth = 2.3;
+    ctx.beginPath(); ctx.moveTo(41, -22.5); ctx.quadraticCurveTo(44, -26, 42.5, -29.5); ctx.stroke();
+    ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(36, -22.8); ctx.quadraticCurveTo(38, -25, 37, -27); ctx.stroke();
+    ctx.fillStyle = D; ctx.beginPath(); ctx.arc(48.4, -24.6, 1.1, 0, Math.PI * 2); ctx.fill();
+    leg(-14, Math.PI, B, -20); leg(16, 0, B, -22);
+    ctx.restore();
+  }
+
+  function dog(x, y, t, i) {
+    ctx.save(); ctx.translate(x, y);
+    var sw = Math.sin(t * 0.6 + i) * 6;
+    ctx.strokeStyle = "#57534e"; ctx.lineWidth = 3.4; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-8, -9); ctx.lineTo(-10 + sw, 0); ctx.moveTo(6, -9); ctx.lineTo(8 - sw, 0); ctx.stroke();
+    ctx.fillStyle = "#78716c";
+    ctx.beginPath(); ctx.ellipse(0, -16, 14, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(14, -21, 7, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#57534e"; ctx.beginPath(); ctx.moveTo(11, -26); ctx.lineTo(15, -32); ctx.lineTo(17, -24); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#78716c"; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.moveTo(-13, -19); ctx.quadraticCurveTo(-21, -24, -18, -30); ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    if (st.shake > 0) ctx.translate((Math.random() - .5) * st.shake, (Math.random() - .5) * st.shake);
+    ctx.fillStyle = "#f5f5f4"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#e7e5e4";
+    for (var k = 0; k < 9; k++) {
+      var tx = ((k * 150 - st.x * 0.25) % (W + 220)) - 110;
+      ctx.beginPath(); ctx.moveTo(tx, GROUND - 6); ctx.lineTo(tx + 26, GROUND - 74); ctx.lineTo(tx + 52, GROUND - 6); ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = "#a8a29e"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(0, GROUND); ctx.lineTo(W, GROUND); ctx.stroke();
+    ctx.strokeStyle = "#d6d3d1"; ctx.lineWidth = 1.5;
+    for (var g = 0; g < 26; g++) {
+      var gx = ((g * 62 - st.x * 0.85) % (W + 70)) - 35;
+      ctx.beginPath(); ctx.moveTo(gx, GROUND + 9); ctx.lineTo(gx + 22, GROUND + 9); ctx.stroke();
+    }
+    for (var i = 0; i < st.obs.length; i++) {
+      var o = st.obs[i];
+      if (o.type === "ronce") {
+        ctx.save(); ctx.translate(o.x, GROUND);
+        ctx.fillStyle = "#14532d"; ctx.beginPath();
+        ctx.ellipse(o.w / 2, -o.h * 0.45, o.w * 0.62, o.h * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#166534"; ctx.lineWidth = 2.2; ctx.lineCap = "round";
+        for (var q = 0; q < 6; q++) {
+          var px = 3 + (o.w - 6) * (q / 5);
+          ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px + (q % 2 ? 4 : -4), -o.h); ctx.stroke();
+        }
+        ctx.restore();
+      } else {
+        ctx.fillStyle = "#292524"; ctx.beginPath();
+        ctx.moveTo(o.x, GROUND); ctx.lineTo(o.x + 5, GROUND + 26);
+        ctx.lineTo(o.x + o.w - 5, GROUND + 26); ctx.lineTo(o.x + o.w, GROUND);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    if (st.mode !== "ready") { var dx = -30 + st.dogPush * 62; for (var d2 = 0; d2 < 3; d2++) dog(dx - d2 * 34, GROUND, st.t, d2); }
+    boar(120, st.y, st.t, st.mode === "run");
+    ctx.restore();
+    ctx.textAlign = "center";
+    if (st.mode === "ready") {
+      ctx.fillStyle = "rgba(28,25,23,.06)"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#1c1917"; ctx.font = "600 26px -apple-system,sans-serif";
+      ctx.fillText("Touche pour partir", W / 2, 110);
+      ctx.fillStyle = "#78716c"; ctx.font = "15px -apple-system,sans-serif";
+      ctx.fillText("Saute les ronces et les fosses", W / 2, 140);
+    }
+    if (st.mode === "over") {
+      ctx.fillStyle = "rgba(28,25,23,.62)"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#fafaf9"; ctx.font = "600 30px -apple-system,sans-serif";
+      ctx.fillText("Les chiens t\u2019ont rattrap\u00e9", W / 2, 118);
+      ctx.font = "18px -apple-system,sans-serif";
+      ctx.fillText(Math.floor(st.dist) + " m\u00e8tres parcourus", W / 2, 152);
+      ctx.fillStyle = "#a8a29e"; ctx.font = "14px -apple-system,sans-serif";
+      ctx.fillText("Touche pour repartir", W / 2, 184);
+    }
+    ctx.textAlign = "left";
+  }
+
+  function hit() {
+    st.faults++; st.dogPush = st.faults; st.shake = 12;
+    if (st.faults >= 3) {
+      st.mode = "over";
+      var d = Math.floor(st.dist);
+      var b = Number(jeuLS("cdc_best") || 0);
+      if (d > b) { jeuLS("cdc_best", String(d)); document.getElementById("jeuBest").textContent = d; }
+      if (d > 0) jeuSend(d);
+    }
+  }
+
+  function step() {
+    st.t++;
+    if (st.shake > 0) st.shake *= 0.86;
+    if (st.mode === "run") {
+      st.speed = Math.min(13.5, 5.2 + st.dist / 230);
+      st.diff = Math.min(1, st.dist / 1000);
+      st.x += st.speed; st.dist += st.speed / 9;
+      elS.textContent = Math.floor(st.dist);
+      st.vy += GRAV; st.y += st.vy;
+      if (st.y >= GROUND) { st.y = GROUND; st.vy = 0; st.onGround = true; }
+      if (st.dogPush > 0) st.dogPush = Math.max(0, st.dogPush - 0.0016);
+      if (--st.spawnIn <= 0) spawn();
+      for (var i = st.obs.length - 1; i >= 0; i--) {
+        var o = st.obs[i];
+        o.x -= st.speed;
+        if (o.x + o.w < -60) { st.obs.splice(i, 1); continue; }
+        if (o.touched) continue;
+        if (!(120 + 34 > o.x && 120 - 20 < o.x + o.w)) continue;
+        if (o.type === "ronce") { if (st.y > GROUND - o.h + 4) { o.touched = true; hit(); } }
+        else { if (st.y >= GROUND - 2) { o.touched = true; hit(); } }
+      }
+      var ratio = Math.max(0, 1 - st.dogPush / 3);
+      elBar.style.width = (ratio * 100) + "%";
+      elBar.style.background = ratio > 0.66 ? "#166534" : ratio > 0.33 ? "#b45309" : "#b91c1c";
+      elDog.textContent = ratio > 0.66 ? "à bonne distance" : ratio > 0.33 ? "ils se rapprochent" : "ils sont sur toi !";
+    }
+    draw();
+    requestAnimationFrame(step);
+  }
+  step();
+}
+/* ================================================================ */
 var RETOUR_HELP=false;function openSheet(k){var el=document.getElementById("sheet-"+k);if(el)el.classList.add("open");if(k==="retour"&&!RETOUR_HELP){RETOUR_HELP=true;var rh=document.getElementById("retourHelp");if(rh)rh.style.display="flex";}}
 function closeSheet(){var ls=document.querySelectorAll(".sheet-back");for(var i=0;i<ls.length;i++)ls[i].classList.remove("open");}
 var SHOW_CONES=true;
+var SHOW_RDV=false;
 function toggleCones(v){SHOW_CONES=v;renderMap(MAP_I);}
+function toggleRdv(v){SHOW_RDV=v;renderMap(MAP_I);}
 function renderAttribs(){var card=$("attribsCard");var box=$("attribs");if(!card||!box)return;var list=DATA.attributions||[];box.innerHTML="";if(!list.length){card.style.display="none";return;}card.style.display="block";list.forEach(function(a){var txt,bg,col;if(a.mode==="bracelets"){txt=a.count+" bracelet"+(a.count>1?"s":"");bg="#f0fdf4";col="#166534";}else if(a.mode==="interdit"){txt="Interdit";bg="#fef2f2";col="#b91c1c";}else{txt="Libre";bg="#f5f5f4";col="#57534e";}var note=a.note?(" — "+aesc(a.note)):"";var d=document.createElement("div");d.style.cssText="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 11px;border-radius:9px;margin-bottom:6px;font-size:14px;background:"+bg;d.innerHTML="<span style='font-weight:600;color:#1c1917'>"+aesc(a.emoji)+" "+aesc(a.label)+"</span><span style='font-weight:700;color:"+col+";text-align:right'>"+txt+note+"</span>";box.appendChild(d);});}
 function renderPostInfo(index){var card=$("postInfoCard");if(!card)return;if(!me||!me.posts){card.style.display="none";return;}var post=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){post=me.posts[i];break;}}var title=$("postInfoTitle");var cons=$("myConsigne");var ph=$("myPhotos");if(!post){if(title)title.textContent="📍 Tu n'as pas de poste sur cette traque";if(cons)cons.style.display="none";if(ph)ph.innerHTML="";card.style.display="block";return;}if(title)title.textContent="📍 Ton poste : "+post.label;var mc=$("myChef");if(mc){if(post.chef){mc.style.display="block";mc.textContent="👨‍✈️ Chef de ligne : "+post.chef;}else{mc.style.display="none";}}if(cons){if(post.consignes){cons.style.display="flex";var cs=cons.querySelector("span");cs.textContent=post.consignes;cs.style.whiteSpace="pre-line";}else{cons.style.display="none";}}if(ph){ph.innerHTML="";(post.photos||[]).forEach(function(src){var im=document.createElement("img");im.className="postphoto";im.src=src;im.style.display="block";im.style.marginTop="8px";ph.appendChild(im);});}card.style.display="block";}
 function renderHero(){var hc=document.querySelector("#appview .hero");if(hc)hc.style.display="";var mh=document.querySelector(".maphint");if(mh)mh.textContent="Ton poste est surligné en orange · lecture seule";var p=me.posts[0];$("myTraque").textContent=p?p.traqueName:"—";$("myPost").textContent=p?p.label:"—";$("myName").textContent="🦌 "+me.name;var hchef=$("myHeroChef");if(hchef)hchef.style.display="none";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var ex=$("extra");ex.innerHTML="";me.posts.forEach(function(pp){var d=document.createElement("div");d.style.cssText="margin-top:7px;font-size:15px;line-height:1.35";d.innerHTML="• <b>"+aesc(pp.traqueName)+"</b> → "+aesc(pp.label)+(pp.chef?" <span style='color:#166534;font-weight:600'>· 👨‍✈️ "+aesc(pp.chef)+"</span>":"");ex.appendChild(d);});setupFeedback();renderAttribs();renderChef();}
@@ -990,37 +2182,503 @@ var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR
 
 function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId) {
   const posted = {};
-  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "" }); }); });
+  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "", chefId: (journee.chefLignes && journee.chefLignes[mid]) || "" }); }); });
   const chefLignesData = journee.chefLignes || {};
   const chefPostsOf = (hid) => Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid).map((mid) => { let f = null; (terrain.tracks || []).forEach((trk) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) { const pl = journee.placements[trk.id] || {}; const occHid = Object.keys(pl).find((h) => pl[h] === mid); const occ = occHid ? participants.find((x) => x.id === occHid) : null; f = { traqueName: trk.name, label: m.label, hunter: occ ? occ.name : "" }; } }); return f; }).filter(Boolean);
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => byNom(a.name || "", b.name || ""));
-  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
-  return SHARED_HEAD + JSON.stringify(DATA) + SHARED_TAIL;
+  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
+  // Source unique : le calcul des cônes de la page chasseurs est généré à partir
+  // de tirRender, la fonction utilisée côté organisateur. Impossible qu'elles divergent.
+  const tail = SHARED_TAIL.replace("/*__TIRRENDER__*/", String(tirRender).replace(/^function\s+tirRender/, "function tirRenderJS"));
+  return SHARED_HEAD + JSON.stringify(DATA) + tail;
 }
 
-function PublishModal({ github, setGithub, onClose, onLoad }) {
-  const [token, setToken] = useState(github.token || "");
-  const [owner, setOwner] = useState(github.owner || "Hiplou");
-  const [repo, setRepo] = useState(github.repo || "battue");
-  const [dataRepo, setDataRepo] = useState(github.dataRepo || "battue-data");
-  const [fnUrl, setFnUrl] = useState(github.fnUrl || DEFAULT_FACTEUR);
-  const [orgName, setOrgName] = useState(github.orgName || "");
-  const url = "https://" + (owner || "hiplou").toLowerCase() + ".github.io/" + (repo || "battue") + "/";
-  return (<div className="fixed inset-0 z-50 bg-stone-900/70 flex items-end sm:items-center justify-center p-3 overflow-auto">
-    <div className="bg-stone-50 rounded-xl max-w-md w-full my-4 shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200"><h3 className="font-serif text-lg text-stone-800">Réglages GitHub</h3><button onClick={onClose} className="text-stone-400"><X size={18} /></button></div>
-      <div className="px-4 py-3 space-y-3 text-sm">
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom du groupe / société (titre de la page chasseurs)</label><input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
-        <p className="text-stone-500 text-xs">Colle ta clé GitHub une seule fois. Elle reste sur ton appareil.</p>
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Clé GitHub (jeton)</label><input value={token} onChange={(e) => setToken(e.target.value)} placeholder="github_pat_…" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /></div>
-        <div className="flex gap-2"><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Compte</label><input value={owner} onChange={(e) => setOwner(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div><div className="flex-1"><label className="text-xs uppercase tracking-wide text-stone-400">Dossier public (page)</label><input value={repo} onChange={(e) => setRepo(e.target.value)} className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div></div>
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Dossier privé (sauvegarde des données)</label><input value={dataRepo} onChange={(e) => setDataRepo(e.target.value)} placeholder="battue-data" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1" /></div>
-        <div><label className="text-xs uppercase tracking-wide text-stone-400">Adresse du facteur (retours chasseurs)</label><input value={fnUrl} onChange={(e) => setFnUrl(e.target.value)} placeholder="https://battue-facteur.hippolyte-houdard.workers.dev/" className="w-full border border-stone-300 rounded px-2 py-2 bg-white mt-1 font-mono text-xs" /><p className="text-[10px] text-stone-400 mt-1">Pré-rempli par défaut. Ne change ça que si tu as ton propre facteur.</p></div>
-        <p className="text-xs text-stone-500">Lien des chasseurs : <span className="text-emerald-800 break-all">{url}</span></p>
-        {onLoad && <div className="border-t border-stone-200 pt-3"><button onClick={() => { onClose(); onLoad(); }} className="w-full flex items-center justify-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md">⬇ Importer mes anciennes données (GitHub)</button><p className="text-[11px] text-stone-400 mt-1">À faire UNE fois pour rapatrier ta sauvegarde GitHub dans ce compte.</p></div>}
-      </div>
-      <div className="px-4 py-3 border-t border-stone-200 flex justify-end gap-2"><button onClick={onClose} className="text-sm text-stone-500 px-3 py-1.5">Annuler</button><button onClick={() => { setGithub({ ...github, token: token.trim(), owner: (owner.trim() || "Hiplou"), repo: (repo.trim() || "battue"), path: github.path || "index.html", dataRepo: (dataRepo.trim() || "battue-data"), fnUrl: fnUrl.trim(), orgName: orgName.trim() }); onClose(); }} className="bg-emerald-800 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Enregistrer</button></div>
+// Vignettes de l'écran Réglages, définies hors du composant pour que React
+// conserve leur identité entre deux rendus (sinon les champs perdent le focus).
+function Tile({ id, emoji, title, sub, open, onToggle }) {
+  return (<button onClick={() => onToggle(id)} className={`rounded-xl border p-3.5 text-left transition-colors ${open === id ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"}`}>
+    <div className="text-2xl mb-1.5">{emoji}</div>
+    <div className="text-sm font-medium text-stone-800">{title}</div>
+    <div className="text-[11px] text-stone-400 mt-0.5">{sub}</div>
+  </button>);
+}
+// Placé DANS la grille et étalé sur deux colonnes : le cadre s'ouvre ainsi
+// juste sous la rangée de la vignette touchée, et non sous tout le groupe.
+function Panel({ id, open, children }) {
+  if (open !== id) return null;
+  return <div className="col-span-2 bg-white rounded-xl border border-emerald-600 p-4">{children}</div>;
+}
+function Group({ label, children }) {
+  return (<div><p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2 px-1">{label}</p>{children}</div>);
+}
+
+// ---------- Écran d'aide ----------
+function HelpRow({ id, emoji, title, sub, open, onToggle, highlight }) {
+  const isOpen = open === id;
+  const base = isOpen ? "border-emerald-600 bg-emerald-50" : (highlight ? "border-emerald-300 bg-emerald-50/60" : "border-stone-200 bg-white");
+  return (<button onClick={() => onToggle(id)} className={`w-full rounded-xl border p-3.5 text-left flex items-center gap-3 transition-colors ${base}`}>
+    <span className="text-2xl shrink-0">{emoji}</span>
+    <span className="flex-1 min-w-0">
+      <span className="block text-sm font-medium text-stone-800">{title}</span>
+      <span className={`block text-[11px] mt-0.5 ${highlight ? "text-emerald-700" : "text-stone-400"}`}>{sub}</span>
+    </span>
+    <span className="text-stone-300 text-xs shrink-0">{isOpen ? "▲" : "▼"}</span>
+  </button>);
+}
+function HelpBody({ id, open, children }) {
+  if (open !== id) return null;
+  return <div className="mt-2.5 bg-white rounded-xl border border-emerald-600 p-4 text-sm text-stone-600 space-y-2">{children}</div>;
+}
+function HelpH({ children }) { return <p className="font-semibold text-stone-800 pt-1">{children}</p>; }
+
+function HelpSheet({ onClose }) {
+  const [open, setOpen] = useState(null);
+  const toggle = (id) => setOpen((o) => (o === id ? null : id));
+  const etapes = ["J'invite mes membres", "Je note les présents", "Je définis les attributions", "Je place les fusils", "Je partage le lien", "Les retours remontent tout seuls"];
+
+  return (<div className="fixed inset-0 z-[60] bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
+      <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Aide</h2>
     </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-4 space-y-5">
+
+        <div className="bg-stone-800 text-stone-50 rounded-xl p-4">
+          <p className="font-serif text-base leading-snug">Tu prépares tes territoires et tes membres, puis pour chaque journée tu invites, tu places les chasseurs, tu partages un lien — et tout revient dans ton carnet.</p>
+        </div>
+
+        <div className="bg-white rounded-xl border border-stone-200 p-4">
+          <p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2.5">Le cycle d'une battue</p>
+          <div className="space-y-1.5 text-sm text-stone-700">
+            {etapes.map((t, i) => (<div key={i} className="flex gap-2.5 items-start">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+              <span>{t}</span>
+            </div>))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2 px-1">Tout savoir, écran par écran</p>
+          <div className="space-y-2.5">
+
+            <HelpRow id="h1" emoji="🚀" title="Premiers pas" sub="Connexion, sauvegarde, réglages" open={open} onToggle={toggle} />
+            <HelpBody id="h1" open={open}>
+              <HelpH>Se connecter</HelpH>
+              <p>Chaque compte a son carnet, privé et séparé. Aucun organisateur ne voit les données d'un autre.</p>
+              <HelpH>La sauvegarde</HelpH>
+              <p>Tout s'enregistre tout seul. Le témoin ☁ Enregistré en haut à droite le confirme. Il n'y a pas de bouton Sauvegarder : il ferait doublon.</p>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-red-900 text-[13px]"><b>Bandeau rouge = rien n'est enregistré.</b> Recharge la page avant de continuer à saisir.</p>
+              </div>
+              <HelpH>L'engrenage ⚙️</HelpH>
+              <p>Ton compte, le nom du groupe, tes sauvegardes et cette aide.</p>
+            </HelpBody>
+
+            <HelpRow id="h2" emoji="👥" title="Membres" sub="Ton carnet d'adresses" open={open} onToggle={toggle} />
+            <HelpBody id="h2" open={open}>
+              <p>Pour chaque personne : prénom, nom, téléphone, email, permis, validation, assurance, un rôle (chasseur ou rabatteur), le type d'arme et la mobilité réduite éventuelle.</p>
+              <HelpH>Importer une liste</HelpH>
+              <p><b>Excel ou CSV</b> — nomme tes colonnes : Prénom, Nom, Téléphone, Email, Permis, Validation, Assurance, Rôle, Mobilité.</p>
+              <p><b>Contacts du téléphone (.vcf)</b> — exporte tes contacts et importe le fichier.</p>
+              <HelpH>Doublons</HelpH>
+              <p>L'app repère les doublons, même avec prénom et nom inversés. Tu peux fusionner deux fiches sans rien perdre.</p>
+            </HelpBody>
+
+            <HelpRow id="h3" emoji="🗺️" title="Territoires" sub="Cartes, postes, plan de chasse" open={open} onToggle={toggle} />
+            <HelpBody id="h3" open={open}>
+              <HelpH>La carte</HelpH>
+              <p>Importe ta photo ou ton plan, ou utilise la carte IGN : satellite et plan mélangeables, recherche d'adresse, recadrage.</p>
+              <HelpH>Traques et miradors</HelpH>
+              <p>Touche la carte pour poser un mirador : nom, priorité de 1 à 4 (le 1 se remplit en premier), photos, consignes, armes autorisées, accessibilité.</p>
+              <HelpH>Cônes de sécurité</HelpH>
+              <p>Trace les zones de tir interdites. L'app ajoute une marge hachurée de 30° et colore les secteurs autorisés en vert.</p>
+              <HelpH>Plan de chasse</HelpH>
+              <p>Espèces rangées par famille. Trois modes : Bracelets, Objectif, Proportionnel. Les jauges se remplissent seules avec la saison.</p>
+            </HelpBody>
+
+            <HelpRow id="h4" emoji="📅" title="Une journée de A à Z" sub="Le cœur de l'appli" open={open} onToggle={toggle} highlight />
+            <HelpBody id="h4" open={open}>
+              <p>Chaque journée s'ouvre sur une barre de progression : cinq étapes de préparation, dans l'ordre.</p>
+              <HelpH>1 · 📧 Invitations</HelpH>
+              <p>Coche les invités, personnalise le message, envoie via ta messagerie. Destinataires en copie cachée.</p>
+              <HelpH>2 · ✅ Présences</HelpH>
+              <p>Présent ou absent, le dîner, les accompagnants.</p>
+              <HelpH>3 · 🎯 Attributions</HelpH>
+              <p>Le canal talkie et ce qui peut être prélevé. Les deux s'affichent chez les chasseurs.</p>
+              <HelpH>4 · 🏚 Poster les fusils</HelpH>
+              <p>À la main, ou remplissage automatique qui respecte l'accessibilité, puis la priorité du poste, puis l'arme.</p>
+              <HelpH>5 · 👨‍✈️ Chefs de ligne</HelpH>
+              <p>Un chef par ligne, avec son point de rendez-vous après la traque.</p>
+              <HelpH>🖨️ Documents et 📤 Partager</HelpH>
+              <p>Postes, émargement, dîner. Puis publication instantanée et envoi WhatsApp.</p>
+              <HelpH>🦌 Tableau de chasse</HelpH>
+              <p>Un animal = une ligne. Les retours des chasseurs remontent tout seuls, sur fond vert.</p>
+            </HelpBody>
+
+            <HelpRow id="h5" emoji="📖" title="Carnet de chasse" sub="Bilan et exports" open={open} onToggle={toggle} />
+            <HelpBody id="h5" open={open}>
+              <p>Filtre par territoire et par saison. Totaux, détail par personne, par poste, par espèce, et l'historique des journées.</p>
+              <HelpH>Exporter</HelpH>
+              <p><b>Carnet de chasse</b> (en vert) — le bilan complet.</p>
+              <p><b>Fédération</b> (en gris) — une ligne par animal, prêt pour le retour à la fédération.</p>
+            </HelpBody>
+
+            <HelpRow id="h6" emoji="📱" title="Ce que voit le chasseur" sub="Et ce qu'il ne voit pas" open={open} onToggle={toggle} />
+            <HelpBody id="h6" open={open}>
+              <p>Il ouvre le lien, sans compte ni mot de passe : son poste, sa carte, les consignes, les participants, son retour à envoyer, et un petit jeu pour patienter.</p>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                <p className="text-emerald-900 text-[13px]">Sa page contient les <b>noms</b> des participants, mais <b>jamais</b> les téléphones, emails, permis ni assurances. L'accessibilité n'est visible que par toi.</p>
+              </div>
+              <p>Le lien n'est pas devinable et les moteurs de recherche ne l'indexent pas — mais il n'a pas de mot de passe. Ne le diffuse qu'aux personnes concernées.</p>
+            </HelpBody>
+
+            <HelpRow id="h7" emoji="💡" title="Astuces et dépannage" sub="Les pièges courants" open={open} onToggle={toggle} />
+            <HelpBody id="h7" open={open}>
+              <p>• Après tout changement, <b>republie le lien</b> : les chasseurs voient la version publiée, pas la tienne.</p>
+              <p>• Les retours arrivent tout seuls — reviens sur l'appli pour les voir.</p>
+              <p>• Un animal = une ligne (un bracelet par animal).</p>
+              <p>• Bandeau rouge = rien n'est enregistré. Recharge avant de saisir.</p>
+              <p>• Garde une sauvegarde de temps en temps : ⚙️ puis Sauvegarde puis Exporter.</p>
+            </HelpBody>
+
+          </div>
+        </div>
+
+        <p className="text-center text-[11px] text-stone-400 pb-4">Carnet de Chasse — {APP_VERSION}</p>
+      </div>
+    </div>
+  </div>);
+}
+
+// ---------- Confidentialité & mentions légales ----------
+function LegalSheet({ onClose }) {
+  const [open, setOpen] = useState(null);
+  const toggle = (id) => setOpen((o) => (o === id ? null : id));
+
+  return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
+      <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Confidentialité</h2>
+    </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-4 space-y-5">
+
+        <div className="bg-stone-800 text-stone-50 rounded-xl p-4">
+          <p className="font-serif text-base leading-snug">Carnet de Chasse enregistre ce que tu y saisis, rien d'autre : aucun traceur, aucune publicité, aucune revente de données.</p>
+          <p className="text-stone-400 text-[11px] mt-2">Dernière mise à jour : 16 août 2026</p>
+        </div>
+
+        <div className="space-y-2.5">
+
+          <HelpRow id="l1" emoji="👤" title="Qui est responsable" sub="Éditeur et contact" open={open} onToggle={toggle} />
+          <HelpBody id="l1" open={open}>
+            <p>L'application est éditée à titre personnel et non professionnel par <b>Houdard</b>, joignable à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a>.</p>
+            <p>Chaque organisateur reste responsable des informations qu'il saisit sur les membres de sa société de chasse.</p>
+          </HelpBody>
+
+          <HelpRow id="l2" emoji="📝" title="Ce qui est enregistré" sub="Et à quoi ça sert" open={open} onToggle={toggle} />
+          <HelpBody id="l2" open={open}>
+            <p><b>Ton compte</b> — email et mot de passe, pour te connecter.</p>
+            <p><b>Tes membres</b> — identité et coordonnées pour les inviter et les contacter ; numéros de permis et d'assurance pour vérifier qu'ils sont en règle.</p>
+            <p><b>Tes territoires</b> — cartes, postes et consignes, pour préparer la journée et la sécurité des tirs.</p>
+            <p><b>Tes journées</b> — présences, dîner et tableau de chasse, pour le registre de la saison et les déclarations à la fédération.</p>
+            <HelpH>Base légale</HelpH>
+            <p>Pour les organisateurs, le traitement est nécessaire au service demandé. Pour les membres saisis par un organisateur, il repose sur l'intérêt légitime à organiser une battue en sécurité et sur les obligations pesant sur les sociétés de chasse.</p>
+          </HelpBody>
+
+          <HelpRow id="l3" emoji="🔑" title="Connexion avec Google" sub="Ce que Google transmet" open={open} onToggle={toggle} />
+          <HelpBody id="l3" open={open}>
+            <p>Si tu te connectes avec Google, Google transmet uniquement ton <b>nom, ta photo de profil et ton adresse email</b>.</p>
+            <p>Nous n'accédons à aucune autre donnée de ton compte Google, et nous ne publions jamais rien en ton nom. Tu peux retirer cette autorisation à tout moment depuis les paramètres de ton compte Google.</p>
+            <p>La connexion par email et mot de passe reste disponible si tu préfères.</p>
+          </HelpBody>
+
+          <HelpRow id="l4" emoji="🌍" title="Où sont mes données" sub="Hébergement" open={open} onToggle={toggle} />
+          <HelpBody id="l4" open={open}>
+            <p>La base de données est hébergée par Supabase dans l'Union européenne (Paris).</p>
+            <p>Deux prestataires sont établis aux États-Unis : Cloudflare, qui diffuse les pages des chasseurs, et Resend, qui envoie les emails de confirmation. Les données qui leur sont confiées se limitent au contenu de la page publiée et à ton adresse email. Ces transferts sont encadrés par les clauses contractuelles types de la Commission européenne.</p>
+            <p>Chaque compte est cloisonné : un organisateur ne peut ni voir ni modifier les données d'un autre.</p>
+          </HelpBody>
+
+          <HelpRow id="l5" emoji="📱" title="La page des chasseurs" sub="Ce qui y figure" open={open} onToggle={toggle} />
+          <HelpBody id="l5" open={open}>
+            <p>Quand tu publies une journée, la page devient accessible à toute personne disposant du lien.</p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+              <p className="text-emerald-900 text-[13px]"><b>Elle contient</b> les prénoms et noms des participants, le territoire, la carte, les postes, les consignes et les attributions. <b>Jamais</b> les téléphones, emails, permis ni assurances.</p>
+            </div>
+            <p>Son adresse n'est pas devinable et les moteurs de recherche ne l'indexent pas. Elle n'a toutefois pas de mot de passe : ne diffuse le lien qu'aux personnes concernées.</p>
+          </HelpBody>
+
+          <HelpRow id="l6" emoji="🐗" title="Le jeu" sub="Ce que garde le classement" open={open} onToggle={toggle} />
+          <HelpBody id="l6" open={open}>
+            <p>Si un joueur enregistre un score, seuls <b>un pseudonyme de son choix et une distance</b> sont conservés.</p>
+            <p>Aucun lien n'est fait avec son identité, son compte ou sa journée de chasse. Ce classement est visible par tous les joueurs.</p>
+          </HelpBody>
+
+          <HelpRow id="l7" emoji="⚖️" title="Tes droits" sub="Accès, correction, effacement" open={open} onToggle={toggle} />
+          <HelpBody id="l7" open={open}>
+            <p>Tu disposes d'un droit d'accès, de rectification, d'effacement, de portabilité, de limitation et d'opposition.</p>
+            <p>L'export se fait depuis Réglages puis Sauvegarde. Pour toute autre demande, écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a> : réponse sous un mois.</p>
+            <HelpH>Durée de conservation</HelpH>
+            <p>Tes données restent enregistrées tant que ton compte existe. À sa suppression, elles sont effacées sous 30 jours.</p>
+            <HelpH>Ta responsabilité envers tes membres</HelpH>
+            <p>En saisissant les informations d'un membre, tu t'engages à l'avoir informé que ses données figurent ici. Ces personnes peuvent te demander à tout moment de les consulter, corriger ou supprimer.</p>
+            <p>En cas de désaccord, tu peux saisir la CNIL (www.cnil.fr).</p>
+          </HelpBody>
+
+          <HelpRow id="l8" emoji="📜" title="Mentions légales" sub="Éditeur et hébergeurs" open={open} onToggle={toggle} />
+          <HelpBody id="l8" open={open}>
+            <HelpH>Éditeur</HelpH>
+            <p>Carnet de Chasse est édité par <b>Houdard</b>, à titre personnel et non professionnel. Contact : contact@carnetdechasse.fr</p>
+            <p className="text-[12px] text-stone-500">Conformément à l'article 6 III-2 de la loi pour la confiance dans l'économie numérique, l'éditeur non professionnel a communiqué ses coordonnées à son hébergeur et bénéficie du régime d'anonymat prévu par ce texte.</p>
+            <HelpH>Hébergement</HelpH>
+            <p>• Application : GitHub Pages — GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, États-Unis</p>
+            <p>• Base de données : Supabase Inc. — données stockées dans l'Union européenne (Paris)</p>
+            <p>• Domaine et diffusion : Cloudflare Inc., 101 Townsend St, San Francisco, CA 94107, États-Unis</p>
+            <HelpH>Propriété intellectuelle</HelpH>
+            <p>Le contenu de l'application est protégé. Les cartes proviennent de la Géoplateforme IGN et restent soumises à ses conditions d'utilisation.</p>
+          </HelpBody>
+
+        </div>
+
+        <p className="text-center text-[11px] text-stone-400 pb-4">Carnet de Chasse — {APP_VERSION}</p>
+      </div>
+    </div>
+  </div>);
+}
+
+function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExportExcel, onExportJson, onImportPick, poids, onInstall }) {
+  const [open, setOpen] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showLegal, setShowLegal] = useState(false);
+  const [delMot, setDelMot] = useState(""); const [delBusy, setDelBusy] = useState(false); const [delOuvert, setDelOuvert] = useState(false);
+  const [orgName, setOrgName] = useState(github.orgName || "");
+  const [pass, setPass] = useState(""); const [pwMsg, setPwMsg] = useState(""); const [pwBusy, setPwBusy] = useState(false);
+  const [toast, setToast] = useState("");
+  // Classement du jeu : la vignette n'apparaît que si le facteur nous reconnaît
+  // comme administrateur (comparaison faite côté serveur, jamais ici).
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [board, setBoard] = useState([]);
+  const [boardBusy, setBoardBusy] = useState(false);
+  const [wipe, setWipe] = useState("");
+
+  const email = (session && session.user && session.user.email) || "";
+  const initials = (email.slice(0, 2) || "?").toUpperCase();
+  const toggle = (id) => setOpen((o) => (o === id ? null : id));
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 1800); };
+  const saveOrg = () => { setGithub({ ...github, orgName: orgName.trim() }); flash("Nom du groupe enregistré"); setOpen(null); };
+
+  const facteur = () => (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
+
+  const callBoard = async (route, body) => {
+    let sess = null;
+    try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
+    if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi.");
+    const r = await fetch(facteur() + route, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token },
+      body: JSON.stringify(body || {})
+    });
+    if (!r.ok) { const t = await r.text(); throw new Error("HTTP " + r.status + " — " + String(t).slice(0, 160)); }
+    return await r.json();
+  };
+
+  // Sondage discret à l'ouverture des Réglages : si le facteur répond, la vignette s'affiche.
+  useEffect(() => {
+    let vivant = true;
+    callBoard("/scores/list")
+      .then((d) => { if (vivant) { setIsAdmin(true); setBoard(d.all || []); } })
+      .catch(() => {});
+    return () => { vivant = false; };
+  }, []);
+
+  const removeScore = async (pseudo) => {
+    if (!window.confirm("Retirer « " + pseudo + " » du classement ?")) return;
+    setBoardBusy(true);
+    try { const d = await callBoard("/scores/delete", { pseudo: pseudo }); setBoard(d.all || []); flash("Ligne retirée"); }
+    catch (e) { window.alert("Impossible : " + ((e && e.message) || e)); }
+    finally { setBoardBusy(false); }
+  };
+
+  const wipeBoard = async () => {
+    setBoardBusy(true);
+    try { const d = await callBoard("/scores/reset", { confirm: "EFFACER" }); setBoard(d.all || []); setWipe(""); flash("Classement vidé"); }
+    catch (e) { window.alert("Impossible : " + ((e && e.message) || e)); }
+    finally { setBoardBusy(false); }
+  };
+
+  const supprimerCompte = async () => {
+    if (!window.confirm("Dernière vérification.\n\nTon carnet, tes territoires, tes journées et ta page publiée vont être effacés définitivement. Cette action est irréversible.\n\nContinuer ?")) return;
+    setDelBusy(true);
+    try {
+      const d = await callBoard("/account/delete", { confirm: "SUPPRIMER" });
+      if (!d.ok) throw new Error("Suppression incomplète — écris à contact@carnetdechasse.fr");
+      window.alert("Ton compte a été supprimé. Merci d'avoir utilisé Carnet de Chasse.");
+      try { await SB.auth.signOut(); } catch (e) {}
+      window.location.reload();
+    } catch (e) {
+      window.alert("Suppression impossible : " + ((e && e.message) || e));
+      setDelBusy(false);
+    }
+  };
+
+  const changePassword = async () => {
+    if ((pass || "").length < 6) { setPwMsg("Choisis au moins 6 caractères."); return; }
+    setPwBusy(true); setPwMsg("");
+    try { const { error } = await SB.auth.updateUser({ password: pass }); if (error) throw error; setPass(""); setPwMsg("✓ Mot de passe modifié."); }
+    catch (e) { setPwMsg("⚠ " + ((e && e.message) || e)); }
+    finally { setPwBusy(false); }
+  };
+
+  // L'aide occupe tout l'écran : on la rend à la place des Réglages plutôt que par-dessus.
+  if (showHelp) return <HelpSheet onClose={() => setShowHelp(false)} />;
+  if (showLegal) return <LegalSheet onClose={() => setShowLegal(false)} />;
+
+  return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
+      <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Réglages</h2>
+    </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-4 space-y-5">
+
+        <Group label="Mon compte">
+          <div className="grid grid-cols-2 gap-3">
+            <Tile open={open} onToggle={toggle} id="compte" emoji="👤" title="Mon compte" sub="Email, mot de passe" />
+            <Tile open={open} onToggle={toggle} id="quitter" emoji="🚪" title="Déconnexion" sub="Quitter ce compte" />
+            <Panel open={open} id="compte">
+            <div className="flex items-center gap-3 pb-3 mb-3 border-b border-stone-100">
+              <div className="w-11 h-11 rounded-full bg-emerald-700 text-stone-50 flex items-center justify-center font-semibold shrink-0">{initials}</div>
+              <div className="min-w-0"><p className="text-sm font-medium text-stone-800 truncate">{email}</p><p className="text-[11px] text-stone-400">Organisateur</p></div>
+            </div>
+            <label className="text-[11px] uppercase tracking-wide text-stone-400">Nouveau mot de passe</label>
+            <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="••••••••" className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 text-sm bg-white" />
+            <button onClick={changePassword} disabled={pwBusy || !pass} className="mt-3 bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">{pwBusy ? "…" : "Modifier mon mot de passe"}</button>
+            {pwMsg && <p className="text-sm mt-2 text-stone-700">{pwMsg}</p>}
+            <div className="border-t border-stone-100 mt-4 pt-3">
+              {!delOuvert ? (
+                <button onClick={() => setDelOuvert(true)} className="text-sm font-medium text-red-700 hover:text-red-900">🗑 Supprimer mon compte</button>
+              ) : (<div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-sm font-medium text-red-900">Supprimer définitivement mon compte</p>
+                <p className="text-[12px] text-red-800 mt-1">Seront effacés : ton carnet, tes territoires, tes membres, tes journées et ta page publiée. <b>C'est irréversible.</b></p>
+                <p className="text-[11px] text-stone-500 mt-2">Pense à exporter une sauvegarde avant, depuis la vignette Sauvegarde.</p>
+                <p className="text-[11px] text-stone-500 mt-2 mb-1">Écris <b>SUPPRIMER</b> pour confirmer :</p>
+                <div className="flex gap-2">
+                  <input value={delMot} onChange={(e) => setDelMot(e.target.value)} placeholder="SUPPRIMER" className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white" />
+                  <button onClick={supprimerCompte} disabled={delMot !== "SUPPRIMER" || delBusy} className="shrink-0 bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">{delBusy ? "…" : "Supprimer"}</button>
+                </div>
+                <button onClick={() => { setDelOuvert(false); setDelMot(""); }} className="text-[11px] text-stone-500 underline mt-2">Annuler</button>
+              </div>)}
+            </div>
+          </Panel>
+            <Panel open={open} id="quitter">
+            <p className="text-sm text-stone-600 mb-3">Ton carnet reste enregistré. Tu le retrouveras à la prochaine connexion.</p>
+            <button onClick={onSignOut} className="w-full bg-stone-800 hover:bg-stone-900 text-stone-50 text-sm font-medium py-2.5 rounded-lg">Me déconnecter</button>
+          </Panel>
+          </div>
+        </Group>
+
+        <Group label="Mon carnet">
+          <div className="grid grid-cols-2 gap-3">
+            <Tile open={open} onToggle={toggle} id="groupe" emoji="🏹" title="Nom du groupe" sub="Titre de la page chasseurs" />
+            <Tile open={open} onToggle={toggle} id="save" emoji="💾" title="Sauvegarde" sub="Exporter · Importer" />
+            <Panel open={open} id="groupe">
+            <label className="text-[11px] uppercase tracking-wide text-stone-400">Nom affiché aux chasseurs</label>
+            <input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 text-sm bg-white" />
+            <button onClick={saveOrg} className="mt-3 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">Enregistrer</button>
+          </Panel>
+            <Panel open={open} id="save">
+            <p className="text-sm text-stone-600 mb-3">Ton carnet est enregistré automatiquement. Tu peux aussi en garder une copie sur ton appareil.</p>
+            {poids && poids.total > 0 && (() => {
+              const pc = Math.min(100, Math.round(poids.total / (40 * 1048576) * 100));
+              const alerte = poids.total > 25 * 1048576;
+              const attention = poids.total > 12 * 1048576;
+              return (<div className={`rounded-lg border p-3 mb-3 ${alerte ? "bg-red-50 border-red-200" : attention ? "bg-amber-50 border-amber-200" : "bg-stone-50 border-stone-200"}`}>
+                <div className="flex items-baseline justify-between mb-1.5">
+                  <span className="text-[11px] uppercase tracking-widest text-stone-400">Poids de ton carnet</span>
+                  <span className="text-sm font-medium text-stone-800">{ko(poids.total)}</span>
+                </div>
+                <div className="h-1.5 bg-stone-200 rounded-full overflow-hidden mb-2">
+                  <div className={`h-full rounded-full ${alerte ? "bg-red-600" : attention ? "bg-amber-600" : "bg-emerald-600"}`} style={{ width: pc + "%" }} />
+                </div>
+                <p className="text-[11px] text-stone-500">Dont {ko(poids.photos)} de photos ({poids.total > 0 ? Math.round(poids.photos / poids.total * 100) : 0} %) sur {poids.nbPhotos} image(s).</p>
+                {attention && !alerte && <p className="text-[12px] text-amber-800 mt-1.5">Ton carnet s'alourdit. Pense à supprimer les photos de postes devenues inutiles.</p>}
+                {alerte && <p className="text-[12px] text-red-800 mt-1.5"><b>Carnet volumineux.</b> L'enregistrement peut ralentir. Allège les photos, ou archive les vieilles saisons via une sauvegarde.</p>}
+              </div>);
+            })()}
+            <button onClick={onExportExcel} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en Excel</button>
+            <button onClick={onExportJson} className="w-full text-left text-sm text-stone-700 py-2 border-b border-stone-100">⬆ Exporter en fichier de secours</button>
+            <button onClick={onImportPick} className="w-full text-left text-sm text-stone-700 py-2">⬇ Importer une sauvegarde</button>
+          </Panel>
+          </div>
+        </Group>
+
+        {isAdmin && (<Group label="Le jeu">
+          <div className="grid grid-cols-2 gap-3">
+            <Tile open={open} onToggle={toggle} id="classement" emoji="🏆" title="Classement" sub={board.length ? board.length + " joueur" + (board.length > 1 ? "s" : "") : "personne pour l'instant"} />
+            <Panel open={open} id="classement">
+            <p className="text-sm text-stone-600 mb-3">Classement mondial du jeu du sanglier. Toi seul peux y faire le ménage.</p>
+            {board.length === 0 ? (
+              <p className="text-sm text-stone-500 italic">Aucun score enregistré.</p>
+            ) : (
+              <div className="border border-stone-200 rounded-lg divide-y divide-stone-100 max-h-72 overflow-auto">
+                {board.map((e, i) => (
+                  <div key={e.p + i} className="flex items-center gap-2 px-3 py-2">
+                    <span className="text-[11px] text-stone-400 w-5 shrink-0">{i + 1}</span>
+                    <span className="text-sm text-stone-800 flex-1 truncate">{e.p}</span>
+                    <span className="text-xs text-stone-500 shrink-0">{e.s} m</span>
+                    <button onClick={() => removeScore(e.p)} disabled={boardBusy} className="text-red-600 hover:text-red-800 disabled:text-stone-300 p-1 shrink-0" title="Retirer">
+                      <X size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {board.length > 0 && (<div className="border-t border-stone-100 mt-4 pt-3">
+              <p className="text-sm font-medium text-red-700">Tout effacer</p>
+              <p className="text-[11px] text-stone-400 mt-0.5 mb-2">Définitif. Écris EFFACER pour confirmer.</p>
+              <div className="flex gap-2">
+                <input value={wipe} onChange={(ev) => setWipe(ev.target.value)} placeholder="EFFACER" className="flex-1 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white" />
+                <button onClick={wipeBoard} disabled={wipe !== "EFFACER" || boardBusy} className="bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg shrink-0">Vider</button>
+              </div>
+            </div>)}
+          </Panel>
+          </div>
+        </Group>)}
+
+        <Group label="L'application">
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => setShowHelp(true)} className="rounded-xl border border-stone-200 bg-white hover:border-stone-300 p-3.5 text-left transition-colors">
+              <div className="text-2xl mb-1.5">❓</div>
+              <div className="text-sm font-medium text-stone-800">Aide</div>
+              <div className="text-[11px] text-stone-400 mt-0.5">Le guide complet</div>
+            </button>
+            <Tile open={open} onToggle={toggle} id="contact" emoji="✉️" title="Nous écrire" sub="Une idée, un souci" />
+            <Panel open={open} id="contact"><p className="text-sm text-stone-600">Une idée, une remarque ? Écris à <a href="mailto:contact@carnetdechasse.fr" className="text-emerald-800 underline">contact@carnetdechasse.fr</a></p></Panel>
+            <button onClick={onInstall} className="rounded-xl border border-stone-200 bg-white hover:border-stone-300 p-3.5 text-left transition-colors">
+              <div className="text-2xl mb-1.5">📲</div>
+              <div className="text-sm font-medium text-stone-800">Installer l'app</div>
+              <div className="text-[11px] text-stone-400 mt-0.5">Sur ton écran d'accueil</div>
+            </button>
+            <button onClick={() => setShowLegal(true)} className="rounded-xl border border-stone-200 bg-white hover:border-stone-300 p-3.5 text-left transition-colors">
+              <div className="text-2xl mb-1.5">📜</div>
+              <div className="text-sm font-medium text-stone-800">Confidentialité</div>
+              <div className="text-[11px] text-stone-400 mt-0.5">Tes données, mentions légales</div>
+            </button>
+            <Tile open={open} onToggle={toggle} id="apropos" emoji="ℹ️" title="À propos" sub={"Version " + APP_VERSION} />
+            <Panel open={open} id="apropos"><p className="text-sm text-stone-700">Carnet de Chasse</p><p className="text-sm text-stone-500 mt-0.5">Version {APP_VERSION}</p></Panel>
+          </div>
+        </Group>
+
+        <p className="text-center text-[11px] text-stone-400 pt-1 pb-4">Carnet de Chasse — {APP_VERSION}</p>
+      </div>
+    </div>
+
+    {toast && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-stone-900 text-stone-50 text-sm px-4 py-2 rounded-full shadow-lg">{toast}</div>}
   </div>);
 }
 
@@ -1042,7 +2700,7 @@ function buildPrintHtml(journee, terrain, participants, safety) {
     sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th><th>Chef de ligne</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
     traquesData.push({ color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m, mi) => ({ gx: m.gx, gy: m.gy, n: mi + 1, tir: m.tir || null })) });
   });
-  const script = terrain.planImage ? ("<script>var IMG=" + JSON.stringify(terrain.planImage) + ";var TQ=" + JSON.stringify(traquesData) + ";" + "var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;TQ.forEach(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var img=document.createElement('img');img.src=IMG;img.style.position='absolute';img.style.maxWidth='none';img.style.width=(100/fw)+'%';img.style.left=(-(fx/fw)*100)+'%';img.style.top=(-(fy/fh)*100)+'%';box.appendChild(img);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;if(m.tir&&m.tir.zones&&m.tir.zones.length){var mk=function(cc,color){var cd=document.createElement('div');cd.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';box.appendChild(cd);};var mkBand=function(start,w){var cd=document.createElement('div');cd.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';box.appendChild(cd);};var trJS=function(zones){var n=zones.length;if(!n)return{reds:[],bands:[]};var Z=zones.map(function(z){return {l:((z.dir-z.width/2)%360+360)%360,r:((z.dir+z.width/2)%360+360)%360,w:z.width,dir:z.dir};});Z.sort(function(a,b){return a.dir-b.dir;});var ml=[],mr=[];for(var i=0;i<n;i++){var j=(i+1)%n;var g=((Z[j].l-Z[i].r)%360+360)%360;var me=Math.min(30,Math.max(0,(g-12)/2));mr[i]=me;ml[j]=me;}var reds=[],bands=[];for(var k=0;k<n;k++){reds.push({start:Z[k].l,width:Z[k].w});if(ml[k]>0.5)bands.push({start:Z[k].l-ml[k],width:ml[k]});if(mr[k]>0.5)bands.push({start:Z[k].r,width:mr[k]});}return {reds:reds,bands:bands};};var gd=document.createElement('div');gd.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.42)';box.appendChild(gd);var tr=trJS(m.tir.zones);tr.bands.forEach(function(b){mkBand(b.start,b.width);});tr.reds.forEach(function(r){mk({dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)');});}var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);min-width:16px;height:16px;padding:0 3px;border-radius:9px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);background:'+t.color+';color:#fff;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:3;font-family:Helvetica,Arial,sans-serif';d.textContent=m.n;box.appendChild(d);});});};im.src=IMG;" + "</scr" + "ipt>") : "";
+  const script = terrain.planImage ? ("<script>var IMG=" + JSON.stringify(terrain.planImage) + ";var TQ=" + JSON.stringify(traquesData) + ";" + "var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;TQ.forEach(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var img=document.createElement('img');img.src=IMG;img.style.position='absolute';img.style.maxWidth='none';img.style.width=(100/fw)+'%';img.style.left=(-(fx/fw)*100)+'%';img.style.top=(-(fy/fh)*100)+'%';box.appendChild(img);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);min-width:16px;height:16px;padding:0 3px;border-radius:9px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);background:'+t.color+';color:#fff;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:3;font-family:Helvetica,Arial,sans-serif';d.textContent=m.n;box.appendChild(d);});});};im.src=IMG;" + "</scr" + "ipt>") : "";
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + PRINT_CSS + "</style></head><body>"
     + "<header><div class='emo'>🦌</div><div><h1>" + esc(terrain.name) + "</h1><p>" + esc(d) + "</p></div></header>"
     + "<div>" + sections + "</div>"
@@ -1097,15 +2755,19 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
 }
 
 // ---------- Journées ----------
-function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefLigne, onAssignPosts }) {
+function SecWrap({ bare, children }) {
+  if (bare) return <div className="space-y-2">{children}</div>;
+  return <SectionCard className="p-3 space-y-2">{children}</SectionCard>;
+}
+function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefLigne, onAssignPosts, bare }) {
   const [open, setOpen] = useState(false);
   const placedPosts = []; (terrain.tracks || []).forEach((trk) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (!m) return; const p = participants.find((x) => x.id === hid); placedPosts.push({ mid, label: m.label, trackId: trk.id, traqueName: trk.name, hid, hunterName: p ? p.name : "?" }); }); });
   const seen = {}; const placedHunters = []; placedPosts.forEach((pp) => { if (!seen[pp.hid]) { seen[pp.hid] = 1; placedHunters.push({ id: pp.hid, name: pp.hunterName }); } }); placedHunters.sort((a, b) => byNom(a.name || "", b.name || ""));
   const chefs = journee.chefs || []; const cl = journee.chefLignes || {};
   const nb = chefs.length;
-  return (<SectionCard className="p-3 space-y-2">
-    <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between"><span className="font-medium text-stone-800">👨‍✈️ Chefs de ligne</span><span className="text-xs text-stone-500">{nb ? nb + " désigné(s)" : "aucun"} {open ? "▲" : "▼"}</span></button>
-    {open && (placedPosts.length === 0 ? <p className="text-xs text-stone-400 italic">Place d'abord des chasseurs sur les postes.</p> : (<div className="space-y-2 pt-1">
+  return (<SecWrap bare={bare}>
+    {!bare && <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between"><span className="font-medium text-stone-800">👨‍✈️ Chefs de ligne</span><span className="text-xs text-stone-500">{nb ? nb + " désigné(s)" : "aucun"} {open ? "▲" : "▼"}</span></button>}
+    {(bare || open) && (placedPosts.length === 0 ? <p className="text-xs text-stone-400 italic">Place d'abord des chasseurs sur les postes.</p> : (<div className="space-y-2 pt-1">
       <p className="text-[11px] text-stone-400">Désigne les chefs (parmi les chasseurs placés), puis coche les postes dont chacun est responsable.</p>
       <div><span className="text-[10px] uppercase tracking-wide text-stone-400">Qui est chef de ligne ?</span>
         <div className="flex flex-wrap gap-1.5 mt-1">{placedHunters.map((h) => { const on = chefs.indexOf(h.id) >= 0; return (<button key={h.id} onClick={() => onToggleChef(journee.id, h.id)} className={`text-xs px-2 py-1 rounded-full border ${on ? "bg-stone-800 text-white border-stone-800" : "bg-white text-stone-600 border-stone-300"}`}>{on ? "👨‍✈️ " : ""}{h.name}</button>); })}</div></div>
@@ -1114,21 +2776,27 @@ function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefL
           <button onClick={() => onAssignPosts(journee.id, chefId)} className="shrink-0 text-xs font-medium bg-emerald-800 hover:bg-emerald-900 text-white px-2.5 py-1.5 rounded-md flex items-center gap-1"><Crosshair size={13} /> Attribuer les postes</button></div>
       </div>); })}
     </div>))}
-  </SectionCard>);
+  </SecWrap>);
 }
-function AttributionsSection({ journee, terrain, onSet }) {
+function AttributionsSection({ journee, terrain, onSet, bare, canal, onSetCanal }) {
   const [open, setOpen] = useState(false);
   const enabled = ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled);
   const attr = journee.attributions || {};
-  if (!enabled.length) return null;
+  // En mode vignette on affiche toujours le bloc : le canal talkie y vit aussi.
+  if (!enabled.length && !bare) return null;
   const nb = enabled.filter((e) => { const a = attr[e.key] || {}; return a.mode === "bracelets" || a.mode === "interdit" || (a.note || "").trim(); }).length;
-  return (<SectionCard className="p-3 space-y-2">
-    <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
+  return (<SecWrap bare={bare}>
+    {!bare && <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
       <span className="font-medium text-stone-800 flex items-center gap-2">🎯 Attributions du jour</span>
       <span className="text-xs text-stone-500">{nb ? nb + " définie(s)" : "à définir"} {open ? "▲" : "▼"}</span>
-    </button>
-    {open && (<div className="space-y-2 pt-1">
-      <p className="text-[11px] text-stone-400">Ce que les chasseurs peuvent prélever aujourd'hui. Apparaît sur la page publiée.</p>
+    </button>}
+    {(bare || open) && (<div className="space-y-2 pt-1">
+      {bare && (<div className="bg-white border border-stone-200 rounded-md p-2.5">
+        <label className="text-[10px] uppercase tracking-wide text-stone-400">📻 Canal talkie</label>
+        <input value={canal || ""} onChange={(ev) => onSetCanal(ev.target.value)} placeholder="ex. 8" className="w-24 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1 block" />
+        <p className="text-[10px] text-stone-400 mt-1">Affiché aux chasseurs sur leur page.</p>
+      </div>)}
+      {enabled.length > 0 && <p className="text-[11px] text-stone-400">Ce que les chasseurs peuvent prélever aujourd'hui. Apparaît sur la page publiée.</p>}
       {enabled.map((e) => { const a = attr[e.key] || { mode: "libre", count: 1, note: "" }; return (
         <div key={e.key} className="bg-white border border-stone-200 rounded-md p-2">
           <span className="text-sm font-medium text-stone-800">{e.emoji} {e.label}</span>
@@ -1141,9 +2809,12 @@ function AttributionsSection({ journee, terrain, onSet }) {
           <input value={a.note || ""} onChange={(ev) => onSet(journee.id, e.key, { note: ev.target.value })} placeholder="Restriction (poids, sexe…) — optionnel" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1.5" />
         </div>); })}
     </div>)}
-  </SectionCard>);
+  </SecWrap>);
 }
-function InvitationsSection({ journee, terrain, participants, orgEmail, onToggleInvite, onSetPresence, onSetMsg }) {
+function InvitationsSection({ journee, terrain, participants, orgEmail, onToggleInvite, onSetPresence, onSetMsg, bare, part }) {
+  // part : "invite" (envoi du mail) ou "presence" (réponses). Sans valeur : les deux.
+  const showInvite = !part || part === "invite";
+  const showPresence = !part || part === "presence";
   const [open, setOpen] = useState(false);
   const [showMailPick, setShowMailPick] = useState(false);
   const [emarg, setEmarg] = useState(null);
@@ -1193,13 +2864,13 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   const nbPres = invited.filter((p) => (pres[p.id] || {}).statut === "present").length;
   const nbDiner = invited.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).diner).length;
   const nbSup = invited.reduce((s, p) => s + (((pres[p.id] || {}).statut === "present") ? (Number((pres[p.id] || {}).invitesSup) || 0) : 0), 0);
-  return (<SectionCard className="p-3 space-y-2">
-    <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
+  return (<SecWrap bare={bare}>
+    {!bare && <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
       <span className="font-medium text-stone-800 flex items-center gap-2">📧 Invitations</span>
       <span className="text-xs text-stone-500">{invited.length} invités · {nbPres} présents {open ? "▲" : "▼"}</span>
-    </button>
-    {open && (<div className="space-y-3 pt-1">
-      <div className="space-y-1">
+    </button>}
+    {(bare || open) && (<div className="space-y-3 pt-1">
+      {showInvite && (<><div className="space-y-1">
         <label className="text-xs uppercase tracking-wide text-stone-400">Objet du mail</label>
         <input value={subject} onChange={(e) => onSetMsg(journee.id, { inviteSubject: e.target.value })} className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
         <label className="text-xs uppercase tracking-wide text-stone-400">Message</label>
@@ -1208,6 +2879,30 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
       <div>
         <div className="flex items-center justify-between mb-1"><button onClick={() => setShowInv((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Qui inviter {showInv ? "▲" : "▼"}</button></div>
         {showInv && participants.length === 0 && <p className="text-xs text-stone-400 italic">Ajoute d'abord des membres dans l'onglet Membres.</p>}
+        {showInv && (() => {
+          const gs = tousLesGroupes(participants);
+          if (!gs.length) return null;
+          const inv = journee.invites || [];
+          const toggleGrp = (nom) => {
+            const membres = participants.filter((p) => (p.groupes || []).indexOf(nom) >= 0);
+            const tous = membres.length > 0 && membres.every((p) => inv.indexOf(p.id) >= 0);
+            membres.forEach((p) => {
+              const dedans = inv.indexOf(p.id) >= 0;
+              if (tous && dedans) onToggleInvite(journee.id, p.id);
+              if (!tous && !dedans) onToggleInvite(journee.id, p.id);
+            });
+          };
+          return (<div className="mb-2">
+            <div className="flex flex-wrap gap-1.5">
+              {gs.map((g) => {
+                const membres = participants.filter((p) => (p.groupes || []).indexOf(g.nom) >= 0);
+                const actif = membres.length > 0 && membres.every((p) => inv.indexOf(p.id) >= 0);
+                return <PastilleGroupe key={g.nom} nom={g.nom} compte={g.n} small actif={actif} onClick={() => toggleGrp(g.nom)} />;
+              })}
+            </div>
+            <p className="text-[11px] text-stone-400 mt-1">Touche un groupe pour ajouter ses membres. Retouche-le pour les retirer.</p>
+          </div>);
+        })()}
         {showInv && participants.length > 4 && <input value={qInv} onChange={(e) => setQInv(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mb-1" />}
         {showInv && <div className="space-y-1 max-h-56 overflow-auto">
           {[...participants].filter((p) => matchQ(p, qInv)).sort((a, b) => byNom(a.name || "", b.name || "")).map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
@@ -1233,7 +2928,8 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
         <button onClick={copyMsg} className="flex-1 flex items-center justify-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium px-2 py-2 rounded-md">📋 Copier le message</button>
       </div>
       <p className="text-[11px] text-stone-400">Destinataires en copie cachée (Cci). Choisis ta messagerie ci-dessus, ou utilise « Copier » si besoin.</p>
-      {invited.length > 0 && (<div>
+      </>)}
+      {showPresence && invited.length > 0 && (<div>
         {emarg && <PrintOverlay html={emarg} onClose={() => setEmarg(null)} />}
         <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
           <button onClick={() => setShowPres((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""} {showPres ? "▲" : "▼"}</button>
@@ -1263,32 +2959,71 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
         </div>}
       </div>)}
     </div>)}
-  </SectionCard>);
+  </SecWrap>);
 }
+// ---------- Vignettes de l'écran Journée ----------
+const MiradorIcon = ({ size = 26, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M2.4 9.6 12 3.4l9.6 6.2" /><path d="M6 9.6V15h12V9.6" /><path d="M9.4 12.1h5.2" />
+    <path d="M7.6 15 5 21.4" /><path d="M16.4 15 19 21.4" /><path d="M8.7 17.7h6.6" /><path d="M8 19.7h8" />
+  </svg>
+);
+// state : "done" (vert), "partial" (ambre), "todo" (gris)
+function StepTile({ id, num, emoji, icon, title, sub, state, open, onToggle }) {
+  const isOpen = open === id;
+  const mark = state === "done" ? "✓" : state === "partial" ? "⋯" : "○";
+  const markCls = state === "done" ? "text-emerald-600" : state === "partial" ? "text-amber-600" : "text-stone-300";
+  const numCls = state === "done" ? "bg-emerald-100 text-emerald-800" : state === "partial" ? "bg-amber-100 text-amber-800" : "bg-stone-100 text-stone-500";
+  return (<button onClick={() => onToggle(id)} className={`w-full rounded-xl border p-3.5 text-left flex items-center gap-3 transition-colors ${isOpen ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"}`}>
+    {num != null && <span className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center shrink-0 ${numCls}`}>{num}</span>}
+    {icon ? <span className="shrink-0 text-stone-800">{icon}</span> : <span className="text-2xl shrink-0">{emoji}</span>}
+    <span className="flex-1 min-w-0">
+      <span className="block text-sm font-medium text-stone-800">{title}</span>
+      <span className="block text-[11px] text-stone-400 mt-0.5 truncate">{sub}</span>
+    </span>
+    <span className={`text-sm shrink-0 ${markCls}`}>{mark}</span>
+  </button>);
+}
+function GridTile({ id, emoji, title, sub, subCls = "text-stone-400", open, onToggle }) {
+  const isOpen = open === id;
+  return (<button onClick={() => onToggle(id)} className={`rounded-xl border p-3.5 text-left transition-colors ${isOpen ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white hover:border-stone-300"}`}>
+    <div className="text-2xl mb-1.5">{emoji}</div>
+    <div className="text-sm font-medium text-stone-800">{title}</div>
+    <div className={`text-[11px] mt-0.5 ${subCls}`}>{sub}</div>
+  </button>);
+}
+function StepPanel({ id, open, children }) {
+  if (open !== id) return null;
+  return <div className="mt-2.5 bg-stone-50 rounded-xl border border-emerald-600 p-4">{children}</div>;
+}
+function StepGroup({ label, children }) {
+  return (<div><p className="text-[11px] uppercase tracking-widest text-stone-400 mb-2 px-1">{label}</p>{children}</div>);
+}
+
 function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings, userId, orgEmail }) {
   const [openJournee, setOpenJournee] = useState(null);
+  const [openStep, setOpenStep] = useState(null); // vignette dépliée dans la journée ouverte
   const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null); const [chefView, setChefView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
   const pubSlug = userId ? String(userId).replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 12) : "public";
-  const pubUrl = "https://" + (github.owner || "hiplou").toLowerCase() + ".github.io/" + (github.repo || "battue") + "/" + pubSlug + "/";
+  const pubUrl = "https://poste.carnetdechasse.fr/b/" + pubSlug + "/";
   const publish = async (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
-    if (!github.token) { openSettings(); return; }
     setPub({ status: "publishing" });
     try {
       const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId);
       const token = "PUBTS-" + Date.now();
       const stamped = html + "\n<!--" + token + "-->";
-      await githubPutFile({ token: github.token, owner: github.owner, repo: github.repo, path: pubSlug + "/index.html", content: toBase64Utf8(stamped), message: "Publication battue " + new Date().toISOString() });
-      const url = pubUrl + "?v=" + Date.now();
-      setPub({ status: "propagating", url });
-      let live = false;
-      for (let i = 0; i < 40 && !live; i++) {
-        await new Promise((res) => setTimeout(res, 3000));
-        try { const r = await fetch(pubUrl + "?c=" + Date.now(), { cache: "no-store" }); if (r.ok) { const t = await r.text(); if (t.indexOf(token) >= 0) live = true; } } catch (e) {}
-      }
-      setPub({ status: live ? "live" : "ok", url: pubUrl + "?v=" + Date.now() });
+      const fn = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
+      let sess = null;
+      try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
+      if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi et réessaie.");
+      const rp = await fetch(fn + "/publish", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token }, body: JSON.stringify({ html: stamped }) });
+      if (!rp.ok) { const t = await rp.text(); throw new Error("Publication refusée — " + t.slice(0, 200)); }
+      let liveUrl = pubUrl;
+      try { await rp.json(); } catch (e) {}
+      setPub({ status: "live", url: liveUrl });
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
   };
   const shareLinkWhatsApp = () => { const link = (pub && pub.url) ? pub.url : pubUrl; const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
@@ -1309,17 +3044,28 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const setAttribution = (jid, key, patch) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const a = { ...(j.attributions || {}) }; a[key] = { ...(a[key] || { mode: "libre", count: 1, note: "" }), ...patch }; return { ...j, attributions: a }; }));
   const toggleChef = (jid, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const chefs = j.chefs || []; const on = chefs.indexOf(hid) >= 0; if (on) { const cl = { ...(j.chefLignes || {}) }; Object.keys(cl).forEach((mid) => { if (cl[mid] === hid) delete cl[mid]; }); return { ...j, chefs: chefs.filter((x) => x !== hid), chefLignes: cl }; } return { ...j, chefs: [...chefs, hid] }; }));
   const setChefLigne = (jid, mid, chefId) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const cl = { ...(j.chefLignes || {}) }; if (!chefId) delete cl[mid]; else cl[mid] = chefId; return { ...j, chefLignes: cl }; }));
+  const setArmeJour = (jid, hid, arme) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const am = { ...(j.armes || {}) }; if (!arme) delete am[hid]; else am[hid] = arme; return { ...j, armes: am }; }));
+  const setRdv = (jid, trackId, chefId, pos) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const all = { ...(j.rdv || {}) }; const t = { ...(all[trackId] || {}) }; if (!pos) delete t[chefId]; else t[chefId] = pos; all[trackId] = t; return { ...j, rdv: all }; }));
   const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...(j.placements || {}), [trackId]: { ...((j.placements || {})[trackId] || {}), [hid]: mid } } })));
   const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...((j.placements || {})[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...(j.placements || {}), [trackId]: t } }; }));
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
   const autoFill = (jid, track, pending, sortedFree) => {
-    const tierOrder = (arr) => { const byP = {}; arr.forEach((m) => { const p = m.priority || 1; (byP[p] = byP[p] || []).push(m); }); return Object.keys(byP).map(Number).sort((a, b) => a - b).reduce((acc, p) => acc.concat(shuffle(byP[p])), []); };
     const okFauteuil = (m) => !!m.accFauteuil;
     const okCanne = (m) => !!m.accCanne || !!m.accFauteuil;
     const jCur = journees.find((j) => j.id === jid);
+    const armeOf = (h) => ((jCur && jCur.armes && jCur.armes[h.id]) || h.arme || null);
+    const armeRank = (m, a) => { const list = armesList(m); if (!list.length) return 1; if (a && list.indexOf(a) >= 0) return 0; return 2; };
     let free = sortedFree.slice();
     const cur = { ...((jCur && jCur.placements && jCur.placements[track.id]) || {}) };
-    const place = (hunters, ok) => { shuffle(hunters.slice()).forEach((h) => { const ordered = tierOrder(free.filter(ok)); if (!ordered.length) return; const post = ordered[0]; cur[h.id] = post.id; free = free.filter((m) => m.id !== post.id); }); };
+    const pickPost = (cands, a) => {
+      if (!cands.length) return null;
+      const allowed = cands.filter((m) => armeOk(armesList(m), a));
+      const pool = shuffle((allowed.length ? allowed : cands).slice());
+      const scored = pool.map((m) => ({ m, p: m.priority || 1, w: armeRank(m, a) }));
+      scored.sort((x, y) => (x.p - y.p) || (x.w - y.w));
+      return scored[0].m;
+    };
+    const place = (hunters, ok) => { shuffle(hunters.slice()).forEach((h) => { const post = pickPost(free.filter(ok), armeOf(h)); if (!post) return; cur[h.id] = post.id; free = free.filter((m) => m.id !== post.id); }); };
     place(pending.filter((h) => h.mobility === "fauteuil"), okFauteuil);
     place(pending.filter((h) => h.mobility === "canne"), okCanne);
     place(pending.filter((h) => h.mobility !== "fauteuil" && h.mobility !== "canne"), () => true);
@@ -1338,7 +3084,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
 
   if (chefView) { const journee = journees.find((j) => j.id === chefView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const chef = participants.find((p) => p.id === chefView.chefId); if (!journee || !terrain || !chef) { setChefView(null); return null; } return <ChefAssign terrain={terrain} journee={journee} chefId={chefView.chefId} chefName={chef.name} participants={participants} onToggle={(mid, chefId) => setChefLigne(journee.id, mid, chefId)} onBack={() => setChefView(null)} />; }
   if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
-    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
+    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} journeeArmes={journee.armes || {}} onSetArme={(hid, arme) => setArmeJour(journee.id, hid, arme)} chefs={journee.chefs || []} chefLignes={journee.chefLignes || {}} rdv={(journee.rdv || {})[track.id] || {}} onSetRdv={(cid, pos) => setRdv(journee.id, track.id, cid, pos)} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
   if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
     return <EnvoiChasseurs journee={journee} terrain={terrain} participants={participants} safety={safety} onBack={() => setShareView(null)} />; }
 
@@ -1346,34 +3092,137 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     {postesPrint && <PrintOverlay html={postesPrint} onClose={() => setPostesPrint(null)} />}
     <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Journées de chasse</h2><button onClick={addJournee} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouvelle journée</button></div>
     {journees.map((j) => { const isOpen = openJournee === j.id; const terrain = terrains.find((t) => t.id === j.terrainId);
-      return (<SectionCard key={j.id}>
-        <div className="flex items-center justify-between px-4 py-3"><button onClick={() => setOpenJournee(isOpen ? null : j.id)} className="flex items-center gap-2 font-medium text-stone-800">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<CalendarDays size={16} className="text-amber-800" />{new Date(j.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</button><span className="text-xs text-stone-400">{terrain?.name || "aucun territoire"}</span></div>
-        {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm"><span className="text-stone-500">Date :</span><input type="date" value={j.date} onChange={(e) => setJourneeDate(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white" /><span className="text-stone-500 ml-2">Territoire :</span>
-            <select value={terrains.some((t) => t.id === j.terrainId) ? j.terrainId : ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="border border-stone-300 rounded px-2 py-1 bg-white"><option value="" disabled>Choisir…</option>{[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-            <button onClick={() => removeJournee(j.id)} className="ml-auto flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer</button></div>
-          <div className="flex items-center gap-2 mb-2"><span className="text-sm text-stone-600">📻 Canal talkie</span><input value={j.canal || ""} onChange={(e) => setJournees((prev) => prev.map((x) => x.id === j.id ? { ...x, canal: e.target.value } : x))} placeholder="ex. 8" className="w-24 border border-stone-300 rounded px-2 py-1 text-sm bg-white" /><span className="text-xs text-stone-400">affiché aux chasseurs</span></div>
-          <InvitationsSection journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
-          {terrain ? (<>
-            {terrain.tracks.map((trk) => { const placed = Object.keys(j.placements[trk.id] || {}).length;
-              return (<div key={trk.id} className="flex items-center justify-between bg-white border border-stone-200 rounded-md px-3 py-2"><div><p className="font-medium text-sm text-stone-800">{trk.name}</p><p className="text-xs text-stone-500 flex items-center gap-1"><MapPin size={12} /> {placed}/{trk.miradors.length} postes</p></div><button onClick={() => setPosterView({ journeeId: j.id, trackId: trk.id })} className="flex items-center gap-1.5 text-sm font-medium bg-emerald-800 hover:bg-emerald-900 text-stone-50 px-3 py-1.5 rounded-md"><Crosshair size={14} /> Poster les fusils</button></div>); })}
-            <AttributionsSection journee={j} terrain={terrain} onSet={setAttribution} />
-            <ChefsSection journee={j} terrain={terrain} participants={participants} onToggleChef={toggleChef} onSetChefLigne={setChefLigne} onAssignPosts={(jid, chefId) => setChefView({ journeeId: jid, chefId })} />
-            <div className="flex gap-2 mt-1">
-              <button onClick={() => printPostes(j)} className="flex-1 flex items-center justify-center gap-1.5 bg-stone-200 hover:bg-stone-300 text-stone-800 text-sm font-medium px-3 py-2.5 rounded-md"><FileText size={16} /> Imprimer les postes</button>
-              <button onClick={() => { const np = Object.keys(j.presence || {}).filter((id) => (j.presence[id] || {}).statut === "present").length; if (!np) { window.alert("Coche d'abord des présents dans la section Invitations."); return; } setPostesPrint(buildEmargementHtml(j, terrain, participants)); }} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium px-3 py-2.5 rounded-md"><FileText size={16} /> Feuille d'émargement</button>
+      const dateFr = new Date(j.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+      // ---- Résumés et avancement de chaque étape ----
+      const pres = j.presence || {};
+      const invited = j.invites || [];
+      const nbPres = participants.filter((p) => (pres[p.id] || {}).statut === "present").length;
+      const nbDiner = participants.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).diner).length;
+      const nbSup = participants.reduce((n, p) => n + (((pres[p.id] || {}).statut === "present") ? (Number((pres[p.id] || {}).invitesSup) || 0) : 0), 0);
+      const tracks = terrain ? (terrain.tracks || []) : [];
+      const totalPostes = tracks.reduce((n, t) => n + (t.miradors || []).length, 0);
+      const totalPlaces = tracks.reduce((n, t) => n + Object.keys(j.placements[t.id] || {}).length, 0);
+      const nbChefs = (j.chefs || []).length;
+      const especes = terrain ? ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled) : [];
+      const nbAttr = especes.filter((e) => { const a = (j.attributions || {})[e.key] || {}; return a.mode === "bracelets" || a.mode === "interdit" || (a.note || "").trim(); }).length;
+      const nbPrises = (j.tableau || []).reduce((n, k) => n + (Number(k.quantite) || 0), 0);
+
+      const stInvit = invited.length ? "done" : "todo";
+      const stPres = nbPres ? "done" : (invited.length ? "partial" : "todo");
+      const stAttr = ((j.canal || "").trim() || nbAttr) ? "done" : "todo";
+      const stPostes = totalPlaces === 0 ? "todo" : ((nbPres > 0 && totalPlaces >= Math.min(nbPres, totalPostes)) ? "done" : "partial");
+      const stChefs = nbChefs ? "done" : "todo";
+      const nbFaites = [stInvit, stPres, stAttr, stPostes, stChefs].filter((x) => x === "done").length;
+
+      const step = isOpen ? openStep : null;
+      const setStep = (id) => setOpenStep((o) => (o === id ? null : id));
+
+      return (<SectionCard key={j.id} className="overflow-hidden p-0">
+        {!isOpen && (<button onClick={() => { setOpenJournee(j.id); setOpenStep(null); }} className="w-full flex items-center justify-between px-4 py-3 text-left gap-2">
+          <span className="flex items-center gap-2 font-medium text-stone-800 text-sm min-w-0"><ChevronRight size={16} className="shrink-0" /><CalendarDays size={16} className="text-amber-800 shrink-0" /><span className="truncate">{dateFr}</span></span>
+          <span className="text-xs text-stone-400 shrink-0">{terrain ? terrain.name : "aucun territoire"}</span>
+        </button>)}
+
+        {isOpen && (<div>
+          <div className="bg-stone-800 text-stone-50 px-4 py-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-serif text-lg leading-tight">{dateFr.charAt(0).toUpperCase() + dateFr.slice(1)}</p>
+                <p className="text-stone-400 text-xs mt-0.5 truncate">{terrain ? terrain.name : "aucun territoire"}{tracks.length ? " · " + tracks.length + " traque" + (tracks.length > 1 ? "s" : "") : ""}{(j.canal || "").trim() ? " · canal " + j.canal : ""}</p>
+              </div>
+              <button onClick={() => { setOpenJournee(null); setOpenStep(null); }} className="text-stone-400 text-xs shrink-0 p-1">▲</button>
             </div>
-            <div className="mt-1 border-t border-stone-200 pt-2 space-y-2">
-              <div className="flex items-center justify-between"><p className="text-xs uppercase tracking-wide text-stone-400">Lien en ligne (lecture seule)</p><button onClick={openSettings} className="text-xs text-stone-500 underline">Réglages</button></div>
-              <button onClick={() => publish(j)} disabled={pub.status === "publishing" || pub.status === "propagating"} className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 disabled:bg-stone-400 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Share2 size={16} /> {pub.status === "publishing" ? "Envoi…" : pub.status === "propagating" ? "Mise en ligne…" : "Publier en ligne (chasseurs + rabatteurs)"}</button>
-              {pub.status === "propagating" && (<div className="bg-amber-50 border border-amber-200 rounded-md p-3 space-y-2"><p className="text-sm text-amber-800">⏳ Mise en ligne en cours… <span className="text-xs">(le lien fonctionne d'ici ~1 min)</span></p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-amber-300 rounded-md px-3 py-2.5 text-sm text-amber-900 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
-              {pub.status === "live" && (<div className="bg-emerald-50 border border-emerald-300 rounded-md p-3 space-y-2"><p className="text-sm font-semibold text-emerald-800">✅ En ligne et à jour !</p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2.5 text-sm text-emerald-800 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
-              {pub.status === "ok" && (<div className="bg-emerald-50 border border-emerald-200 rounded-md p-3 space-y-2"><p className="text-sm text-emerald-800">✓ Publié ! Le lien sera à jour d'ici ~1 min.</p><p className="text-xs text-stone-500">Le lien à envoyer aux chasseurs :</p><a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-300 rounded-md px-3 py-2.5 text-sm text-emerald-800 font-medium underline break-all">{pub.url}</a><button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-md"><Send size={14} /> Envoyer le lien sur WhatsApp</button></div>)}
-              {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-md p-2.5"><p className="text-sm text-red-800">⚠ Échec : {pub.msg}</p><p className="text-xs text-red-700 mt-1">Vérifie la clé dans « Réglages ». Si l'erreur parle de « 404 », le compte/dossier est peut-être mal orthographié.</p></div>)}
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-[11px] text-stone-400 mb-1"><span>Préparation</span><span>{nbFaites} étape{nbFaites > 1 ? "s" : ""} sur 5</span></div>
+              <div className="h-1.5 bg-stone-700 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: (nbFaites / 5 * 100) + "%" }} /></div>
             </div>
-            <button onClick={() => setShareView({ journeeId: j.id })} className="w-full flex items-center justify-center gap-1.5 bg-stone-100 hover:bg-stone-200 text-stone-500 text-xs font-medium px-3 py-2 rounded-md mt-3 border border-stone-200"><Send size={13} /> Envoyer un récap des postes (texte WhatsApp)</button>
-            <TableauSection j={j} terrain={terrains.find((t) => t.id === j.terrainId)} participants={participants} onAddKill={() => addKill(j.id)} onUpdateKill={(kid, patch) => updateKill(j.id, kid, patch)} onRemoveKill={(kid) => removeKill(j.id, kid)} onSetShot={(trackId, mid, val) => setShot(j.id, trackId, mid, val)} onSetState={(trackId, mid, patch) => setMiradorState(j.id, trackId, mid, patch)} />
-          </>) : <p className="text-sm text-stone-500 italic">Choisis un territoire pour voir ses traques.</p>}
+          </div>
+
+          <div className="p-3.5 space-y-4">
+
+            <StepGroup label="Le jour même">
+              <StepTile id="jour" emoji="📅" title="Date & territoire" sub={new Date(j.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) + " · " + (terrain ? terrain.name : "territoire à choisir")} state={terrain ? "done" : "todo"} open={step} onToggle={setStep} />
+              <StepPanel id="jour" open={step}>
+                <div className="space-y-3">
+                  <div><label className="text-[11px] uppercase tracking-wide text-stone-400">Date</label>
+                    <input type="date" value={j.date} onChange={(e) => setJourneeDate(j.id, e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1 text-sm bg-white" /></div>
+                  <div><label className="text-[11px] uppercase tracking-wide text-stone-400">Territoire</label>
+                    <select value={terrains.some((t) => t.id === j.terrainId) ? j.terrainId : ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1 text-sm bg-white"><option value="" disabled>Choisir…</option>{[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+                  <button onClick={() => removeJournee(j.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette journée</button>
+                </div>
+              </StepPanel>
+            </StepGroup>
+
+            <StepGroup label="Avant la battue">
+              <div className="space-y-2.5">
+                <StepTile id="invit" num={1} emoji="📧" title="Envoyer les invitations" sub={invited.length ? invited.length + " invité" + (invited.length > 1 ? "s" : "") : "personne d'invité"} state={stInvit} open={step} onToggle={setStep} />
+                <StepPanel id="invit" open={step}>
+                  <InvitationsSection bare part="invite" journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
+                </StepPanel>
+
+                <StepTile id="pres" num={2} emoji="✅" title="Présences" sub={invited.length ? nbPres + " présent" + (nbPres > 1 ? "s" : "") + " · " + nbDiner + " au dîner" + (nbSup ? " (+" + nbSup + ")" : "") : "invite d'abord des membres"} state={stPres} open={step} onToggle={setStep} />
+                <StepPanel id="pres" open={step}>
+                  <InvitationsSection bare part="presence" journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
+                </StepPanel>
+
+                <StepTile id="attr" num={3} emoji="🎯" title="Attributions du jour" sub={((j.canal || "").trim() ? "Canal " + j.canal : "canal non renseigné") + (nbAttr ? " · " + nbAttr + " espèce" + (nbAttr > 1 ? "s" : "") + " définie" + (nbAttr > 1 ? "s" : "") : "")} state={stAttr} open={step} onToggle={setStep} />
+                <StepPanel id="attr" open={step}>
+                  {terrain ? <AttributionsSection bare journee={j} terrain={terrain} onSet={setAttribution} canal={j.canal || ""} onSetCanal={(v) => setJournees((prev) => prev.map((x) => x.id === j.id ? { ...x, canal: v } : x))} /> : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
+                </StepPanel>
+
+                <StepTile id="postes" num={4} icon={<MiradorIcon size={27} />} title="Poster les fusils" sub={terrain ? (totalPostes ? totalPlaces + "/" + totalPostes + " postes attribués" : "aucun poste sur ce territoire") : "choisis un territoire"} state={stPostes} open={step} onToggle={setStep} />
+                <StepPanel id="postes" open={step}>
+                  {terrain ? (tracks.length ? (<div className="space-y-2">
+                    {tracks.map((trk) => { const placed = Object.keys(j.placements[trk.id] || {}).length; const tot = (trk.miradors || []).length; const vide = placed === 0;
+                      return (<div key={trk.id} className={`flex items-center justify-between gap-2 bg-white border rounded-lg px-3 py-2.5 ${vide ? "border-amber-300" : "border-stone-200"}`}>
+                        <div className="min-w-0"><p className="font-medium text-sm text-stone-800 truncate">{trk.name}</p><p className={`text-[11px] flex items-center gap-1 ${vide ? "text-amber-700" : "text-stone-500"}`}><MapPin size={11} /> {vide ? "aucun poste attribué" : placed + "/" + tot + " postes"}</p></div>
+                        <button onClick={() => setPosterView({ journeeId: j.id, trackId: trk.id })} className="shrink-0 flex items-center gap-1.5 text-xs font-medium bg-emerald-800 hover:bg-emerald-900 text-stone-50 px-3 py-1.5 rounded-md"><Crosshair size={13} /> Placer</button>
+                      </div>); })}
+                  </div>) : <p className="text-sm text-stone-500 italic">Ce territoire n'a pas encore de traque.</p>) : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
+                </StepPanel>
+
+                <StepTile id="chefs" num={5} emoji="👨‍✈️" title="Chefs de ligne" sub={nbChefs ? nbChefs + " désigné" + (nbChefs > 1 ? "s" : "") : "aucun désigné"} state={stChefs} open={step} onToggle={setStep} />
+                <StepPanel id="chefs" open={step}>
+                  {terrain ? <ChefsSection bare journee={j} terrain={terrain} participants={participants} onToggleChef={toggleChef} onSetChefLigne={setChefLigne} onAssignPosts={(jid, chefId) => setChefView({ journeeId: jid, chefId })} /> : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
+                </StepPanel>
+              </div>
+            </StepGroup>
+
+            <StepGroup label="Prêt à partir">
+              <div className="grid grid-cols-2 gap-2.5">
+                <GridTile id="partage" emoji="📤" title="Envoyer les postes" sub={(pub.status === "live" || pub.status === "ok") ? "● En ligne" : "pas encore envoyé"} subCls={(pub.status === "live" || pub.status === "ok") ? "text-emerald-700" : "text-stone-400"} open={step} onToggle={setStep} />
+                <GridTile id="docs" emoji="🖨️" title="Documents" sub="Postes, émargement, dîner" open={step} onToggle={setStep} />
+              </div>
+              <StepPanel id="docs" open={step}>
+                {terrain ? (<div className="space-y-2">
+                  <button onClick={() => printPostes(j)} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">📄 Imprimer les postes</button>
+                  <button onClick={() => { if (!nbPres) { window.alert("Coche d'abord des présents à l'étape Présences."); return; } setPostesPrint(buildEmargementHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">✍️ Feuille d'émargement</button>
+                  <button onClick={() => { if (!nbDiner) { window.alert("Personne n'est inscrit au dîner."); return; } setPostesPrint(buildDinerHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">🍽️ Liste du dîner (PDF)</button>
+                </div>) : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
+              </StepPanel>
+              <StepPanel id="partage" open={step}>
+                {terrain ? (<div className="space-y-2.5">
+                  <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 disabled:bg-stone-400 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-lg"><Share2 size={16} /> {pub.status === "publishing" ? "Envoi en cours…" : ((pub.status === "live" || pub.status === "ok") ? "Mettre à jour l'envoi" : "Envoyer aux chasseurs")}</button>
+                  {(pub.status === "live" || pub.status === "ok") && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-3 space-y-2">
+                    <p className="text-sm font-semibold text-emerald-800">✅ Envoyé et à jour</p>
+                    <a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2 text-xs text-emerald-800 font-medium underline break-all">{pub.url}</a>
+                    <button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-lg"><Send size={14} /> Envoyer sur WhatsApp</button>
+                  </div>)}
+                  {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-lg p-2.5"><p className="text-sm text-red-800">⚠ Échec : {pub.msg}</p></div>)}
+                  <button onClick={() => setShareView({ journeeId: j.id })} className="w-full text-left text-sm text-stone-600 bg-white border border-stone-200 rounded-lg px-3 py-2.5">💬 Envoyer la liste des postes en texte</button>
+                </div>) : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
+              </StepPanel>
+            </StepGroup>
+
+            <StepGroup label="Après la battue">
+              <StepTile id="tableau" emoji="🦌" title="Tableau de chasse" sub={nbPrises ? nbPrises + " animal" + (nbPrises > 1 ? "ux" : "") + " prélevé" + (nbPrises > 1 ? "s" : "") : "rien de déclaré"} state={nbPrises ? "done" : "todo"} open={step} onToggle={setStep} />
+              <StepPanel id="tableau" open={step}>
+                <TableauSection j={j} terrain={terrain} participants={participants} onAddKill={() => addKill(j.id)} onUpdateKill={(kid, patch) => updateKill(j.id, kid, patch)} onRemoveKill={(kid) => removeKill(j.id, kid)} onSetShot={(trackId, mid, val) => setShot(j.id, trackId, mid, val)} onSetState={(trackId, mid, patch) => setMiradorState(j.id, trackId, mid, patch)} />
+              </StepPanel>
+            </StepGroup>
+
+          </div>
         </div>)}
       </SectionCard>); })}
   </div>);
@@ -1571,7 +3420,7 @@ function buildDinnerPrintHtml(participants) {
 // ---------- Application ----------
 const K = { participants: "cdb2:participants", journees: "cdb2:journees", terrainIndex: "cdb2:terrain-index", terrainPrefix: "cdb2:terrain:", imgPrefix: "cdb2:img:", mimgPrefix: "cdb2:mimg:", safety: "cdb2:safety", github: "cdb2:github", localAt: "cdb2:localAt", cloudAt: "cdb2:cloudAt" };
 const DEFAULT_FACTEUR = "https://battue-facteur.hippolyte-houdard.workers.dev/";
-const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", dataRepo: "battue-data", fnUrl: DEFAULT_FACTEUR, orgName: "" };
+const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", fnUrl: DEFAULT_FACTEUR, orgName: "" };
 const STORAGE_OK = typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
 
 const SUPA_URL = "https://zbneklsactpgttkpzwiv.supabase.co";
@@ -1590,11 +3439,11 @@ function AuthScreen() {
     try {
       if (mode === "forgot") {
         if (!email.trim()) { setMsg("⚠ Entre ton email d'abord."); setBusy(false); return; }
-        const { error } = await SB.auth.resetPasswordForEmail(email.trim(), { redirectTo: "https://hiplou.github.io/carnet/" });
+        const { error } = await SB.auth.resetPasswordForEmail(email.trim(), { redirectTo: (typeof window !== "undefined" && window.location ? window.location.origin + window.location.pathname : "https://hiplou.github.io/carnet/") });
         if (error) throw error;
         setMsg("✓ Si un compte existe pour cet email, un lien de réinitialisation vient d'être envoyé. Regarde ta boîte mail (et les spams).");
       } else if (mode === "up") {
-        const { error } = await SB.auth.signUp({ email: email.trim(), password: pass });
+        const { error } = await SB.auth.signUp({ email: email.trim(), password: pass, options: { emailRedirectTo: (typeof window !== "undefined" && window.location ? window.location.origin + window.location.pathname : "https://hiplou.github.io/carnet/") } });
         if (error) throw error;
         setMsg("✓ Compte créé ! Va confirmer ton adresse dans l'email reçu, puis connecte-toi.");
         setMode("in");
@@ -1607,9 +3456,25 @@ function AuthScreen() {
   };
   const title = mode === "up" ? "Crée ton compte" : mode === "forgot" ? "Réinitialiser le mot de passe" : "Connecte-toi à ton carnet";
   const cta = busy ? "…" : mode === "up" ? "Créer mon compte" : mode === "forgot" ? "Envoyer le lien" : "Se connecter";
+
+  // Connexion Google. Supabase rattache automatiquement le compte à celui qui
+  // existe déjà si l'adresse email est la même : pas de carnet en double.
+  const googleSignIn = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const { error } = await SB.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin + window.location.pathname }
+      });
+      if (error) throw error;
+    } catch (e) {
+      setMsg("Connexion Google impossible : " + ((e && e.message) || e));
+      setBusy(false);
+    }
+  };
   return (<div className="min-h-screen bg-stone-100 flex items-center justify-center px-4 py-8">
     <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
-      <div className="flex items-center gap-2 mb-1"><span className="text-3xl">🦌</span><h1 className="font-serif text-2xl text-stone-800">Carnet de Battue</h1></div>
+      <div className="flex items-center gap-2 mb-1"><span className="text-3xl">🦌</span><h1 className="font-serif text-2xl text-stone-800">Carnet de Chasse</h1></div>
       <p className="text-sm text-stone-500 mb-5">{title}</p>
       <label className="text-xs uppercase tracking-wide text-stone-400">Email</label>
       <input type="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-3 mt-1 bg-white" placeholder="ton@email.fr" />
@@ -1617,9 +3482,158 @@ function AuthScreen() {
       <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-1 mt-1 bg-white" placeholder="••••••••" /></>)}
       {mode === "in" && <button onClick={() => { setMode("forgot"); setMsg(""); }} className="text-xs text-stone-500 hover:text-stone-700 underline mb-3 block">Mot de passe oublié ?</button>}
       <button onClick={submit} disabled={busy || !email || (mode !== "forgot" && !pass)} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg py-2.5 font-medium disabled:bg-stone-300 mt-2">{cta}</button>
+      {mode !== "forgot" && (<>
+        <div className="flex items-center gap-3 my-4">
+          <span className="flex-1 h-px bg-stone-200" />
+          <span className="text-[11px] uppercase tracking-wide text-stone-400">ou</span>
+          <span className="flex-1 h-px bg-stone-200" />
+        </div>
+        <button onClick={googleSignIn} disabled={busy} className="w-full flex items-center justify-center gap-2.5 border border-stone-300 hover:bg-stone-50 disabled:opacity-50 rounded-lg py-2.5 font-medium text-stone-700 bg-white">
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.7-2 5-4.4 6.6v5.5h7.1c4.2-3.8 6.6-9.5 6.6-16.1z" />
+            <path fill="#34A853" d="M24 46c6 0 11-2 14.6-5.4l-7.1-5.5c-2 1.3-4.5 2.1-7.5 2.1-5.8 0-10.7-3.9-12.4-9.750H4.3v5.7C7.9 40.9 15.4 46 24 46z" />
+            <path fill="#FBBC05" d="M11.6 27.4c-.5-1.3-.7-2.7-.7-4.4s.3-3.1.7-4.4v-5.7H4.3C2.8 16 2 19.4 2 23s.8 7 2.3 10.1l7.3-5.7z" />
+            <path fill="#EA4335" d="M24 9.5c3.3 0 6.2 1.1 8.5 3.3l6.3-6.3C35 2.9 30 1 24 1 15.4 1 7.9 6.1 4.3 13.5l7.3 5.7C13.3 13.4 18.2 9.5 24 9.5z" />
+          </svg>
+          Continuer avec Google
+        </button>
+      </>)}
       {msg && <p className="text-sm mt-3 text-stone-700 whitespace-pre-wrap">{msg}</p>}
       {mode === "forgot" ? <button onClick={() => { setMode("in"); setMsg(""); }} className="w-full text-sm text-emerald-800 mt-4 underline">← Retour à la connexion</button>
         : <button onClick={() => { setMode(mode === "up" ? "in" : "up"); setMsg(""); }} className="w-full text-sm text-emerald-800 mt-4 underline">{mode === "up" ? "J'ai déjà un compte" : "Pas encore de compte ? En créer un"}</button>}
+    </div>
+  </div>);
+}
+
+// Bandeau discret : prend le relais de la fenêtre à partir de la deuxième connexion.
+// Toujours visible, jamais bloquant.
+function InstallBandeau({ onOuvrir, onFermer }) {
+  return (<div className="fixed left-0 right-0 z-40 px-3" style={{ bottom: "calc(10px + env(safe-area-inset-bottom))" }}>
+    <div className="max-w-md mx-auto bg-stone-900 text-stone-50 rounded-xl shadow-lg flex items-center gap-3 pl-3 pr-2 py-2.5">
+      <span className="w-9 h-9 rounded-lg bg-[#c4d6a8] flex items-center justify-center text-lg shrink-0">🦌</span>
+      <button onClick={onOuvrir} className="flex-1 text-left min-w-0">
+        <span className="block text-[13px] font-medium leading-tight">Mets l'app sur ton écran</span>
+        <span className="block text-[11px] text-stone-400 leading-tight mt-0.5">Un toucher pour l'ouvrir, en plein écran</span>
+      </button>
+      <button onClick={onOuvrir} className="text-[12px] font-medium text-emerald-400 px-2 shrink-0">Voir</button>
+      <button onClick={onFermer} className="text-stone-500 hover:text-stone-300 px-1.5 shrink-0" title="Masquer">✕</button>
+    </div>
+  </div>);
+}
+
+// ---------- Invitation à installer l'app ----------
+// Proposée 3 minutes après la connexion, jamais si l'app est déjà installée.
+function dejaInstallee() {
+  try {
+    if (window.navigator && window.navigator.standalone) return true;
+    if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
+  } catch (e) {}
+  return false;
+}
+function estApple() {
+  try {
+    const ua = navigator.userAgent || "";
+    if (/iPad|iPhone|iPod/.test(ua)) return true;
+    // iPadOS récent se déclare comme un Mac : on le reconnaît au tactile
+    if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+  } catch (e) {}
+  return false;
+}
+
+function InstallModal({ onClose, onNePlusAfficher }) {
+  const apple = estApple();
+  return (<div className="fixed inset-0 z-[75] bg-stone-900/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="bg-stone-50 w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden max-h-[92vh] flex flex-col">
+      <div className="bg-stone-900 text-stone-50 px-5 py-4 shrink-0 flex items-center gap-3">
+        <span className="w-11 h-11 rounded-xl bg-[#c4d6a8] flex items-center justify-center text-xl shrink-0">🦌</span>
+        <span>
+          <h2 className="font-serif text-lg leading-tight">Mets Carnet de Chasse sur ton écran</h2>
+          <p className="text-stone-400 text-[12px] mt-0.5">Un raccourci, comme une vraie application.</p>
+        </span>
+      </div>
+
+      <div className="flex-1 overflow-auto p-4 space-y-3">
+        <p className="text-sm text-stone-600">Tu l'ouvriras d'un toucher, en plein écran, sans passer par le navigateur.</p>
+
+        {apple ? (<div className="space-y-2">
+          <div className="bg-white border border-stone-200 rounded-xl p-3.5 flex gap-3 items-center">
+            <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center justify-center shrink-0">1</span>
+            <span className="text-sm text-stone-700 flex-1">Touche le bouton <b>Partager</b> en bas de Safari</span>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0a84ff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <path d="M12 15V3" /><path d="m8 7 4-4 4 4" /><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" />
+            </svg>
+          </div>
+          <div className="bg-white border border-stone-200 rounded-xl p-3.5 flex gap-3 items-center">
+            <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center justify-center shrink-0">2</span>
+            <span className="text-sm text-stone-700 flex-1">Fais défiler et choisis <b>Sur l'écran d'accueil</b></span>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#44403c" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <rect x="3" y="3" width="18" height="18" rx="4" /><path d="M12 8v8" /><path d="M8 12h8" />
+            </svg>
+          </div>
+          <div className="bg-white border border-stone-200 rounded-xl p-3.5 flex gap-3 items-center">
+            <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center justify-center shrink-0">3</span>
+            <span className="text-sm text-stone-700 flex-1">Touche <b>Ajouter</b> en haut à droite</span>
+            <span className="text-[13px] font-medium text-[#0a84ff] shrink-0">Ajouter</span>
+          </div>
+          <p className="text-[11px] text-stone-400 text-center pt-1">Ces boutons se trouvent dans Safari, pas dans l'application.</p>
+        </div>) : (<div className="space-y-2">
+          <div className="bg-white border border-stone-200 rounded-xl p-3.5 flex gap-3 items-center">
+            <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center justify-center shrink-0">1</span>
+            <span className="text-sm text-stone-700 flex-1">Ouvre le menu <b>⋮</b> de ton navigateur</span>
+          </div>
+          <div className="bg-white border border-stone-200 rounded-xl p-3.5 flex gap-3 items-center">
+            <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center justify-center shrink-0">2</span>
+            <span className="text-sm text-stone-700 flex-1">Choisis <b>Installer l'application</b> ou <b>Ajouter à l'écran d'accueil</b></span>
+          </div>
+        </div>)}
+      </div>
+
+      <div className="border-t border-stone-200 p-4 shrink-0 bg-white space-y-2">
+        <button onClick={onClose} className="w-full bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium py-3 rounded-lg">J'ai compris</button>
+        <button onClick={() => { onNePlusAfficher(); onClose(); }} className="w-full text-sm text-stone-500 py-2">Ne plus afficher</button>
+      </div>
+    </div>
+  </div>);
+}
+
+// ---------- Fenêtre d'accueil ----------
+// S'ouvre à chaque connexion tant que la case « ne plus afficher » n'est pas cochée.
+// Le choix est rangé dans les réglages locaux : il vaut pour cet appareil.
+// Sur un nouveau téléphone, l'accueil réapparaît une fois — ce qui est plutôt souhaitable.
+function AccueilModal({ onClose, onNePlusAfficher }) {
+  const [cache, setCache] = useState(false);
+  const etapes = [
+    { n: 1, emoji: "👥", t: "Tes membres", d: "Commence par saisir les chasseurs et rabatteurs de ta société. Tu peux importer un fichier Excel ou tes contacts." },
+    { n: 2, emoji: "🗺️", t: "Ton territoire", d: "Crée un territoire, ajoute sa carte, dessine tes traques et pose tes miradors." },
+    { n: 3, emoji: "📅", t: "Ta journée", d: "Choisis une date, invite tes membres, place les fusils, et envoie leurs postes aux chasseurs." }
+  ];
+  return (<div className="fixed inset-0 z-[70] bg-stone-900/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="bg-stone-50 w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden max-h-[92vh] flex flex-col">
+      <div className="bg-stone-900 text-stone-50 px-5 py-4 shrink-0">
+        <p className="text-2xl">🦌</p>
+        <h2 className="font-serif text-xl mt-1">Bienvenue dans Carnet de Chasse</h2>
+        <p className="text-stone-400 text-[13px] mt-1">Trois étapes pour organiser ta première battue.</p>
+      </div>
+
+      <div className="flex-1 overflow-auto p-4 space-y-2.5">
+        {etapes.map((e) => (<div key={e.n} className="bg-white border border-stone-200 rounded-xl p-3.5 flex gap-3">
+          <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center justify-center shrink-0">{e.n}</span>
+          <span className="text-2xl shrink-0">{e.emoji}</span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-stone-800">{e.t}</span>
+            <span className="block text-[12px] text-stone-500 mt-0.5 leading-snug">{e.d}</span>
+          </span>
+        </div>))}
+        <p className="text-[12px] text-stone-500 text-center pt-1">Tu retrouveras le détail à tout moment dans ⚙️ Réglages puis Aide.</p>
+      </div>
+
+      <div className="border-t border-stone-200 p-4 shrink-0 bg-white">
+        <label className="flex items-center gap-2.5 mb-3 cursor-pointer">
+          <input type="checkbox" checked={cache} onChange={(e) => setCache(e.target.checked)} className="w-4 h-4 accent-emerald-700" />
+          <span className="text-sm text-stone-600">Ne plus afficher ce message</span>
+        </label>
+        <button onClick={() => { if (cache) onNePlusAfficher(); onClose(); }} className="w-full bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium py-3 rounded-lg">C'est parti</button>
+      </div>
     </div>
   </div>);
 }
@@ -1632,6 +3646,10 @@ function CarnetApp({ session, onSignOut }) {
   const [safety, setSafety] = useState(DEFAULT_SAFETY);
   const [github, setGithub] = useState(DEFAULT_GITHUB);
   const [loaded, setLoaded] = useState(false);
+  const [cloudOk, setCloudOk] = useState(true);
+  const [showAccueil, setShowAccueil] = useState(false);
+  const [showInstall, setShowInstall] = useState(false);
+  const [showBandeau, setShowBandeau] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showPub, setShowPub] = useState(false);
   const [ghStatus, setGhStatus] = useState("idle");
@@ -1642,31 +3660,75 @@ function CarnetApp({ session, onSignOut }) {
   const ghTimer = useRef(null); const skipAuto = useRef(true); const localAtRef = useRef(0);
   const stateRef = useRef({});
   stateRef.current = { participants, terrains, journees, safety, github };
+  // Un seul indicateur pour le témoin de la barre et le bandeau rouge
+  const saveBad = !cloudOk || ghStatus === "error";
+
+  // Poids des données, pour la vignette Sauvegarde. Recalculé seulement quand
+  // les Réglages sont ouverts : inutile de peser le carnet à chaque frappe.
+  const poids = useMemo(() => {
+    if (!showPub) return null;
+    let photos = 0, nbPhotos = 0;
+    const compter = (v) => {
+      if (typeof v === "string") { if (v.slice(0, 11) === "data:image/") { photos += v.length; nbPhotos++; } return; }
+      if (Array.isArray(v)) { v.forEach(compter); return; }
+      if (v && typeof v === "object") { Object.keys(v).forEach((k) => compter(v[k])); }
+    };
+    const tout = { participants, terrains, journees, safety };
+    compter(tout);
+    let total = 0;
+    try { total = JSON.stringify(tout).length; } catch (e) { total = 0; }
+    return { total: total, photos: photos, nbPhotos: nbPhotos };
+  }, [showPub, participants, terrains, journees, safety]);
 
   useEffect(() => {
     (async () => {
       try {
         const getLS = async (key, fb) => { try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
-        const gh = await getLS(K.github, DEFAULT_GITHUB);
+        const ghKey = K.github + ":" + session.user.id;
+        const gh = await getLS(ghKey, null);
         setGithub({ ...DEFAULT_GITHUB, ...(gh || {}) });
+        try { await window.storage.delete(K.github); } catch (e) {}
         const uid = session.user.id; const cacheKey = "cb_supa_" + uid;
         let d = null;
         if (SB) {
-          try { const { data } = await SB.from("carnets").select("data").eq("user_id", uid).maybeSingle(); if (data && data.data) d = data.data; }
-          catch (e) { d = await getLS(cacheKey, null); }
-        } else { d = await getLS(cacheKey, null); }
+          try { const { data, error } = await SB.from("carnets").select("data").eq("user_id", uid).maybeSingle(); if (error) throw error; if (data && data.data) d = data.data; setCloudOk(true); }
+          catch (e) { setCloudOk(false); setGhMsg("⚠ Serveur injoignable — carnet en lecture seule, rien ne sera enregistré."); }
+        } else { setCloudOk(false); }
         if (d) {
           setParticipants((d.participants || []).map(normParticipant));
           setTerrains((d.terrains || []).map(normTerrain));
           setJournees((d.journees || []).map(normJournee));
           setSafety(normSafety(d.safety || DEFAULT_SAFETY));
         }
+        // On n'ouvre l'accueil qu'une fois le carnet chargé, pour ne pas
+        // masquer un éventuel bandeau d'erreur.
+        if (!(gh && gh.accueilVu)) setShowAccueil(true);
       } catch (e) { console.error(e); } finally { setLoaded(true); }
     })();
   }, []);
 
+  // Une minute après l'arrivée, si l'app n'est pas déjà installée
+  // et si l'invitation n'a pas été refusée définitivement.
+  const installVuRef = useRef(false); installVuRef.current = !!github.installVu;
+  useEffect(() => {
+    if (!loaded || !cloudOk) return;
+    if (dejaInstallee() || github.installVu) return;
+    // Première connexion : la fenêtre, une minute après l'arrivée.
+    // Les suivantes : un simple bandeau, qui n'interrompt rien.
+    if (!github.installProposee) {
+      const t = setTimeout(() => {
+        if (installVuRef.current) return;
+        setShowInstall(true);
+        setGithub((g) => ({ ...g, installProposee: true }));
+      }, 60 * 1000);
+      return () => clearTimeout(t);
+    }
+    setShowBandeau(true);
+  }, [loaded, cloudOk, github.installVu, github.installProposee]);
+
   const saveNow = async () => {
     if (!SB || !session) return false;
+    if (!cloudOk) { setGhStatus("error"); setGhMsg("⚠ Sauvegarde bloquée : le carnet n'a pas pu être chargé. Recharge la page."); return false; }
     setGhStatus("saving");
     try {
       const s = stateRef.current;
@@ -1736,16 +3798,16 @@ function CarnetApp({ session, onSignOut }) {
   }, [loaded]);
 
   // Reglages GitHub (publication) gardes par appareil, en local
-  useEffect(() => { if (!loaded) return; try { window.storage.set(K.github, JSON.stringify(github)); } catch (e) {} }, [github, loaded]);
+  useEffect(() => { if (!loaded || !session) return; try { window.storage.set(K.github + ":" + session.user.id, JSON.stringify(github)); } catch (e) {} }, [github, loaded]);
 
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
     const add = (rows, fb, name) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [fb]), name);
-    add(participants.map((p) => ({ Nom: p.name, Téléphone: p.phone || "", Participe: yn(p.participe), Invité: yn(p.invitation), Rôle: p.role || "", Dîner: yn(p.diner?.vient), Invités_sup: p.diner?.invitesSupplementaires || 0, id: p.id })), { Nom: "" }, "Participants");
+    add(participants.map((p) => ({ Nom: p.name, Prénom_: p.prenom || "", Nom_: p.nom || "", Téléphone: p.phone || "", Participe: yn(p.participe), Invité: yn(p.invitation), Rôle: p.role || "", Arme: p.arme || "", Mobilité: p.mobility || "", Dîner: yn(p.diner?.vient), Invités_sup: p.diner?.invitesSupplementaires || 0, id: p.id })), { Nom: "" }, "Participants");
     add(terrains.map((t) => ({ Territoire: t.name, id: t.id })), { Territoire: "" }, "Territoires");
     const trk = []; terrains.forEach((t) => t.tracks.forEach((k) => trk.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Couleur: k.color, crop_x: k.crop?.x ?? 0, crop_y: k.crop?.y ?? 0, crop_w: k.crop?.w ?? 100, crop_h: k.crop?.h ?? 100 })));
     add(trk, { Traque: "" }, "Traques");
-    const mir = []; terrains.forEach((t) => t.tracks.forEach((k) => k.miradors.forEach((m) => mir.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Mirador: m.label, MiradorId: m.id, gx: m.gx, gy: m.gy, Priorite: m.priority || 1, Consignes: m.consignes || "" }))));
+    const mir = []; terrains.forEach((t) => t.tracks.forEach((k) => k.miradors.forEach((m) => mir.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Mirador: m.label, MiradorId: m.id, gx: m.gx, gy: m.gy, Priorite: m.priority || 1, Armes: armesList(m).join("|"), Consignes: m.consignes || "" }))));
     add(mir, { Mirador: "" }, "Miradors");
     const tab = []; journees.forEach((j) => (j.tableau || []).forEach((k) => tab.push({ JourneeId: j.id, Date: j.date, Espece: k.espece, EspeceLibre: k.especeLabel || "", Quantite: k.quantite || 0, TireurId: k.tireurId || "" })));
     add(tab, { JourneeId: "" }, "Tableau");
@@ -1784,12 +3846,12 @@ function CarnetApp({ session, onSignOut }) {
     const P = sh("Participants"), T = sh("Territoires"), TRK = sh("Traques"), M = sh("Miradors"), J = sh("Journées"), PL = sh("Placements"), PH = sh("_Photos"), CO = sh("Consignes"), SO = sh("Sonneries");
     const photoMap = {}; PH.forEach((r) => { if (!r.Kind) return; const key = `${r.Kind}|${r.OwnerId}|${r.PhotoIndex || 0}`; (photoMap[key] = photoMap[key] || []).push({ c: Number(r.Chunk) || 0, d: String(r.Data || "") }); });
     const blob = (key) => (photoMap[key] ? photoMap[key].sort((a, b) => a.c - b.c).map((x) => x.d).join("") : null);
-    const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: (function(){ var rr = String(r.Rôle || r.Role || "").toLowerCase(); return rr.indexOf("rab") >= 0 ? "rabatteur" : (rr ? "chasseur" : null); })(), mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })() }));
+    const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: (function(){ var rr = String(r.Rôle || r.Role || "").toLowerCase(); return rr.indexOf("rab") >= 0 ? "rabatteur" : (rr ? "chasseur" : null); })(), mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })(), arme: (function(){ var a=String(r.Arme||"").toLowerCase(); return a.indexOf("ray")>=0?"rayee":(a.indexOf("liss")>=0?"lisse":(a.indexOf("arc")>=0?"arc":null)); })(), prenom: r["Prénom_"]!=null?String(r["Prénom_"]):undefined, nom: r["Nom_"]!=null?String(r["Nom_"]):undefined }));
     const terrs = T.filter((r) => r.Territoire || r.id).map((r) => ({ id: r.id || `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: r.Territoire || "Territoire", planImage: blob(`plan|${r.id}|0`), tracks: [] }));
     const terrById = Object.fromEntries(terrs.map((t) => [t.id, t]));
     TRK.filter((r) => r.TraqueId).forEach((r) => { const t = terrById[r.TerritoireId]; if (!t) return; t.tracks.push({ id: r.TraqueId, name: r.Traque || "Traque", color: r.Couleur || "#dc2626", crop: { x: Number(r.crop_x) || 0, y: Number(r.crop_y) || 0, w: Number(r.crop_w) || 100, h: Number(r.crop_h) || 100 }, miradors: [] }); });
     const trkById = {}; terrs.forEach((t) => t.tracks.forEach((k) => { trkById[k.id] = k; }));
-    M.filter((r) => r.MiradorId).forEach((r) => { const k = trkById[r.TraqueId]; if (!k) return; const photos = []; for (let pi = 0; ; pi++) { const b = blob(`mirador|${r.MiradorId}|${pi}`); if (!b) break; photos.push(b); } k.miradors.push({ id: r.MiradorId, label: r.Mirador || "Poste", gx: Number(r.gx) || 50, gy: Number(r.gy) || 50, priority: Number(r.Priorite) || 1, consignes: r.Consignes || "", photos }); });
+    M.filter((r) => r.MiradorId).forEach((r) => { const k = trkById[r.TraqueId]; if (!k) return; const photos = []; for (let pi = 0; ; pi++) { const b = blob(`mirador|${r.MiradorId}|${pi}`); if (!b) break; photos.push(b); } k.miradors.push({ id: r.MiradorId, label: r.Mirador || "Poste", gx: Number(r.gx) || 50, gy: Number(r.gy) || 50, priority: Number(r.Priorite) || 1, armes: String(r.Armes || r.Arme || "").split("|").map((x) => x.trim().toLowerCase()).filter((x) => x && x !== "indifferent"), consignes: r.Consignes || "", photos }); });
     terrs.forEach((t) => { if (!t.tracks.length) t.tracks.push({ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }); });
     const jours = J.filter((r) => r.Date || r.id).map((r, i) => ({ id: r.id || `j-${Date.now()}-${i}`, date: excelDate(r.Date), terrainId: r.TerritoireId || null, placements: {}, tableau: [] }));
     const jourById = Object.fromEntries(jours.map((j) => [j.id, j]));
@@ -1810,86 +3872,36 @@ function CarnetApp({ session, onSignOut }) {
       setDismissBanner(true); skipDirty.current = true; setDirty(false); window.alert("Sauvegarde importée ✔ (photos comprises).");
     } catch (ex) { window.alert("Import impossible : " + (ex.message || ex)); } finally { if (importFileRef.current) importFileRef.current.value = ""; }
   };
-  const ghBase = (repo) => "https://api.github.com/repos/" + github.owner + "/" + repo + "/contents/data.json";
-  const ghHeaders = () => ({ Authorization: "Bearer " + github.token, Accept: "application/vnd.github+json" });
-  const saveToGitHub = async (auto) => {
-    if (!github.token) { if (auto) return; setShowPub(true); return; }
-    setGhStatus("saving"); setGhMsg("");
-    try {
-      const repo = github.dataRepo || "battue-data";
-      const stamp = localAtRef.current || Date.now();
-      const content = toBase64Utf8(JSON.stringify({ version: 2, savedAt: stamp, participants, terrains, journees, safety }));
-      await githubPutFile({ token: github.token, owner: github.owner, repo: repo, path: "data.json", content: content, message: "Sauvegarde " + new Date().toISOString() });
-      try { await window.storage.set(K.cloudAt, JSON.stringify(stamp)); } catch (e) {}
-      setGhStatus("saved"); setGhMsg("✓ Enregistré à " + new Date().toLocaleTimeString("fr-FR")); setDirty(false);
-    } catch (e) { setGhStatus("error"); setGhMsg("⚠ Non enregistré : " + ((e && e.message) || e)); }
-  };
-  const loadFromGitHub = async () => {
-    if (!github.token) { setShowPub(true); window.alert("Ajoute d'abord ta clé GitHub dans les Réglages, puis reclique sur Importer."); return; }
-    if (!window.confirm("Importer tes données depuis GitHub (battue-data) dans CE compte ? Elles remplaceront le carnet actuel de ce compte.")) return;
-    setGhStatus("saving"); setGhMsg("Import en cours…");
-    try {
-      const repo = github.dataRepo || "battue-data";
-      const res = await fetch("https://api.github.com/repos/" + github.owner + "/" + repo + "/contents/data.json?ref=main&t=" + Date.now(), { headers: { Authorization: "Bearer " + github.token, Accept: "application/vnd.github+json" }, cache: "no-store" });
-      if (res.status === 404) { setGhStatus("idle"); window.alert("Aucune sauvegarde trouvée dans " + repo + "."); return; }
-      if (!res.ok) { const t = await res.text(); throw new Error("Code " + res.status + " — " + t.slice(0, 150)); }
-      const j = await res.json();
-      const data = JSON.parse(fromBase64Utf8(j.content || ""));
-      if (data.participants) setParticipants(data.participants.map(normParticipant));
-      if (data.terrains) setTerrains(data.terrains.map(normTerrain));
-      if (data.journees) setJournees(data.journees);
-      if (data.safety) setSafety(normSafety(data.safety));
-      setGhStatus("saved"); setGhMsg("✓ Importé");
-      window.alert("✓ Données importées ! Elles s'enregistrent maintenant dans ton compte (attends « ✓ Enregistré » en haut).");
-    } catch (e) { setGhStatus("error"); window.alert("Échec de l'import : " + ((e && e.message) || e)); }
-  };
-
-  // Retire automatiquement des postes tout participant devenu absent ou supprimé
-  useEffect(() => {
-    if (!loaded) return;
-    const activeIds = new Set(participants.map((p) => p.id));
-    let changed = false;
-    const next = journees.map((j) => {
-      let jChanged = false; const placements = {};
-      for (const [trackId, byHunter] of Object.entries(j.placements || {})) {
-        const cleaned = {};
-        for (const [hid, mid] of Object.entries(byHunter)) { if (activeIds.has(hid)) cleaned[hid] = mid; else jChanged = true; }
-        placements[trackId] = cleaned;
-      }
-      if (jChanged) { changed = true; return { ...j, placements }; }
-      return j;
-    });
-    if (changed) setJournees(next);
-  }, [participants, journees, loaded]);
-
-  const resetAll = () => { if (!window.confirm("Tout réinitialiser ?")) return; setParticipants(initialParticipants); setTerrains(initialTerrains); setJournees(initialJournees); setSafety(DEFAULT_SAFETY); };
-
-  const tabs = [{ id: "journees", label: "Journées", icon: CalendarDays }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "participants", label: "Membres", icon: Users }, { id: "securite", label: "Sécurité", icon: Shield }];
   const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !t.planImage);
+  const tabs = [{ id: "journees", label: "Journées", icon: CalendarDays }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "participants", label: "Membres", icon: Users }, { id: "securite", label: "Sécurité", icon: Shield }];
 
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
 
   return (<div className="min-h-screen bg-stone-100">
-    {showPub && <PublishModal github={github} setGithub={setGithub} onClose={() => setShowPub(false)} onLoad={loadFromGitHub} />}    <header className="bg-stone-900 text-stone-50 px-4 py-4"><div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-      <div className="flex items-center gap-3"><span className="text-3xl">🦌</span><div><h1 className="font-serif text-2xl tracking-wide">Carnet de Battue</h1><p className="text-stone-400 text-sm">Saison 2026 – 2027</p></div></div>
-      <div className="text-right">
-        <p className={`text-xs h-4 ${ghStatus === "error" ? "text-amber-300" : ghStatus === "saving" ? "text-stone-300" : "text-emerald-300"}`}>{ghStatus === "saving" ? "Enregistrement…" : ghStatus === "saved" ? "✓ Enregistré" : ghStatus === "error" ? "⚠ Non enregistré (connexion ?)" : ""}</p>
-        <div className="flex items-center gap-3 justify-end mt-1">
-          <button onClick={() => saveNow()} className="flex items-center gap-1 text-sm font-medium bg-emerald-700 hover:bg-emerald-800 text-stone-50 px-3 py-1 rounded-md">☁ Sauvegarder</button>
-          <button onClick={() => setShowPub(true)} className="text-xs text-stone-400 hover:text-stone-200 underline">Réglages</button>
-          <button onClick={onSignOut} className="text-xs text-stone-400 hover:text-stone-200 underline">Déconnexion</button>
+    {showBandeau && !showInstall && !showAccueil && !showPub && <InstallBandeau onOuvrir={() => { setShowBandeau(false); setShowInstall(true); }} onFermer={() => setShowBandeau(false)} />}
+    {showInstall && !showAccueil && <InstallModal onClose={() => setShowInstall(false)} onNePlusAfficher={() => setGithub((g) => ({ ...g, installVu: true }))} />}
+    {showAccueil && <AccueilModal onClose={() => setShowAccueil(false)} onNePlusAfficher={() => setGithub((g) => ({ ...g, accueilVu: true }))} />}
+    {showPub && <SettingsSheet onInstall={() => { setShowPub(false); setShowInstall(true); }} poids={poids} github={github} setGithub={setGithub} onClose={() => setShowPub(false)} session={session} onSignOut={onSignOut} onExportExcel={exportExcel} onExportJson={exportJson} onImportPick={() => importFileRef.current && importFileRef.current.click()} />}
+    <input ref={importFileRef} type="file" accept=".xlsx,.json" onChange={importFile} className="hidden" />
+
+    <header className="bg-stone-900 text-stone-50 px-4 py-3" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}><div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2 min-w-0"><span className="text-2xl">🦌</span><h1 className="font-serif text-xl tracking-wide truncate">Carnet de Chasse</h1></div>
+      <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-1.5" title={saveBad ? "Tes modifications ne sont pas enregistrées" : "Tout est enregistré"}>
+          {saveBad ? <AlertTriangle size={16} className="text-red-400" /> : <Cloud size={16} className={ghStatus === "saving" ? "text-stone-400" : "text-emerald-400"} />}
+          <span className={`text-[11px] ${saveBad ? "text-red-400" : ghStatus === "saving" ? "text-stone-400" : "text-emerald-400"}`}>{saveBad ? "Non enregistré" : ghStatus === "saving" ? "Enregistrement…" : "Enregistré"}</span>
         </div>
-        <p className="text-[10px] text-stone-500 mt-0.5 truncate max-w-[180px]">{session?.user?.email}</p>
+        <button onClick={() => setShowPub(true)} className="p-2 -mr-1 rounded-lg hover:bg-stone-800" title="Réglages"><Settings size={21} /></button>
       </div>
     </div></header>
 
-    {missingImages && !dismissBanner && (<div className="bg-amber-100 border-b border-amber-300 text-amber-900 text-sm px-4 py-2"><div className="max-w-3xl mx-auto flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span className="flex-1">Une photo de territoire manque. Clique <button onClick={loadFromGitHub} className="underline font-medium">Charger</button> pour récupérer ta sauvegarde.</span><button onClick={() => setDismissBanner(true)} className="text-amber-700"><X size={16} /></button></div></div>)}
+    {saveBad && (<div className="bg-red-100 border-b border-red-300 text-red-900 text-sm px-4 py-2.5"><div className="max-w-3xl mx-auto flex items-start gap-2"><AlertTriangle size={17} className="shrink-0 mt-0.5" /><span className="flex-1">{!cloudOk ? <span><b>Carnet non chargé</b> — rien ne sera enregistré. Recharge la page.</span> : <span><b>Rien n'est enregistré.</b> Vérifie ta connexion, tes dernières modifications ne sont pas sauvegardées.</span>}</span></div></div>)}
 
     <nav className="bg-stone-800 px-4"><div className="max-w-3xl mx-auto flex gap-1 overflow-x-auto">{tabs.map(({ id, label, icon: Icon }) => (<button key={id} onClick={() => setTab(id)} className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap ${tab === id ? "bg-stone-100 text-stone-900" : "text-stone-300 hover:text-stone-50"}`}><Icon size={15} /> {label}</button>))}</div></nav>
 
     <main className="max-w-3xl mx-auto px-4 py-5">
       {tab === "participants" && <ParticipantsView participants={participants} setParticipants={setParticipants} />}
-      {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} journees={journees} />}
+      {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} journees={journees} github={github} />}
       {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} userId={session?.user?.id} orgEmail={session?.user?.email} />}
       {tab === "securite" && <SecurityView safety={safety} setSafety={setSafety} />}
       {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} setJournees={setJournees} />}
