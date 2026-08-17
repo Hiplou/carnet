@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.50";
+const APP_VERSION = "v1.51";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -427,7 +427,7 @@ function cropBgStyle(image, crop) { const fw = crop.w / 100, fh = crop.h / 100, 
 
 // ---------- Recadrage ----------
 function CropBox({ image, crop, setCrop }) {
-  const boxRef = useRef(null); const drag = useRef(null); const cropRef = useRef(crop); cropRef.current = crop; const MIN = 8;
+  const boxRef = useRef(null); const wrapRef = useRef(null); const drag = useRef(null); const cropRef = useRef(crop); cropRef.current = crop; const MIN = 8;
   const pct = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); return { x: Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)), y: Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)) }; };
   useEffect(() => {
     const onMove = (e) => {
@@ -481,6 +481,12 @@ function PlaceMiradors({ image, track, updateTrack }) {
   const crop = track.crop || FULL_CROP; const ar = useImageAR(image);
   const boxRef = useRef(null); const drag = useRef(null); const moved = useRef(false); const mRef = useRef(track.miradors); mRef.current = track.miradors;
   const [mode, setMode] = useState("poste");          // poste | contour | deplacer
+  // Zoom au pincement. La transformation est portée par la couche interne (boxRef),
+  // si bien que toGlobal continue de fonctionner sans le moindre calcul supplémentaire.
+  const [vue, setVue] = useState({ z: 1, tx: 0, ty: 0 });
+  const doigts = useRef(new Map());
+  const pinch = useRef(null);
+  const vueRef = useRef(vue); vueRef.current = vue;
   const modeRef = useRef(mode); modeRef.current = mode;
   const zRef = useRef(track.zone || []); zRef.current = track.zone || [];
   const zDrag = useRef(null); const [sel, setSel] = useState(null);
@@ -491,6 +497,43 @@ function PlaceMiradors({ image, track, updateTrack }) {
     window.addEventListener("pointermove", onMove, { passive: false }); window.addEventListener("pointerup", onUp);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
   }, [updateTrack, crop.x, crop.y, crop.w, crop.h]);
+  const majDoigt = (e) => doigts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const onDown = (e) => {
+    majDoigt(e);
+    if (doigts.current.size === 2) {
+      const [a, b] = Array.from(doigts.current.values());
+      pinch.current = {
+        d0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2,
+        v0: { ...vueRef.current }
+      };
+      moved.current = true;              // empêche la pose d'un point à la fin du geste
+      drag.current = null; zDrag.current = null;
+    }
+  };
+  const onPinchMove = (e) => {
+    if (!doigts.current.has(e.pointerId)) return;
+    majDoigt(e);
+    if (doigts.current.size < 2 || !pinch.current || !wrapRef.current) return;
+    e.preventDefault();
+    const [a, b] = Array.from(doigts.current.values());
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const P = pinch.current;
+    const z = Math.max(1, Math.min(6, P.v0.z * (d / P.d0)));
+    const r = wrapRef.current.getBoundingClientRect();
+    // Le point pincé reste sous les doigts
+    const ox = P.mx - r.left, oy = P.my - r.top;
+    let tx = mx - r.left - ((ox - P.v0.tx) / P.v0.z) * z;
+    let ty = my - r.top - ((oy - P.v0.ty) / P.v0.z) * z;
+    const maxX = 0, minX = r.width - r.width * z;
+    const maxY = 0, minY = r.height - r.height * z;
+    tx = Math.max(minX, Math.min(maxX, tx));
+    ty = Math.max(minY, Math.min(maxY, ty));
+    setVue({ z, tx, ty });
+  };
+  const onFin = (e) => { doigts.current.delete(e.pointerId); if (doigts.current.size < 2) pinch.current = null; };
+
   const onClick = (e) => { if (moved.current) { moved.current = false; return; }
     if (modeRef.current === "contour") { const { gx, gy } = toGlobal(e.clientX, e.clientY); updateTrack({ zone: [...(track.zone || []), { gx, gy }] }); return; }
     const { gx, gy } = toGlobal(e.clientX, e.clientY); const id = `m-${Date.now()}`; updateTrack({ miradors: [...track.miradors, { id, label: `Poste ${track.miradors.length + 1}`, gx: +gx.toFixed(2), gy: +gy.toFixed(2), photos: [], consignes: "" }] }); setSel(id); };
@@ -501,15 +544,24 @@ function PlaceMiradors({ image, track, updateTrack }) {
       ))}
     </div>
     <p className="text-[11px] text-stone-500 mb-1.5">
-      {mode === "poste" ? "Touche la carte pour poser un mirador, glisse une pastille pour la déplacer."
-        : mode === "contour" ? "Touche la carte pour poser les points du contour de la traque."
+      {mode === "poste" ? "Touche la carte pour poser un mirador, glisse une pastille pour la déplacer. Pince à deux doigts pour zoomer."
+        : mode === "contour" ? "Touche la carte pour poser les points du contour. Pince à deux doigts pour zoomer."
         : "Fais glisser un point du contour pour l'ajuster."}
     </p>
     {mode !== "poste" && (<div className="flex gap-1.5 mb-2">
       <button onClick={() => updateTrack({ zone: (track.zone || []).slice(0, -1) })} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-stone-600 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">↶ Dernier point</button>
       <button onClick={() => { if ((track.zone || []).length && !window.confirm("Effacer le contour de cette traque ?")) return; updateTrack({ zone: [] }); }} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-red-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">🗑 Effacer le contour</button>
     </div>)}
-    <div ref={boxRef} onClick={onClick} style={{ ...cropWrapperStyle(crop, ar), touchAction: "none" }} className="border border-stone-300 cursor-crosshair select-none">
+    {vue.z > 1.02 && (<div className="flex items-center justify-between mb-1.5 bg-stone-100 border border-stone-200 rounded-md px-2.5 py-1.5">
+      <span className="text-[11px] text-stone-500">Zoom ×{vue.z.toFixed(1)}</span>
+      <button onClick={() => setVue({ z: 1, tx: 0, ty: 0 })} className="text-[11px] text-emerald-800 underline">Revoir toute la traque</button>
+    </div>)}
+    <div ref={wrapRef}
+      onPointerDown={onDown} onPointerMove={onPinchMove} onPointerUp={onFin} onPointerCancel={onFin}
+      style={{ ...cropWrapperStyle(crop, ar), touchAction: "none", overflow: "hidden", position: "relative" }}
+      className="border border-stone-300 select-none relative">
+      <div ref={boxRef} onClick={onClick}
+        style={{ position: "absolute", inset: 0, transform: `translate(${vue.tx}px, ${vue.ty}px) scale(${vue.z})`, transformOrigin: "0 0", cursor: "crosshair" }}>
       <div style={cropBgStyle(image, crop)} />
       <ZoneSvg zone={track.zone} crop={crop} color={track.color} />
       {mode !== "poste" && (track.zone || []).map((pt, i) => {
@@ -529,7 +581,7 @@ function PlaceMiradors({ image, track, updateTrack }) {
           <span className={`rounded-full border-2 shadow ${s ? "border-stone-900 w-4 h-4" : "border-white w-3.5 h-3.5"}`} style={{ backgroundColor: track.color }} />
           <span className="text-[9px] leading-tight bg-stone-900/70 text-stone-50 px-1 rounded whitespace-nowrap">{m.label}{(m.photos && m.photos.length) ? " 📷" : ""}</span>
         </div>); })}
-    </div></div>);
+    </div></div></div>);
 }
 
 // Editeur d'un mirador (nom, consignes, photos)
