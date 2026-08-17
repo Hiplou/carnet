@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.55";
+const APP_VERSION = "v1.58";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1922,12 +1922,48 @@ function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s;}
 function fmtDate(d){try{return cap(new Date(d).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));}catch(e){return d;}}
 function myMir(ti){if(!me)return null;for(var k=0;k<me.posts.length;k++){if(me.posts[k].traqueIndex===ti)return me.posts[k].miradorId;}return null;}
 var MAP_I=0;
-function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='halo'></span><span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}}
+function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();(function(){var z=t.zone||[];if(z.length<2)return;var pts=z.map(function(q){return ((q.gx-c.x)/c.w*100)+' '+((q.gy-c.y)/c.h*100);});var d='M '+pts.join(' L ')+((t.zoneFermee&&z.length>=3)?' Z':'');var NSZ='http://www.w3.org/2000/svg';var sv=document.createElementNS(NSZ,'svg');sv.setAttribute('viewBox','0 0 100 100');sv.setAttribute('preserveAspectRatio','none');sv.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';var col=t.color||'#dc2626';function trait(couleur,ep,op){var pa=document.createElementNS(NSZ,'path');pa.setAttribute('d',d);pa.setAttribute('fill','none');pa.setAttribute('stroke',couleur);pa.setAttribute('stroke-width',ep);pa.setAttribute('stroke-linejoin','round');pa.setAttribute('stroke-linecap','round');pa.setAttribute('opacity',op);pa.setAttribute('vector-effect','non-scaling-stroke');return pa;}sv.appendChild(trait('#ffffff','5','.55'));sv.appendChild(trait(col,'3.5','.85'));map.appendChild(sv);})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='halo'></span><span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});activerZoom(map);if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}}
 function selectTraque(i){["tabs","mapTabs","postTabs"].forEach(function(id){var c=$(id);if(!c)return;var ks=c.children;for(var k=0;k<ks.length;k++)ks[k].classList.toggle("active",k===i);});renderMap(i);renderPostInfo(i);setHeroFor(i);}
 function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
 function setHeroFor(index){var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
 function aesc(x){return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 
+
+/* ---- Zoom au pincement sur une carte ---- */
+function activerZoom(el){
+  if(!el||el.dataset.zoomPret)return;el.dataset.zoomPret="1";
+  var couche=document.createElement("div");
+  couche.style.cssText="position:absolute;inset:0;transform-origin:0 0;will-change:transform";
+  while(el.firstChild)couche.appendChild(el.firstChild);
+  el.appendChild(couche);
+  el.style.touchAction="none";
+  var z=1,tx=0,ty=0,doigts=new Map(),p0=null;
+  function appliquer(){couche.style.transform="translate("+tx+"px,"+ty+"px) scale("+z+")";
+    var b=el.querySelector(".zoom-reset");if(b)b.style.display=z>1.02?"block":"none";}
+  function borner(r){var mnX=r.width-r.width*z,mnY=r.height-r.height*z;
+    tx=Math.max(mnX,Math.min(0,tx));ty=Math.max(mnY,Math.min(0,ty));}
+  el.addEventListener("pointerdown",function(e){doigts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(doigts.size===2){var v=Array.from(doigts.values());
+      p0={d:Math.hypot(v[0].x-v[1].x,v[0].y-v[1].y)||1,mx:(v[0].x+v[1].x)/2,my:(v[0].y+v[1].y)/2,z:z,tx:tx,ty:ty};}});
+  el.addEventListener("pointermove",function(e){if(!doigts.has(e.pointerId))return;
+    doigts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(doigts.size<2||!p0)return;e.preventDefault();
+    var v=Array.from(doigts.values());
+    var d=Math.hypot(v[0].x-v[1].x,v[0].y-v[1].y)||1;
+    var mx=(v[0].x+v[1].x)/2,my=(v[0].y+v[1].y)/2;
+    var r=el.getBoundingClientRect();
+    z=Math.max(1,Math.min(6,p0.z*(d/p0.d)));
+    tx=mx-r.left-((p0.mx-r.left-p0.tx)/p0.z)*z;
+    ty=my-r.top-((p0.my-r.top-p0.ty)/p0.z)*z;
+    borner(r);appliquer();},{passive:false});
+  function fin(e){doigts.delete(e.pointerId);if(doigts.size<2)p0=null;}
+  el.addEventListener("pointerup",fin);el.addEventListener("pointercancel",fin);
+  var b=document.createElement("button");b.className="zoom-reset";
+  b.textContent="Vue d ensemble";
+  b.style.cssText="position:absolute;right:8px;bottom:8px;z-index:5;display:none;border:0;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;background:rgba(28,25,23,.85);color:#fafaf9";
+  b.addEventListener("click",function(ev){ev.stopPropagation();z=1;tx=0;ty=0;appliquer();});
+  el.appendChild(b);
+}
 /* ===================== La Course du Sanglier ===================== */
 var JEU = null;
 function jeuLS(k, v) {
@@ -3091,6 +3127,19 @@ function StepGroup({ label, children }) {
 function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings, userId, orgEmail }) {
   const [openJournee, setOpenJournee] = useState(null);
   const [openStep, setOpenStep] = useState(null); // vignette dépliée dans la journée ouverte
+  // Ouvrir « Envoyer les postes » prépare le lien immédiatement : l'organisateur
+  // n'a plus qu'à le transmettre. On ne relance pas si un envoi est déjà en cours.
+  const dejaEnvoye = useRef(null);
+  useEffect(() => {
+    if (openStep !== "partage" || !openJournee) return;
+    if (dejaEnvoye.current === openJournee) return;
+    const j = journees.find((x) => x.id === openJournee);
+    if (!j) return;
+    if (!terrains.some((t) => t.id === j.terrainId)) return;
+    dejaEnvoye.current = openJournee;
+    publish(j);
+  }, [openStep, openJournee]);
+  useEffect(() => { if (openStep !== "partage") dejaEnvoye.current = null; }, [openStep]);
   const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null); const [chefView, setChefView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
   const pubSlug = userId ? String(userId).replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 12) : "public";
@@ -3291,14 +3340,31 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
               </StepPanel>
               <StepPanel id="partage" open={step}>
                 {terrain ? (<div className="space-y-2.5">
-                  <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-900 disabled:bg-stone-400 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-lg"><Share2 size={16} /> {pub.status === "publishing" ? "Envoi en cours…" : ((pub.status === "live" || pub.status === "ok") ? "Mettre à jour l'envoi" : "Envoyer aux chasseurs")}</button>
-                  {(pub.status === "live" || pub.status === "ok") && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-3 space-y-2">
-                    <p className="text-sm font-semibold text-emerald-800">✅ Envoyé et à jour</p>
-                    <a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2 text-xs text-emerald-800 font-medium underline break-all">{pub.url}</a>
-                    <button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-2.5 rounded-lg"><Send size={14} /> Envoyer sur WhatsApp</button>
+                  {pub.status === "publishing" && (<div className="bg-stone-50 border border-stone-200 rounded-lg p-3 text-center">
+                    <p className="text-sm text-stone-600">Préparation du lien…</p>
                   </div>)}
-                  {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-lg p-2.5"><p className="text-sm text-red-800">⚠ Échec : {pub.msg}</p></div>)}
-                  <button onClick={() => setShareView({ journeeId: j.id })} className="w-full text-left text-sm text-stone-600 bg-white border border-stone-200 rounded-lg px-3 py-2.5">💬 Envoyer la liste des postes en texte</button>
+
+                  {(pub.status === "live" || pub.status === "ok") && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-3 space-y-2">
+                    <p className="text-sm font-semibold text-emerald-800">✅ Le lien est prêt</p>
+                    <a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2 text-xs text-emerald-800 font-medium underline break-all">{pub.url}</a>
+                    <button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-3 rounded-lg"><Send size={16} /> Envoyer sur WhatsApp</button>
+                  </div>)}
+
+                  {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-lg p-2.5 space-y-2">
+                    <p className="text-sm text-red-800">⚠ Échec : {pub.msg}</p>
+                    <button onClick={() => publish(j)} className="w-full bg-stone-800 text-stone-50 text-sm font-medium py-2 rounded-lg">Réessayer</button>
+                  </div>)}
+
+                  {(pub.status === "live" || pub.status === "ok") && (<div className="bg-white border border-stone-200 rounded-lg p-3">
+                    <p className="text-[13px] font-medium text-stone-800 mb-1.5">💬 Comment le transmettre</p>
+                    <p className="text-[12px] text-stone-600 leading-snug">Le plus simple est de créer <b>un groupe WhatsApp avec tes chasseurs</b>, une fois pour toutes. Tu y colles ce lien avant chaque battue : chacun ouvre le sien et retrouve son poste, sa carte et les consignes.</p>
+                    <p className="text-[12px] text-stone-600 leading-snug mt-1.5">Le lien reste le même toute la journée. Si tu changes un placement, reviens ici : il se met à jour tout seul, sans avoir à le renvoyer.</p>
+                  </div>)}
+
+                  <div className="flex gap-2">
+                    <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="flex-1 text-[12px] text-stone-600 bg-white border border-stone-300 disabled:opacity-50 rounded-lg py-2">↻ Mettre à jour</button>
+                    <button onClick={() => setShareView({ journeeId: j.id })} className="flex-1 text-[12px] text-stone-600 bg-white border border-stone-300 rounded-lg py-2">💬 Liste en texte</button>
+                  </div>
                 </div>) : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
               </StepPanel>
             </StepGroup>
