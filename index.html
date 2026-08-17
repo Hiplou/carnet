@@ -190,7 +190,7 @@ function armeOk(armes, hunterArme) { const list = Array.isArray(armes) ? armes :
 function armesLabel(armes) { const list = Array.isArray(armes) ? armes : []; if (!list.length) return "toutes armes"; return list.map(armeLabel).join(" / "); }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
-function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == null && nom == null) { const sp = splitFullName(p.name); prenom = sp.prenom; nom = sp.nom; } prenom = prenom || ""; nom = nom || ""; const name = (prenom + " " + nom).trim() || p.name || ""; return { id: p.id, prenom, nom, name, phone: fixPhone(p.phone || ""), email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, arme: p.arme || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == null && nom == null) { const sp = splitFullName(p.name); prenom = sp.prenom; nom = sp.nom; } prenom = prenom || ""; nom = nom || ""; const name = (prenom + " " + nom).trim() || p.name || ""; return { id: p.id, prenom, nom, name, phone: fixPhone(p.phone || ""), email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, arme: p.arme || null, dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], groupes: Array.isArray(p.groupes) ? p.groupes.filter((g) => typeof g === "string" && g.trim()).slice(0, 20) : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.34";
+const APP_VERSION = "v1.35";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -853,6 +853,40 @@ function PrintOverlay({ html, onClose }) {
     <iframe ref={ref} srcDoc={html} title="Aperçu" className="flex-1 w-full border-0" />
   </div>);
 }
+// ---------- Groupes de membres ----------
+// La liste des groupes est déduite des membres : pas de nouveau champ à sauvegarder,
+// donc aucun risque pour les données existantes. Un groupe sans membre disparaît.
+const GROUPE_COULEURS = ["#047857", "#b45309", "#0369a1", "#7c3aed", "#be123c", "#4d7c0f", "#a16207", "#0f766e"];
+function groupeCouleur(nom) {
+  let h = 0; const s = String(nom || "");
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return GROUPE_COULEURS[h % GROUPE_COULEURS.length];
+}
+function tousLesGroupes(participants) {
+  const m = new Map();
+  (participants || []).forEach((p) => (p.groupes || []).forEach((g) => {
+    const k = g.trim(); if (!k) return;
+    m.set(k, (m.get(k) || 0) + 1);
+  }));
+  return Array.from(m.entries()).map(([nom, n]) => ({ nom, n })).sort((a, b) => byNom(a.nom, b.nom));
+}
+function PastilleGroupe({ nom, actif, compte, onClick, small }) {
+  const c = groupeCouleur(nom);
+  return (<button onClick={onClick} className={`flex items-center gap-1.5 rounded-full border transition-colors ${small ? "pl-2 pr-2.5 py-1 text-[12px]" : "pl-2.5 pr-3 py-1.5 text-sm"}`}
+    style={actif ? { background: c, borderColor: c, color: "#fff" } : { background: "#fff", borderColor: "#d6d3d1", color: "#44403c" }}>
+    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: actif ? "rgba(255,255,255,.85)" : c }} />
+    {nom}
+    {compte != null && <span className={actif ? "text-[11px] text-white/70" : "text-[11px] text-stone-400"}>{compte}</span>}
+  </button>);
+}
+function PointsGroupes({ groupes }) {
+  const list = (groupes || []).slice(0, 4);
+  if (!list.length) return null;
+  return (<span className="flex gap-1 shrink-0">
+    {list.map((g) => <span key={g} className="w-2 h-2 rounded-full" style={{ background: groupeCouleur(g) }} title={g} />)}
+  </span>);
+}
+
 function ParticipantsView({ participants, setParticipants }) {
   const [expanded, setExpanded] = useState(null); const [importing, setImporting] = useState(false); const [importErr, setImportErr] = useState(""); const listFileRef = useRef(null);
   const [search, setSearch] = useState(""); const [selected, setSelected] = useState({}); const [dupPanel, setDupPanel] = useState(false); const [mergePanel, setMergePanel] = useState(false);
@@ -884,8 +918,55 @@ function ParticipantsView({ participants, setParticipants }) {
     }
     return out;
   }, [participants]);
-  const filtered = participants.filter((p) => { if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false; return true; }).sort((a, b) => byNom(a.name || "", b.name || ""));
   const selCount = Object.keys(selected).filter((id) => selected[id]).length;
+  // ---- Groupes ----
+  const [grpPanel, setGrpPanel] = useState(false);
+  const [grpNouveau, setGrpNouveau] = useState("");
+  const [grpFiltre, setGrpFiltre] = useState(null);
+  const groupes = useMemo(() => tousLesGroupes(participants), [participants]);
+  const selIdsList = () => Object.keys(selected).filter((id) => selected[id]);
+
+  const affecterGroupe = (nom) => {
+    const ids = selIdsList();
+    if (!ids.length) { window.alert("Coche d'abord des membres, puis touche un groupe pour les y ajouter."); return; }
+    const tous = participants.filter((p) => ids.indexOf(p.id) >= 0).every((p) => (p.groupes || []).indexOf(nom) >= 0);
+    setParticipants((prev) => prev.map((p) => {
+      if (ids.indexOf(p.id) < 0) return p;
+      const g = p.groupes || [];
+      return { ...p, groupes: tous ? g.filter((x) => x !== nom) : (g.indexOf(nom) >= 0 ? g : g.concat([nom])) };
+    }));
+  };
+  const creerGroupe = () => {
+    const nom = grpNouveau.trim().slice(0, 24);
+    if (!nom) return;
+    const ids = selIdsList();
+    if (!ids.length) { window.alert("Coche d'abord les membres à mettre dans « " + nom + " »."); return; }
+    setParticipants((prev) => prev.map((p) => (ids.indexOf(p.id) < 0 ? p : { ...p, groupes: (p.groupes || []).indexOf(nom) >= 0 ? p.groupes : (p.groupes || []).concat([nom]) })));
+    setGrpNouveau("");
+  };
+  const renommerGroupe = (ancien) => {
+    const nom = (window.prompt("Nouveau nom du groupe :", ancien) || "").trim().slice(0, 24);
+    if (!nom || nom === ancien) return;
+    setParticipants((prev) => prev.map((p) => ({ ...p, groupes: (p.groupes || []).map((g) => (g === ancien ? nom : g)).filter((g, i, a) => a.indexOf(g) === i) })));
+    if (grpFiltre === ancien) setGrpFiltre(nom);
+  };
+  const supprimerGroupe = (nom) => {
+    if (!window.confirm("Supprimer le groupe « " + nom + " » ?\n\nAucun membre ne sera supprimé, seule l'étiquette disparaît.")) return;
+    setParticipants((prev) => prev.map((p) => ({ ...p, groupes: (p.groupes || []).filter((g) => g !== nom) })));
+    if (grpFiltre === nom) setGrpFiltre(null);
+  };
+  const toggleGroupeMembre = (pid, nom) => setParticipants((prev) => prev.map((p) => {
+    if (p.id !== pid) return p;
+    const g = p.groupes || [];
+    return { ...p, groupes: g.indexOf(nom) >= 0 ? g.filter((x) => x !== nom) : g.concat([nom]) };
+  }));
+
+  // Calculé ici, après grpFiltre, pour que le filtre par groupe soit disponible.
+  const filtered = participants.filter((p) => {
+    if (search.trim() && nrm(p.name).indexOf(nrm(search)) < 0) return false;
+    if (grpFiltre && (p.groupes || []).indexOf(grpFiltre) < 0) return false;
+    return true;
+  }).sort((a, b) => byNom(a.name || "", b.name || ""));
   const toggleSel = (id) => setSelected((s) => ({ ...s, [id]: !s[id] }));
   const deleteSelected = () => { const ids = Object.keys(selected).filter((id) => selected[id]); if (!ids.length) return; if (!window.confirm("Supprimer " + ids.length + " membre(s) sélectionné(s) ?")) return; setParticipants((prev) => prev.filter((p) => !ids.includes(p.id))); setSelected({}); };
   const mergeMembers = (keepId, dropId) => { setParticipants((prev) => { const keep = prev.find((p) => p.id === keepId), drop = prev.find((p) => p.id === dropId); if (!keep || !drop) return prev; const merged = { ...keep }; ["prenom", "nom", "phone", "email", "permis", "validation", "assurance"].forEach((f) => { if (!(merged[f] || "").trim() && (drop[f] || "").trim()) merged[f] = drop[f]; }); merged.name = ((merged.prenom || "") + " " + (merged.nom || "")).trim() || merged.name; if (!merged.mobility && drop.mobility) merged.mobility = drop.mobility; if (!merged.role && drop.role) merged.role = drop.role; return prev.filter((p) => p.id !== dropId).map((p) => (p.id === keepId ? merged : p)); }); };
@@ -977,6 +1058,35 @@ function ParticipantsView({ participants, setParticipants }) {
           <button onClick={() => listFileRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 bg-stone-700 hover:bg-stone-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={16} /> {importing ? "Import…" : "Importer"}</button>
           <button onClick={addParticipant} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Ajouter</button></div></div>
       <div className="flex items-center gap-2 flex-wrap">
+        {(groupes.length > 0 || selCount > 0) && (<div className="w-full bg-stone-50 border border-stone-200 rounded-lg p-2.5 mb-1">
+          <div className="flex items-baseline justify-between mb-1.5">
+            <span className="text-[11px] uppercase tracking-widest text-stone-400">Mes groupes</span>
+            <button onClick={() => setGrpPanel(!grpPanel)} className="text-[11px] text-emerald-800 underline">{grpPanel ? "Fermer" : "Gérer"}</button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {groupes.length === 0 && <span className="text-[11px] text-stone-400 italic">Coche des membres puis crée un groupe ci-dessous.</span>}
+            {groupes.map((g) => (<PastilleGroupe key={g.nom} nom={g.nom} compte={g.n} small
+              actif={selCount > 0 ? participants.filter((x) => selected[x.id]).every((x) => (x.groupes || []).indexOf(g.nom) >= 0) : grpFiltre === g.nom}
+              onClick={() => { if (selCount > 0) affecterGroupe(g.nom); else setGrpFiltre(grpFiltre === g.nom ? null : g.nom); }} />))}
+          </div>
+          <p className="text-[11px] text-stone-400 mt-1.5">{selCount > 0 ? "Touche un groupe pour y ajouter ou retirer les " + selCount + " membre(s) cochés." : "Touche un groupe pour filtrer la liste. Coche des membres pour les y affecter."}</p>
+
+          {grpPanel && (<div className="mt-2.5 pt-2.5 border-t border-stone-200 space-y-2">
+            {groupes.map((g) => (<div key={g.nom} className="flex items-center gap-2 bg-white border border-stone-200 rounded px-2.5 py-1.5">
+              <span className="w-3 h-3 rounded-full shrink-0" style={{ background: groupeCouleur(g.nom) }} />
+              <span className="text-sm text-stone-800 flex-1 truncate">{g.nom}</span>
+              <span className="text-[11px] text-stone-400">{g.n}</span>
+              <button onClick={() => renommerGroupe(g.nom)} className="text-stone-400 px-1 text-sm">✎</button>
+              <button onClick={() => supprimerGroupe(g.nom)} className="text-red-600 px-1 text-sm">✕</button>
+            </div>))}
+            <div className="flex gap-2">
+              <input value={grpNouveau} onChange={(e) => setGrpNouveau(e.target.value)} placeholder="Nom du nouveau groupe" maxLength={24} className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+              <button onClick={creerGroupe} className="shrink-0 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-xs font-medium px-3 py-1.5 rounded">Créer</button>
+            </div>
+            <p className="text-[11px] text-stone-400">Supprimer un groupe n'efface aucun membre : seule l'étiquette disparaît.</p>
+          </div>)}
+        </div>)}
+
         <div className="relative flex-1 min-w-[160px]"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded-md px-3 py-1.5 text-sm bg-white" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 text-sm">✕</button>}</div>
         <button onClick={() => setDupPanel(true)} className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-md border shrink-0 bg-white text-stone-600 border-stone-300">⚠️ Doublons{dupPairs.length ? " (" + dupPairs.length + ")" : ""}</button>
       </div>
@@ -990,7 +1100,7 @@ function ParticipantsView({ participants, setParticipants }) {
         return (<SectionCard key={p.id}>
           <div className="flex items-center px-4 py-3 gap-2">
             <input type="checkbox" checked={!!selected[p.id]} onChange={() => toggleSel(p.id)} className="w-4 h-4 shrink-0 accent-red-700" />
-            <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0 flex-1">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button>
+            <button onClick={() => setExpanded(isOpen ? null : p.id)} className="flex items-center gap-2 font-medium text-stone-800 min-w-0 flex-1">{isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}<span className="truncate">{p.name || <span className="text-stone-400 italic font-normal">Sans nom</span>}</span>{p.role && <span className="text-xs font-normal bg-stone-200 text-stone-600 rounded-full px-2 py-0.5 shrink-0">{p.role === "chasseur" ? "🦌" : "🐇"}</span>}</button><PointsGroupes groupes={p.groupes} />
           </div>
           {isOpen && (<div className="border-t border-stone-200 px-4 py-3 space-y-3">
             <div className="grid grid-cols-2 gap-2">
@@ -1016,6 +1126,18 @@ function ParticipantsView({ participants, setParticipants }) {
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Arme habituelle</p><div className="flex gap-2">
               {[{ v: null, l: "Non renseignée" }].concat(ARMES.map((a) => ({ v: a.key, l: a.label }))).map((o) => { const on = (p.arme || null) === o.v; return (<button key={o.l} onClick={() => update(p.id, { arme: o.v })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border flex items-center justify-center gap-1 ${on ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.v && <ArmeIcon k={o.v} size={14} color={on ? "#fff" : "#166534"} />}{o.l}</button>); })}
             </div><p className="text-[11px] text-stone-400 mt-1">Sert au placement : une carabine (rayée) peut aller sur un poste lisse, l'inverse est interdit.</p></div>
+            <div className="pt-1">
+              <label className="text-[10px] uppercase tracking-wide text-stone-400">Groupes</label>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {groupes.length === 0 && <span className="text-[11px] text-stone-400 italic">Aucun groupe créé pour l'instant.</span>}
+                {groupes.map((g) => (<PastilleGroupe key={g.nom} nom={g.nom} small actif={(p.groupes || []).indexOf(g.nom) >= 0} onClick={() => toggleGroupeMembre(p.id, g.nom)} />))}
+              </div>
+              <div className="flex gap-2 mt-2">
+                <input value={grpNouveau} onChange={(e) => setGrpNouveau(e.target.value)} placeholder="Nouveau groupe…" maxLength={24} className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+                <button onClick={() => { const nom = grpNouveau.trim().slice(0, 24); if (!nom) return; toggleGroupeMembre(p.id, nom); setGrpNouveau(""); }} className="shrink-0 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-xs font-medium px-3 py-1.5 rounded">Ajouter</button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between gap-2 pt-1">
               <button onClick={() => removeParticipant(p.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer ce participant</button>
               <button onClick={() => setExpanded(null)} className="flex items-center gap-1 bg-emerald-800 hover:bg-emerald-900 text-white text-sm font-medium px-4 py-2 rounded-md"><Check size={15} /> Terminé</button>
@@ -2405,6 +2527,30 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
       <div>
         <div className="flex items-center justify-between mb-1"><button onClick={() => setShowInv((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Qui inviter {showInv ? "▲" : "▼"}</button></div>
         {showInv && participants.length === 0 && <p className="text-xs text-stone-400 italic">Ajoute d'abord des membres dans l'onglet Membres.</p>}
+        {showInv && (() => {
+          const gs = tousLesGroupes(participants);
+          if (!gs.length) return null;
+          const inv = journee.invites || [];
+          const toggleGrp = (nom) => {
+            const membres = participants.filter((p) => (p.groupes || []).indexOf(nom) >= 0);
+            const tous = membres.length > 0 && membres.every((p) => inv.indexOf(p.id) >= 0);
+            membres.forEach((p) => {
+              const dedans = inv.indexOf(p.id) >= 0;
+              if (tous && dedans) onToggleInvite(journee.id, p.id);
+              if (!tous && !dedans) onToggleInvite(journee.id, p.id);
+            });
+          };
+          return (<div className="mb-2">
+            <div className="flex flex-wrap gap-1.5">
+              {gs.map((g) => {
+                const membres = participants.filter((p) => (p.groupes || []).indexOf(g.nom) >= 0);
+                const actif = membres.length > 0 && membres.every((p) => inv.indexOf(p.id) >= 0);
+                return <PastilleGroupe key={g.nom} nom={g.nom} compte={g.n} small actif={actif} onClick={() => toggleGrp(g.nom)} />;
+              })}
+            </div>
+            <p className="text-[11px] text-stone-400 mt-1">Touche un groupe pour ajouter ses membres. Retouche-le pour les retirer.</p>
+          </div>);
+        })()}
         {showInv && participants.length > 4 && <input value={qInv} onChange={(e) => setQInv(e.target.value)} placeholder="🔍 Rechercher un membre…" className="w-full border border-stone-300 rounded px-2 py-1 text-sm bg-white mb-1" />}
         {showInv && <div className="space-y-1 max-h-56 overflow-auto">
           {[...participants].filter((p) => matchQ(p, qInv)).sort((a, b) => byNom(a.name || "", b.name || "")).map((p) => { const on = invites.includes(p.id); const noMail = !(p.email || "").trim(); return (
@@ -2693,8 +2839,8 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
 
             <StepGroup label="Prêt à partir">
               <div className="grid grid-cols-2 gap-2.5">
-                <GridTile id="docs" emoji="🖨️" title="Documents" sub="Postes, émargement, dîner" open={step} onToggle={setStep} />
                 <GridTile id="partage" emoji="📤" title="Partager" sub={(pub.status === "live" || pub.status === "ok") ? "● En ligne" : "pas encore publié"} subCls={(pub.status === "live" || pub.status === "ok") ? "text-emerald-700" : "text-stone-400"} open={step} onToggle={setStep} />
+                <GridTile id="docs" emoji="🖨️" title="Documents" sub="Postes, émargement, dîner" open={step} onToggle={setStep} />
               </div>
               <StepPanel id="docs" open={step}>
                 {terrain ? (<div className="space-y-2">
