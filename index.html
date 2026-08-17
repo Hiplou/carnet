@@ -181,7 +181,7 @@ function Grip({ size = 16, className = "" }) {
 function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, armes: j.armes || {}, rdv: j.rdv || {}, canal: j.canal || "" }; }
 function normTirZone(z) { z = z || {}; return { dir: ((Number(z.dir) || 0) % 360 + 360) % 360, width: Math.max(10, Math.min(360, Number(z.width) || 60)) }; }
 function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, armes: (Array.isArray(m.armes) ? m.armes : (m.arme && m.arme !== "indifferent" ? [m.arme] : [])).filter((k) => ARMES.some((x) => x.key === k)), tir: { zones: tz } }; }
-function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, zone: Array.isArray(t.zone) ? t.zone.filter((p) => p && isFinite(p.gx) && isFinite(p.gy)).slice(0, 60) : [], miradors: (t.miradors || []).map(normMirador) }; }
+function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, zone: Array.isArray(t.zone) ? t.zone.filter((p) => p && isFinite(p.gx) && isFinite(p.gy)).slice(0, 60) : [], zoneFermee: !!t.zoneFermee, miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
 function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.54";
+const APP_VERSION = "v1.55";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -451,7 +451,7 @@ function CropBox({ image, crop, setCrop }) {
 
 // Contour de traque : trait fin doublé d'un liseré blanc, pour rester visible
 // sur toutes les cartes. Les postes passent par-dessus, avec leur propre halo.
-function zonePath(zone, crop) {
+function zonePath(zone, crop, fermee) {
   const pts = (zone || []).map((p) => ({
     x: ((p.gx - crop.x) / crop.w) * 100,
     y: ((p.gy - crop.y) / crop.h) * 100
@@ -459,11 +459,11 @@ function zonePath(zone, crop) {
   if (pts.length < 2) return "";
   let d = "M " + pts[0].x + " " + pts[0].y;
   for (let i = 1; i < pts.length; i++) d += " L " + pts[i].x + " " + pts[i].y;
-  if (pts.length >= 3) d += " Z";
+  if (fermee && pts.length >= 3) d += " Z";
   return d;
 }
-function ZoneSvg({ zone, crop, color }) {
-  const d = zonePath(zone, crop);
+function ZoneSvg({ zone, crop, color, fermee }) {
+  const d = zonePath(zone, crop, fermee);
   if (!d) return null;
   return (<svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
     <path d={d} fill="none" stroke="#ffffff" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" opacity="0.55" vectorEffect="non-scaling-stroke" />
@@ -493,7 +493,7 @@ function PlaceMiradors({ image, track, updateTrack }) {
   const modeRef = useRef(mode); modeRef.current = mode;
   const zRef = useRef(track.zone || []); zRef.current = track.zone || [];
   const zDrag = useRef(null);
-  const longTimer = useRef(null); const longRef = useRef(false); const [sel, setSel] = useState(null);
+  const longTimer = useRef(null); const longRef = useRef(false); const hStart = useRef(null); const [sel, setSel] = useState(null);
   const toGlobal = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); const lx = Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)); const ly = Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)); return { gx: crop.x + (lx / 100) * crop.w, gy: crop.y + (ly / 100) * crop.h }; };
   useEffect(() => {
     const onMove = (e) => {
@@ -574,7 +574,7 @@ function PlaceMiradors({ image, track, updateTrack }) {
       // Une ligne touchée de près : on y insère un point
       if (z.length >= 2) {
         let best = -1, bd = 18;
-        const nb = z.length >= 3 ? z.length : z.length - 1;   // le dernier segment ferme le contour
+        const nb = track.zoneFermee ? z.length : z.length - 1;   // le segment de fermeture n'existe que si fermé
         for (let i = 0; i < nb; i++) {
           const a = ecran(z[i]), b = ecran(z[(i + 1) % z.length]);
           const d = distSegment(e.clientX, e.clientY, a.x, a.y, b.x, b.y);
@@ -586,8 +586,8 @@ function PlaceMiradors({ image, track, updateTrack }) {
           updateTrack({ zone: nz }); return;
         }
       }
-      // Contour déjà fermé : un toucher à l'écart ne fait rien
-      if (z.length >= 3) return;
+      // Une fois fermé, un toucher à l'écart ne fait plus rien
+      if (track.zoneFermee) return;
       const { gx, gy } = toGlobal(e.clientX, e.clientY);
       updateTrack({ zone: [...z, { gx, gy }] }); return;
     }
@@ -601,11 +601,12 @@ function PlaceMiradors({ image, track, updateTrack }) {
     <p className="text-[11px] text-stone-500 mb-1.5">
       {mode === "poste"
         ? "Touche la carte pour poser un mirador, glisse une pastille pour la déplacer. Pince à deux doigts pour zoomer."
-        : "Touche pour poser un point · glisse un point pour le déplacer · touche la ligne pour insérer un point · appui long pour supprimer."}
+        : "Touche pour poser un point · retouche le premier ou le dernier pour fermer · glisse pour déplacer · touche la ligne pour insérer · appui long pour supprimer."}
     </p>
     {mode === "contour" && (<div className="flex gap-1.5 mb-2">
       <button onClick={() => updateTrack({ zone: (track.zone || []).slice(0, -1) })} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-stone-600 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">↶ Dernier point</button>
-      <button onClick={() => { if ((track.zone || []).length && !window.confirm("Effacer le contour de cette traque ?")) return; updateTrack({ zone: [] }); }} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-red-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">🗑 Effacer le contour</button>
+      <button onClick={() => updateTrack({ zoneFermee: !track.zoneFermee })} disabled={(track.zone || []).length < 3} className="flex-1 text-[11px] text-stone-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">{track.zoneFermee ? "↔ Rouvrir" : "⭘ Fermer"}</button>
+      <button onClick={() => { if ((track.zone || []).length && !window.confirm("Effacer le contour de cette traque ?")) return; updateTrack({ zone: [], zoneFermee: false }); }} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-red-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">🗑 Effacer</button>
     </div>)}
     {vue.z > 1.02 && (<div className="flex items-center justify-between mb-1.5 bg-stone-100 border border-stone-200 rounded-md px-2.5 py-1.5">
       <span className="text-[11px] text-stone-500">Zoom ×{vue.z.toFixed(1)}</span>
@@ -618,7 +619,7 @@ function PlaceMiradors({ image, track, updateTrack }) {
       <div ref={boxRef}
         style={{ position: "absolute", inset: 0, transform: `translate(${vue.tx}px, ${vue.ty}px) scale(${vue.z})`, transformOrigin: "0 0", cursor: "crosshair" }}>
       <div style={cropBgStyle(image, crop)} />
-      <ZoneSvg zone={track.zone} crop={crop} color={track.color} />
+      <ZoneSvg zone={track.zone} crop={crop} color={track.color} fermee={track.zoneFermee} />
       {mode === "contour" && (track.zone || []).map((pt, i) => {
         const lx = ((pt.gx - crop.x) / crop.w) * 100, ly = ((pt.gy - crop.y) / crop.h) * 100;
         if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null;
@@ -627,13 +628,25 @@ function PlaceMiradors({ image, track, updateTrack }) {
           onPointerDown={(e) => {
             if (mode !== "contour") return;
             e.stopPropagation(); zDrag.current = i; longRef.current = false;
+            hStart.current = { i: i, x: e.clientX, y: e.clientY };
             if (longTimer.current) clearTimeout(longTimer.current);
             longTimer.current = setTimeout(() => {
               longRef.current = true; zDrag.current = null;
               updateTrack({ zone: (zRef.current || []).filter((_, k) => k !== i) });
             }, 600);
           }}
-          onPointerUp={() => { if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; } }}
+          onPointerUp={(e) => {
+            if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; }
+            const h = hStart.current; hStart.current = null;
+            if (!h || h.i !== i || longRef.current) return;
+            if (Math.hypot(e.clientX - h.x, e.clientY - h.y) > 12) return;
+            const z = zRef.current || [];
+            // Retoucher le premier ou le dernier point referme le tracé
+            if (!track.zoneFermee && z.length >= 3 && (i === 0 || i === z.length - 1)) {
+              zDrag.current = null;
+              updateTrack({ zoneFermee: true });
+            }
+          }}
           style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "contour" ? "auto" : "none" }}
           className="-translate-x-1/2 -translate-y-1/2">
           <span className={`block rounded-full shadow ${gros ? "w-5 h-5 bg-white border-[3px]" : "w-2.5 h-2.5 border-2 border-white"}`}
@@ -1028,7 +1041,7 @@ function copierTerritoire(t) {
       name: tr.name || "Traque",
       color: tr.color || "#dc2626",
       crop: tr.crop || null,
-      zone: Array.isArray(tr.zone) ? tr.zone.map((p) => ({ gx: p.gx, gy: p.gy })) : [],
+      zone: Array.isArray(tr.zone) ? tr.zone.map((p) => ({ gx: p.gx, gy: p.gy })) : [], zoneFermee: !!tr.zoneFermee,
       miradors: (tr.miradors || []).map((m) => Object.assign({}, m, { id: nouvelId("m"), useCommon: false }))
     }))
   };
@@ -2261,7 +2274,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   const chefLignesData = journee.chefLignes || {};
   const chefPostsOf = (hid) => Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid).map((mid) => { let f = null; (terrain.tracks || []).forEach((trk) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) { const pl = journee.placements[trk.id] || {}; const occHid = Object.keys(pl).find((h) => pl[h] === mid); const occ = occHid ? participants.find((x) => x.id === occHid) : null; f = { traqueName: trk.name, label: m.label, hunter: occ ? occ.name : "" }; } }); return f; }).filter(Boolean);
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => byNom(a.name || "", b.name || ""));
-  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
+  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
   // Source unique : le calcul des cônes de la page chasseurs est généré à partir
   // de tirRender, la fonction utilisée côté organisateur. Impossible qu'elles divergent.
   const tail = SHARED_TAIL.replace("/*__TIRRENDER__*/", String(tirRender).replace(/^function\s+tirRender/, "function tirRenderJS"));
