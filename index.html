@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.53";
+const APP_VERSION = "v1.54";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -509,9 +509,14 @@ function PlaceMiradors({ image, track, updateTrack }) {
     window.addEventListener("pointermove", onMove, { passive: false }); window.addEventListener("pointerup", onUp);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
   }, [updateTrack, crop.x, crop.y, crop.w, crop.h]);
+  const tap = useRef(null);
   const majDoigt = (e) => doigts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
   const onDown = (e) => {
     majDoigt(e);
+    // Un toucher est validé au relâcher, pas par l'événement « clic » :
+    // Safari annule le clic dès que le doigt bouge de quelques pixels.
+    if (doigts.current.size === 1) tap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now() };
+    else tap.current = null;
     if (doigts.current.size === 2) {
       const [a, b] = Array.from(doigts.current.values());
       pinch.current = {
@@ -544,9 +549,21 @@ function PlaceMiradors({ image, track, updateTrack }) {
     ty = Math.max(minY, Math.min(maxY, ty));
     setVue({ z, tx, ty });
   };
-  const onFin = (e) => { doigts.current.delete(e.pointerId); if (doigts.current.size < 2) pinch.current = null; };
+  const onFin = (e) => {
+    const t = tap.current;
+    if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; }
+    doigts.current.delete(e.pointerId);
+    if (doigts.current.size < 2) pinch.current = null;
+    if (!t || t.id !== e.pointerId) { tap.current = null; return; }
+    tap.current = null;
+    if (drag.current !== null || zDrag.current !== null || longRef.current) return;
+    // 12 pixels de tolérance : un doigt ne reste jamais parfaitement immobile
+    if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > 12) return;
+    if (Date.now() - t.t > 700) return;
+    onTap(e);
+  };
 
-  const onClick = (e) => { if (moved.current) { moved.current = false; return; }
+  const onTap = (e) => { if (moved.current) { moved.current = false; return; }
     if (modeRef.current === "contour") {
       const z = track.zone || [];
       const r = boxRef.current.getBoundingClientRect();
@@ -598,7 +615,7 @@ function PlaceMiradors({ image, track, updateTrack }) {
       onPointerDown={onDown} onPointerMove={onPinchMove} onPointerUp={onFin} onPointerCancel={onFin}
       style={{ ...cropWrapperStyle(crop, ar), touchAction: "none", overflow: "hidden", position: "relative" }}
       className="border border-stone-300 select-none relative">
-      <div ref={boxRef} onClick={onClick}
+      <div ref={boxRef}
         style={{ position: "absolute", inset: 0, transform: `translate(${vue.tx}px, ${vue.ty}px) scale(${vue.z})`, transformOrigin: "0 0", cursor: "crosshair" }}>
       <div style={cropBgStyle(image, crop)} />
       <ZoneSvg zone={track.zone} crop={crop} color={track.color} />
