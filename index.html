@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.35";
+const APP_VERSION = "v1.36";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -2151,6 +2151,7 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
   const [open, setOpen] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
   const [showLegal, setShowLegal] = useState(false);
+  const [delMot, setDelMot] = useState(""); const [delBusy, setDelBusy] = useState(false); const [delOuvert, setDelOuvert] = useState(false);
   const [orgName, setOrgName] = useState(github.orgName || "");
   const [pass, setPass] = useState(""); const [pwMsg, setPwMsg] = useState(""); const [pwBusy, setPwBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -2206,6 +2207,21 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
     finally { setBoardBusy(false); }
   };
 
+  const supprimerCompte = async () => {
+    if (!window.confirm("Dernière vérification.\n\nTon carnet, tes territoires, tes journées et ta page publiée vont être effacés définitivement. Cette action est irréversible.\n\nContinuer ?")) return;
+    setDelBusy(true);
+    try {
+      const d = await callBoard("/account/delete", { confirm: "SUPPRIMER" });
+      if (!d.ok) throw new Error("Suppression incomplète — écris à contact@carnetdechasse.fr");
+      window.alert("Ton compte a été supprimé. Merci d'avoir utilisé Carnet de Chasse.");
+      try { await SB.auth.signOut(); } catch (e) {}
+      window.location.reload();
+    } catch (e) {
+      window.alert("Suppression impossible : " + ((e && e.message) || e));
+      setDelBusy(false);
+    }
+  };
+
   const changePassword = async () => {
     if ((pass || "").length < 6) { setPwMsg("Choisis au moins 6 caractères."); return; }
     setPwBusy(true); setPwMsg("");
@@ -2241,8 +2257,19 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
             <button onClick={changePassword} disabled={pwBusy || !pass} className="mt-3 bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">{pwBusy ? "…" : "Modifier mon mot de passe"}</button>
             {pwMsg && <p className="text-sm mt-2 text-stone-700">{pwMsg}</p>}
             <div className="border-t border-stone-100 mt-4 pt-3">
-              <p className="text-sm font-medium text-stone-500">🗑 Supprimer mon compte</p>
-              <p className="text-[11px] text-stone-400 mt-1">Bientôt disponible.</p>
+              {!delOuvert ? (
+                <button onClick={() => setDelOuvert(true)} className="text-sm font-medium text-red-700 hover:text-red-900">🗑 Supprimer mon compte</button>
+              ) : (<div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-sm font-medium text-red-900">Supprimer définitivement mon compte</p>
+                <p className="text-[12px] text-red-800 mt-1">Seront effacés : ton carnet, tes territoires, tes membres, tes journées et ta page publiée. <b>C'est irréversible.</b></p>
+                <p className="text-[11px] text-stone-500 mt-2">Pense à exporter une sauvegarde avant, depuis la vignette Sauvegarde.</p>
+                <p className="text-[11px] text-stone-500 mt-2 mb-1">Écris <b>SUPPRIMER</b> pour confirmer :</p>
+                <div className="flex gap-2">
+                  <input value={delMot} onChange={(e) => setDelMot(e.target.value)} placeholder="SUPPRIMER" className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white" />
+                  <button onClick={supprimerCompte} disabled={delMot !== "SUPPRIMER" || delBusy} className="shrink-0 bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-stone-50 text-sm font-medium px-4 py-2 rounded-lg">{delBusy ? "…" : "Supprimer"}</button>
+                </div>
+                <button onClick={() => { setDelOuvert(false); setDelMot(""); }} className="text-[11px] text-stone-500 underline mt-2">Annuler</button>
+              </div>)}
             </div>
           </Panel>
             <Panel open={open} id="quitter">
