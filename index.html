@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.52";
+const APP_VERSION = "v1.53";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -471,10 +471,19 @@ function ZoneSvg({ zone, crop, color }) {
   </svg>);
 }
 
+// Distance d'un point à un segment, pour savoir si l'on a touché une ligne du contour.
+function distSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
 function PlaceMiradors({ image, track, updateTrack }) {
   const crop = track.crop || FULL_CROP; const ar = useImageAR(image);
   const boxRef = useRef(null); const wrapRef = useRef(null); const drag = useRef(null); const moved = useRef(false); const mRef = useRef(track.miradors); mRef.current = track.miradors;
-  const [mode, setMode] = useState("poste");          // poste | contour | deplacer
+  const [mode, setMode] = useState("poste");          // poste | contour
   // Zoom au pincement. La transformation est portée par la couche interne (boxRef),
   // si bien que toGlobal continue de fonctionner sans le moindre calcul supplémentaire.
   const [vue, setVue] = useState({ z: 1, tx: 0, ty: 0 });
@@ -483,12 +492,14 @@ function PlaceMiradors({ image, track, updateTrack }) {
   const vueRef = useRef(vue); vueRef.current = vue;
   const modeRef = useRef(mode); modeRef.current = mode;
   const zRef = useRef(track.zone || []); zRef.current = track.zone || [];
-  const zDrag = useRef(null); const [sel, setSel] = useState(null);
+  const zDrag = useRef(null);
+  const longTimer = useRef(null); const longRef = useRef(false); const [sel, setSel] = useState(null);
   const toGlobal = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); const lx = Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)); const ly = Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)); return { gx: crop.x + (lx / 100) * crop.w, gy: crop.y + (ly / 100) * crop.h }; };
   useEffect(() => {
     const onMove = (e) => {
       if (zDrag.current !== null && boxRef.current) {
         e.preventDefault(); moved.current = true;
+        if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; }
         const { gx, gy } = toGlobal(e.clientX, e.clientY);
         const z = (zRef.current || []).slice(); z[zDrag.current] = { gx, gy };
         updateTrack({ zone: z }); return;
@@ -536,20 +547,46 @@ function PlaceMiradors({ image, track, updateTrack }) {
   const onFin = (e) => { doigts.current.delete(e.pointerId); if (doigts.current.size < 2) pinch.current = null; };
 
   const onClick = (e) => { if (moved.current) { moved.current = false; return; }
-    if (modeRef.current === "contour") { const { gx, gy } = toGlobal(e.clientX, e.clientY); updateTrack({ zone: [...(track.zone || []), { gx, gy }] }); return; }
+    if (modeRef.current === "contour") {
+      const z = track.zone || [];
+      const r = boxRef.current.getBoundingClientRect();
+      const ecran = (pt) => ({
+        x: r.left + ((pt.gx - crop.x) / crop.w) * r.width,
+        y: r.top + ((pt.gy - crop.y) / crop.h) * r.height
+      });
+      // Une ligne touchée de près : on y insère un point
+      if (z.length >= 2) {
+        let best = -1, bd = 18;
+        const nb = z.length >= 3 ? z.length : z.length - 1;   // le dernier segment ferme le contour
+        for (let i = 0; i < nb; i++) {
+          const a = ecran(z[i]), b = ecran(z[(i + 1) % z.length]);
+          const d = distSegment(e.clientX, e.clientY, a.x, a.y, b.x, b.y);
+          if (d < bd) { bd = d; best = i; }
+        }
+        if (best >= 0) {
+          const { gx, gy } = toGlobal(e.clientX, e.clientY);
+          const nz = z.slice(); nz.splice(best + 1, 0, { gx, gy });
+          updateTrack({ zone: nz }); return;
+        }
+      }
+      // Contour déjà fermé : un toucher à l'écart ne fait rien
+      if (z.length >= 3) return;
+      const { gx, gy } = toGlobal(e.clientX, e.clientY);
+      updateTrack({ zone: [...z, { gx, gy }] }); return;
+    }
     const { gx, gy } = toGlobal(e.clientX, e.clientY); const id = `m-${Date.now()}`; updateTrack({ miradors: [...track.miradors, { id, label: `Poste ${track.miradors.length + 1}`, gx: +gx.toFixed(2), gy: +gy.toFixed(2), photos: [], consignes: "" }] }); setSel(id); };
   return (<div>
     <div className="flex gap-1.5 mb-2">
-      {[["poste", "📍 Postes"], ["contour", "✏️ Contour"], ["deplacer", "✥ Ajuster"]].map(([k, lab]) => (
+      {[["poste", "📍 Postes"], ["contour", "✏️ Contour"]].map(([k, lab]) => (
         <button key={k} onClick={() => setMode(k)} className={`flex-1 text-[12px] font-medium py-1.5 rounded-md border ${mode === k ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-white text-stone-700 border-stone-300"}`}>{lab}</button>
       ))}
     </div>
     <p className="text-[11px] text-stone-500 mb-1.5">
-      {mode === "poste" ? "Touche la carte pour poser un mirador, glisse une pastille pour la déplacer. Pince à deux doigts pour zoomer."
-        : mode === "contour" ? "Touche la carte pour poser les points du contour. Pince à deux doigts pour zoomer."
-        : "Fais glisser un point du contour pour l'ajuster."}
+      {mode === "poste"
+        ? "Touche la carte pour poser un mirador, glisse une pastille pour la déplacer. Pince à deux doigts pour zoomer."
+        : "Touche pour poser un point · glisse un point pour le déplacer · touche la ligne pour insérer un point · appui long pour supprimer."}
     </p>
-    {mode !== "poste" && (<div className="flex gap-1.5 mb-2">
+    {mode === "contour" && (<div className="flex gap-1.5 mb-2">
       <button onClick={() => updateTrack({ zone: (track.zone || []).slice(0, -1) })} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-stone-600 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">↶ Dernier point</button>
       <button onClick={() => { if ((track.zone || []).length && !window.confirm("Effacer le contour de cette traque ?")) return; updateTrack({ zone: [] }); }} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-red-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">🗑 Effacer le contour</button>
     </div>)}
@@ -565,13 +602,22 @@ function PlaceMiradors({ image, track, updateTrack }) {
         style={{ position: "absolute", inset: 0, transform: `translate(${vue.tx}px, ${vue.ty}px) scale(${vue.z})`, transformOrigin: "0 0", cursor: "crosshair" }}>
       <div style={cropBgStyle(image, crop)} />
       <ZoneSvg zone={track.zone} crop={crop} color={track.color} />
-      {mode !== "poste" && (track.zone || []).map((pt, i) => {
+      {mode === "contour" && (track.zone || []).map((pt, i) => {
         const lx = ((pt.gx - crop.x) / crop.w) * 100, ly = ((pt.gy - crop.y) / crop.h) * 100;
         if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null;
-        const gros = mode === "deplacer";
+        const gros = true;
         return (<div key={"z" + i}
-          onPointerDown={(e) => { if (mode !== "deplacer") return; e.stopPropagation(); zDrag.current = i; }}
-          style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "deplacer" ? "auto" : "none" }}
+          onPointerDown={(e) => {
+            if (mode !== "contour") return;
+            e.stopPropagation(); zDrag.current = i; longRef.current = false;
+            if (longTimer.current) clearTimeout(longTimer.current);
+            longTimer.current = setTimeout(() => {
+              longRef.current = true; zDrag.current = null;
+              updateTrack({ zone: (zRef.current || []).filter((_, k) => k !== i) });
+            }, 600);
+          }}
+          onPointerUp={() => { if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; } }}
+          style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "contour" ? "auto" : "none" }}
           className="-translate-x-1/2 -translate-y-1/2">
           <span className={`block rounded-full shadow ${gros ? "w-5 h-5 bg-white border-[3px]" : "w-2.5 h-2.5 border-2 border-white"}`}
             style={gros ? { borderColor: track.color || "#dc2626" } : { backgroundColor: track.color || "#dc2626" }} />
