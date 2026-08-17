@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.48";
+const APP_VERSION = "v1.50";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3464,6 +3464,22 @@ function AuthScreen() {
   </div>);
 }
 
+// Bandeau discret : prend le relais de la fenêtre à partir de la deuxième connexion.
+// Toujours visible, jamais bloquant.
+function InstallBandeau({ onOuvrir, onFermer }) {
+  return (<div className="fixed left-0 right-0 z-40 px-3" style={{ bottom: "calc(10px + env(safe-area-inset-bottom))" }}>
+    <div className="max-w-md mx-auto bg-stone-900 text-stone-50 rounded-xl shadow-lg flex items-center gap-3 pl-3 pr-2 py-2.5">
+      <span className="w-9 h-9 rounded-lg bg-[#c4d6a8] flex items-center justify-center text-lg shrink-0">🦌</span>
+      <button onClick={onOuvrir} className="flex-1 text-left min-w-0">
+        <span className="block text-[13px] font-medium leading-tight">Mets l'app sur ton écran</span>
+        <span className="block text-[11px] text-stone-400 leading-tight mt-0.5">Un toucher pour l'ouvrir, en plein écran</span>
+      </button>
+      <button onClick={onOuvrir} className="text-[12px] font-medium text-emerald-400 px-2 shrink-0">Voir</button>
+      <button onClick={onFermer} className="text-stone-500 hover:text-stone-300 px-1.5 shrink-0" title="Masquer">✕</button>
+    </div>
+  </div>);
+}
+
 // ---------- Invitation à installer l'app ----------
 // Proposée 3 minutes après la connexion, jamais si l'app est déjà installée.
 function dejaInstallee() {
@@ -3592,6 +3608,7 @@ function CarnetApp({ session, onSignOut }) {
   const [cloudOk, setCloudOk] = useState(true);
   const [showAccueil, setShowAccueil] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
+  const [showBandeau, setShowBandeau] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showPub, setShowPub] = useState(false);
   const [ghStatus, setGhStatus] = useState("idle");
@@ -3649,15 +3666,24 @@ function CarnetApp({ session, onSignOut }) {
     })();
   }, []);
 
-  // Trois minutes après l'arrivée, si l'app n'est pas déjà installée
+  // Une minute après l'arrivée, si l'app n'est pas déjà installée
   // et si l'invitation n'a pas été refusée définitivement.
   const installVuRef = useRef(false); installVuRef.current = !!github.installVu;
   useEffect(() => {
     if (!loaded || !cloudOk) return;
-    if (dejaInstallee()) return;
-    const t = setTimeout(() => { if (!installVuRef.current) setShowInstall(true); }, 3 * 60 * 1000);
-    return () => clearTimeout(t);
-  }, [loaded, cloudOk]);
+    if (dejaInstallee() || github.installVu) return;
+    // Première connexion : la fenêtre, une minute après l'arrivée.
+    // Les suivantes : un simple bandeau, qui n'interrompt rien.
+    if (!github.installProposee) {
+      const t = setTimeout(() => {
+        if (installVuRef.current) return;
+        setShowInstall(true);
+        setGithub((g) => ({ ...g, installProposee: true }));
+      }, 60 * 1000);
+      return () => clearTimeout(t);
+    }
+    setShowBandeau(true);
+  }, [loaded, cloudOk, github.installVu, github.installProposee]);
 
   const saveNow = async () => {
     if (!SB || !session) return false;
@@ -3811,6 +3837,7 @@ function CarnetApp({ session, onSignOut }) {
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
 
   return (<div className="min-h-screen bg-stone-100">
+    {showBandeau && !showInstall && !showAccueil && !showPub && <InstallBandeau onOuvrir={() => { setShowBandeau(false); setShowInstall(true); }} onFermer={() => setShowBandeau(false)} />}
     {showInstall && !showAccueil && <InstallModal onClose={() => setShowInstall(false)} onNePlusAfficher={() => setGithub((g) => ({ ...g, installVu: true }))} />}
     {showAccueil && <AccueilModal onClose={() => setShowAccueil(false)} onNePlusAfficher={() => setGithub((g) => ({ ...g, accueilVu: true }))} />}
     {showPub && <SettingsSheet onInstall={() => { setShowPub(false); setShowInstall(true); }} poids={poids} github={github} setGithub={setGithub} onClose={() => setShowPub(false)} session={session} onSignOut={onSignOut} onExportExcel={exportExcel} onExportJson={exportJson} onImportPick={() => importFileRef.current && importFileRef.current.click()} />}
