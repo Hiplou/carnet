@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.47";
+const APP_VERSION = "v1.48";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -518,14 +518,14 @@ function PlaceMiradors({ image, track, updateTrack }) {
         const gros = mode === "deplacer";
         return (<div key={"z" + i}
           onPointerDown={(e) => { if (mode !== "deplacer") return; e.stopPropagation(); zDrag.current = i; }}
-          style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none" }}
+          style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "deplacer" ? "auto" : "none" }}
           className="-translate-x-1/2 -translate-y-1/2">
           <span className={`block rounded-full shadow ${gros ? "w-5 h-5 bg-white border-[3px]" : "w-2.5 h-2.5 border-2 border-white"}`}
             style={gros ? { borderColor: track.color || "#dc2626" } : { backgroundColor: track.color || "#dc2626" }} />
         </div>);
       })}
       {track.miradors.map((m) => { const lx = ((m.gx - crop.x) / crop.w) * 100, ly = ((m.gy - crop.y) / crop.h) * 100; if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null; const s = sel === m.id;
-        return (<div key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none" }} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5" onClick={(e) => { e.stopPropagation(); setSel(m.id); }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSel(m.id); drag.current = m.id; moved.current = false; }}>
+        return (<div key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "poste" ? "auto" : "none" }} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5" onClick={(e) => { if (mode !== "poste") return; e.stopPropagation(); setSel(m.id); }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSel(m.id); drag.current = m.id; moved.current = false; }}>
           <span className={`rounded-full border-2 shadow ${s ? "border-stone-900 w-4 h-4" : "border-white w-3.5 h-3.5"}`} style={{ backgroundColor: track.color }} />
           <span className="text-[9px] leading-tight bg-stone-900/70 text-stone-50 px-1 rounded whitespace-nowrap">{m.label}{(m.photos && m.photos.length) ? " 📷" : ""}</span>
         </div>); })}
