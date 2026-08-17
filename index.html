@@ -253,7 +253,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.36";
+const APP_VERSION = "v1.38";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -825,13 +825,202 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
   </SectionCard>);
 }
 
-function TerrainsView({ terrains, setTerrains, journees }) {
+// ---------- Partage de territoire entre comptes ----------
+// Copie indépendante : le destinataire reçoit un double qu'il modifie librement,
+// sans que ses changements ne remontent chez l'expéditeur.
+function nouvelId(prefixe) { return prefixe + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+// Régénère tous les identifiants : sans ça, un territoire copié pourrait entrer
+// en collision avec un territoire existant et mélanger les journées passées.
+function copierTerritoire(t) {
+  return {
+    id: nouvelId("t"),
+    name: (t.name || "Territoire") + " (copie)",
+    planImage: t.planImage || null,
+    consignesCommunes: (t.consignesCommunes || []).map((c) => ({ id: nouvelId("cc"), text: c.text || "", miradorIds: [] })),
+    planChasse: t.planChasse || {},
+    tracks: (t.tracks || []).map((tr) => ({
+      id: nouvelId("tr"),
+      name: tr.name || "Traque",
+      color: tr.color || "#dc2626",
+      crop: tr.crop || null,
+      miradors: (tr.miradors || []).map((m) => Object.assign({}, m, { id: nouvelId("m"), useCommon: false }))
+    }))
+  };
+}
+
+// Allège un territoire trop lourd. On ne touche jamais aux traques ni aux postes :
+// seules les photos partent, car elles pèsent l'essentiel du poids.
+function allegerTerritoire(t, niveau) {
+  const out = Object.assign({}, t);
+  if (niveau === "postes" || niveau === "tout") {
+    out.tracks = (t.tracks || []).map((tr) => Object.assign({}, tr, {
+      miradors: (tr.miradors || []).map((m) => Object.assign({}, m, { photos: [] }))
+    }));
+  }
+  if (niveau === "tout") out.planImage = null;
+  return out;
+}
+function poidsDe(obj) { try { return JSON.stringify(obj).length; } catch (e) { return 0; } }
+function ko(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + " Mo" : Math.round(n / 1024) + " Ko"; }
+
+function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
+  const [onglet, setOnglet] = useState("envoyer");
+  const [choisi, setChoisi] = useState("");
+  const [code, setCode] = useState(null);
+  const [saisie, setSaisie] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [niveau, setNiveau] = useState("complet");   // complet | postes | tout
+  const LIMITE = 24 * 1024 * 1024;
+
+  const facteur = () => (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
+  const appel = async (route, corps) => {
+    let sess = null;
+    try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
+    if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi.");
+    const r = await fetch(facteur() + route, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token },
+      body: JSON.stringify(corps)
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (d.reason === "lourd") throw new Error("Ce territoire pèse " + ko(d.taille) + ", au-delà du maximum de " + ko(d.max) + ". Choisis ci-dessous d'envoyer une version allégée.");
+      const raisons = { introuvable: "Code inconnu ou expiré.", vide: "Territoire introuvable.", illisible: "Partage illisible." };
+      throw new Error(raisons[d.reason] || ("Erreur " + r.status));
+    }
+    return d;
+  };
+
+  const envoyer = async () => {
+    const t = terrains.find((x) => x.id === choisi);
+    if (!t) { setMsg("Choisis d'abord un territoire."); return; }
+    setBusy(true); setMsg(""); setCode(null);
+    try {
+      const d = await appel("/share/create", { territoire: allegerTerritoire(t, niveau) });
+      setCode(d);
+    } catch (e) { setMsg((e && e.message) || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const recevoir = async () => {
+    const c = saisie.trim().toUpperCase();
+    if (c.length < 4) { setMsg("Saisis le code reçu."); return; }
+    setBusy(true); setMsg("");
+    try {
+      const d = await appel("/share/get", { code: c });
+      const copie = copierTerritoire(d.territoire);
+      setTerrains((prev) => [...prev, copie]);
+      setMsg("✅ « " + copie.name + " » a été ajouté à tes territoires.");
+      setSaisie("");
+    } catch (e) { setMsg((e && e.message) || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const partagerCode = () => {
+    if (!code) return;
+    const txt = "Voici le code pour récupérer mon territoire dans Carnet de Chasse :\n\n" + code.code + "\n\nDans l'app : Territoires → Partager → Recevoir. Valable " + code.jours + " jours.";
+    window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
+  };
+
+  return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
+      <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Partager un territoire</h2>
+    </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-4 space-y-4">
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <button onClick={() => { setOnglet("envoyer"); setMsg(""); }} className={`rounded-xl border p-3.5 text-left transition-colors ${onglet === "envoyer" ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white"}`}>
+            <div className="text-2xl mb-1.5">📤</div>
+            <div className="text-sm font-medium text-stone-800">Envoyer</div>
+            <div className="text-[11px] text-stone-400 mt-0.5">Obtenir un code</div>
+          </button>
+          <button onClick={() => { setOnglet("recevoir"); setMsg(""); }} className={`rounded-xl border p-3.5 text-left transition-colors ${onglet === "recevoir" ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white"}`}>
+            <div className="text-2xl mb-1.5">📥</div>
+            <div className="text-sm font-medium text-stone-800">Recevoir</div>
+            <div className="text-[11px] text-stone-400 mt-0.5">Saisir un code</div>
+          </button>
+        </div>
+
+        {onglet === "envoyer" && (<div className="bg-white rounded-xl border border-stone-200 p-4 space-y-3">
+          <p className="text-sm text-stone-600">Choisis le territoire à transmettre. Tu obtiendras un code à donner à l'autre organisateur.</p>
+          <select value={choisi} onChange={(e) => { setChoisi(e.target.value); setCode(null); setNiveau("complet"); setMsg(""); }} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+            <option value="">Choisir un territoire…</option>
+            {[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.tracks || []).length} traque(s))</option>)}
+          </select>
+          {choisi && (() => {
+            const t = terrains.find((x) => x.id === choisi);
+            if (!t) return null;
+            const pComplet = poidsDe(t);
+            const pPostes = poidsDe(allegerTerritoire(t, "postes"));
+            const pTout = poidsDe(allegerTerritoire(t, "tout"));
+            const tropLourd = pComplet > LIMITE;
+            const options = [
+              { k: "complet", t: "Tout envoyer", d: "Carte, photos des postes, traques et plan de chasse", p: pComplet },
+              { k: "postes", t: "Sans les photos des postes", d: "La carte du territoire est conservée", p: pPostes },
+              { k: "tout", t: "Sans aucune photo", d: "Traques, postes et plan de chasse uniquement", p: pTout }
+            ];
+            return (<div className="space-y-2">
+              {tropLourd && (<div className="bg-amber-50 border border-amber-300 rounded-lg p-3">
+                <p className="text-[13px] text-amber-900"><b>Ce territoire est trop lourd</b> ({ko(pComplet)}) pour être envoyé en une fois. Le maximum est de {ko(LIMITE)}.</p>
+                <p className="text-[12px] text-amber-800 mt-1">Choisis une version allégée : les traques, les postes et le plan de chasse sont <b>toujours</b> conservés, seules les photos varient.</p>
+              </div>)}
+              <div className="space-y-1.5">
+                {options.map((o) => {
+                  const trop = o.p > LIMITE;
+                  const on = niveau === o.k;
+                  return (<button key={o.k} onClick={() => !trop && setNiveau(o.k)} disabled={trop}
+                    className={`w-full text-left rounded-lg border p-2.5 transition-colors ${on ? "border-emerald-600 bg-emerald-50" : trop ? "border-stone-200 bg-stone-50 opacity-60" : "border-stone-200 bg-white"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-stone-800">{on ? "✓ " : ""}{o.t}</span>
+                      <span className={`text-[11px] shrink-0 ${trop ? "text-red-600" : "text-stone-400"}`}>{ko(o.p)}{trop ? " · trop lourd" : ""}</span>
+                    </div>
+                    <div className="text-[11px] text-stone-400 mt-0.5">{o.d}</div>
+                  </button>);
+                })}
+              </div>
+            </div>);
+          })()}
+          <button onClick={envoyer} disabled={busy || !choisi} className="w-full bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium py-2.5 rounded-lg">{busy ? "Envoi en cours…" : "Obtenir un code"}</button>
+
+          {code && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-4 text-center">
+            <p className="text-[11px] uppercase tracking-widest text-emerald-700">Code de partage</p>
+            <p className="font-serif text-3xl text-emerald-900 tracking-wider my-2">{code.code}</p>
+            <p className="text-[11px] text-stone-500 mb-3">Valable {code.jours} jours · {Math.round(code.taille / 1024)} Ko</p>
+            <button onClick={partagerCode} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium py-2.5 rounded-lg"><Send size={14} /> Envoyer sur WhatsApp</button>
+          </div>)}
+        </div>)}
+
+        {onglet === "recevoir" && (<div className="bg-white rounded-xl border border-stone-200 p-4 space-y-3">
+          <p className="text-sm text-stone-600">Saisis le code reçu. Le territoire sera copié chez toi avec ses traques, ses postes, ses photos et son plan de chasse.</p>
+          <input value={saisie} onChange={(e) => setSaisie(e.target.value.toUpperCase())} placeholder="CHENE-4271" className="w-full border border-stone-300 rounded-lg px-3 py-3 text-center font-serif text-xl tracking-wider bg-white" />
+          <button onClick={recevoir} disabled={busy || saisie.trim().length < 4} className="w-full bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium py-2.5 rounded-lg">{busy ? "Récupération…" : "Récupérer le territoire"}</button>
+          <div className="bg-stone-50 border border-stone-200 rounded-lg p-3">
+            <p className="text-[13px] text-stone-600">La copie est <b>indépendante</b> : tu peux la modifier librement, l'original de l'expéditeur n'en saura rien.</p>
+          </div>
+        </div>)}
+
+        {msg && <div className="bg-white border border-stone-200 rounded-lg p-3"><p className="text-sm text-stone-700">{msg}</p></div>}
+      </div>
+    </div>
+  </div>);
+}
+
+function TerrainsView({ terrains, setTerrains, journees, github }) {
   const [editorState, setEditorState] = useState(null);
+  const [partage, setPartage] = useState(false);
   const commitTerrain = (terrain) => setTerrains((prev) => { const exists = prev.some((t) => t.id === terrain.id); return exists ? prev.map((t) => (t.id === terrain.id ? terrain : t)) : [...prev, terrain]; });
   const saveTerrain = (terrain) => { commitTerrain(terrain); setEditorState(null); };
   const deleteTerrain = (id) => { if (window.confirm("Supprimer ce territoire ?")) { setTerrains((prev) => prev.filter((t) => t.id !== id)); setEditorState(null); } };
+  if (partage) return <PartageTerritoire terrains={terrains} setTerrains={setTerrains} github={github} onClose={() => setPartage(false)} />;
+
   return (<div className="space-y-3">
-    <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Territoires</h2>{!editorState && <button onClick={() => setEditorState("new")} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouveau territoire</button>}</div>
+    <div className="flex items-center justify-between gap-2"><h2 className="font-serif text-xl text-stone-800">Territoires</h2>
+      {!editorState && <button onClick={() => setPartage(true)} className="flex items-center gap-1.5 border border-stone-300 bg-white text-stone-700 text-sm font-medium px-3 py-1.5 rounded-md"><Share2 size={14} /> Partager</button>}{!editorState && <button onClick={() => setEditorState("new")} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouveau territoire</button>}</div>
     {editorState ? (<TerritoryEditor initialTerrain={editorState === "new" ? null : editorState} journees={journees} onSave={saveTerrain} onCancel={() => setEditorState(null)} onDelete={() => deleteTerrain(editorState.id)} onLiveCommit={commitTerrain} />)
       : (<div className="grid sm:grid-cols-2 gap-3">{terrains.length === 0 && <p className="text-sm text-stone-500 italic sm:col-span-2">Aucun territoire. Clique « Nouveau territoire ».</p>}
         {[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
@@ -3398,7 +3587,7 @@ function CarnetApp({ session, onSignOut }) {
 
     <main className="max-w-3xl mx-auto px-4 py-5">
       {tab === "participants" && <ParticipantsView participants={participants} setParticipants={setParticipants} />}
-      {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} journees={journees} />}
+      {tab === "terrains" && <TerrainsView terrains={terrains} setTerrains={setTerrains} journees={journees} github={github} />}
       {tab === "journees" && <JourneesView journees={journees} setJournees={setJournees} terrains={terrains} participants={participants} safety={safety} github={github} setGithub={setGithub} openSettings={() => setShowPub(true)} userId={session?.user?.id} orgEmail={session?.user?.email} />}
       {tab === "securite" && <SecurityView safety={safety} setSafety={setSafety} />}
       {tab === "carnet" && <CarnetView journees={journees} terrains={terrains} participants={participants} setJournees={setJournees} />}
