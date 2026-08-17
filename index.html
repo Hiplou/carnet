@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.46";
+const APP_VERSION = "v1.47";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -994,7 +994,7 @@ function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
   };
 
   return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
-    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
       <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
       <h2 className="font-serif text-lg">Partager un territoire</h2>
     </div>
@@ -2196,7 +2196,7 @@ function HelpSheet({ onClose }) {
   const etapes = ["J'invite mes membres", "Je note les présents", "Je définis les attributions", "Je place les fusils", "Je partage le lien", "Les retours remontent tout seuls"];
 
   return (<div className="fixed inset-0 z-[60] bg-stone-100 flex flex-col">
-    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
       <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
       <h2 className="font-serif text-lg">Aide</h2>
     </div>
@@ -2317,7 +2317,7 @@ function LegalSheet({ onClose }) {
   const toggle = (id) => setOpen((o) => (o === id ? null : id));
 
   return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
-    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
       <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
       <h2 className="font-serif text-lg">Confidentialité</h2>
     </div>
@@ -2497,7 +2497,7 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
   if (showLegal) return <LegalSheet onClose={() => setShowLegal(false)} />;
 
   return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
-    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
       <button onClick={onClose} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
       <h2 className="font-serif text-lg">Réglages</h2>
     </div>
@@ -3816,7 +3816,7 @@ function CarnetApp({ session, onSignOut }) {
     {showPub && <SettingsSheet onInstall={() => { setShowPub(false); setShowInstall(true); }} poids={poids} github={github} setGithub={setGithub} onClose={() => setShowPub(false)} session={session} onSignOut={onSignOut} onExportExcel={exportExcel} onExportJson={exportJson} onImportPick={() => importFileRef.current && importFileRef.current.click()} />}
     <input ref={importFileRef} type="file" accept=".xlsx,.json" onChange={importFile} className="hidden" />
 
-    <header className="bg-stone-900 text-stone-50 px-4 py-3"><div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+    <header className="bg-stone-900 text-stone-50 px-4 py-3" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}><div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
       <div className="flex items-center gap-2 min-w-0"><span className="text-2xl">🦌</span><h1 className="font-serif text-xl tracking-wide truncate">Carnet de Chasse</h1></div>
       <div className="flex items-center gap-2.5 shrink-0">
         <div className="flex items-center gap-1.5" title={saveBad ? "Tes modifications ne sont pas enregistrées" : "Tout est enregistré"}>
