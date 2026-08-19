@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.58";
+const APP_VERSION = "v1.59";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3143,6 +3143,10 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null); const [chefView, setChefView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
   const pubSlug = userId ? String(userId).replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 12) : "public";
+  // Une adresse par journée : identifiant du compte + identifiant de la journée.
+  // Elle ne change jamais pour une journée donnée, quel que soit le nombre d'envois.
+  const slugJournee = (j) => pubSlug + "-" + String((j && j.id) || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 10);
+  const urlDe = (j) => "https://poste.carnetdechasse.fr/b/" + slugJournee(j) + "/";
   const pubUrl = "https://poste.carnetdechasse.fr/b/" + pubSlug + "/";
   const publish = async (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
@@ -3156,14 +3160,14 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
       let sess = null;
       try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
       if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi et réessaie.");
-      const rp = await fetch(fn + "/publish", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token }, body: JSON.stringify({ html: stamped }) });
+      const rp = await fetch(fn + "/publish", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token }, body: JSON.stringify({ html: stamped, journeeId: journee.id }) });
       if (!rp.ok) { const t = await rp.text(); throw new Error("Publication refusée — " + t.slice(0, 200)); }
       let liveUrl = pubUrl;
       try { await rp.json(); } catch (e) {}
-      setPub({ status: "live", url: liveUrl });
+      setPub({ status: "live", url: urlDe(journee) });
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
   };
-  const shareLinkWhatsApp = () => { const link = (pub && pub.url) ? pub.url : pubUrl; const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
+  const shareLinkWhatsApp = (lien) => { const link = lien || ((pub && pub.url) ? pub.url : pubUrl); const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
   const copyPubLink = () => { const link = (pub && pub.url) ? pub.url : pubUrl; if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => window.alert("Lien copié ✓ Colle-le dans ton groupe WhatsApp.")); else window.prompt("Copie le lien :", link); };
   const [postesPrint, setPostesPrint] = useState(null);
   const printPostes = (journee) => {
@@ -3346,8 +3350,8 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
 
                   {(pub.status === "live" || pub.status === "ok") && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-3 space-y-2">
                     <p className="text-sm font-semibold text-emerald-800">✅ Le lien est prêt</p>
-                    <a href={pub.url} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2 text-xs text-emerald-800 font-medium underline break-all">{pub.url}</a>
-                    <button onClick={shareLinkWhatsApp} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-3 rounded-lg"><Send size={16} /> Envoyer sur WhatsApp</button>
+                    <a href={urlDe(j)} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2 text-xs text-emerald-800 font-medium underline break-all">{urlDe(j)}</a>
+                    <button onClick={() => shareLinkWhatsApp(urlDe(j))} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-3 rounded-lg"><Send size={16} /> Envoyer sur WhatsApp</button>
                   </div>)}
 
                   {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-lg p-2.5 space-y-2">
@@ -3358,7 +3362,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
                   {(pub.status === "live" || pub.status === "ok") && (<div className="bg-white border border-stone-200 rounded-lg p-3">
                     <p className="text-[13px] font-medium text-stone-800 mb-1.5">💬 Comment le transmettre</p>
                     <p className="text-[12px] text-stone-600 leading-snug">Le plus simple est de créer <b>un groupe WhatsApp avec tes chasseurs</b>, une fois pour toutes. Tu y colles ce lien avant chaque battue : chacun ouvre le sien et retrouve son poste, sa carte et les consignes.</p>
-                    <p className="text-[12px] text-stone-600 leading-snug mt-1.5">Le lien reste le même toute la journée. Si tu changes un placement, reviens ici : il se met à jour tout seul, sans avoir à le renvoyer.</p>
+                    <p className="text-[12px] text-stone-600 leading-snug mt-1.5"><b>Chaque journée a son propre lien.</b> Celui-ci ne changera plus : si tu modifies un placement, reviens ici et touche « Mettre à jour » — le lien déjà envoyé affichera la nouvelle version.</p>
                   </div>)}
 
                   <div className="flex gap-2">
