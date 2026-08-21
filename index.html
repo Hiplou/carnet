@@ -178,7 +178,7 @@ function Grip({ size = 16, className = "" }) {
     React.createElement("circle", { cx: 9, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 19, r: 1.4 }),
     React.createElement("circle", { cx: 15, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 19, r: 1.4 }));
 }
-function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, armes: j.armes || {}, rdv: j.rdv || {}, canal: j.canal || "" }; }
+function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, armes: j.armes || {}, rdv: j.rdv || {}, canal: j.canal || "", deposesJour: Array.isArray(j.deposesJour) ? j.deposesJour.filter((d) => d && isFinite(d.gx) && isFinite(d.gy)).slice(0, 40).map((d) => ({ id: String(d.id || ""), nom: String(d.nom || "").slice(0, 40), gx: Number(d.gx), gy: Number(d.gy) })) : [], voitures: Array.isArray(j.voitures) ? j.voitures.slice(0, 40).map((v) => ({ id: String(v.id || ""), conducteurId: String(v.conducteurId || ""), places: Math.max(0, Math.min(9, Number(v.places) || 0)) })) : [], transport: (j.transport && typeof j.transport === "object") ? j.transport : {} }; }
 function normTirZone(z) { z = z || {}; return { dir: ((Number(z.dir) || 0) % 360 + 360) % 360, width: Math.max(10, Math.min(360, Number(z.width) || 60)) }; }
 function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, armes: (Array.isArray(m.armes) ? m.armes : (m.arme && m.arme !== "indifferent" ? [m.arme] : [])).filter((k) => ARMES.some((x) => x.key === k)), tir: { zones: tz } }; }
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, zone: Array.isArray(t.zone) ? t.zone.filter((p) => p && isFinite(p.gx) && isFinite(p.gy)).slice(0, 60) : [], zoneFermee: !!t.zoneFermee, miradors: (t.miradors || []).map(normMirador) }; }
@@ -260,7 +260,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.59";
+const APP_VERSION = "v1.60";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1035,7 +1035,7 @@ function copierTerritoire(t) {
     name: (t.name || "Territoire") + " (copie)",
     planImage: t.planImage || null,
     consignesCommunes: (t.consignesCommunes || []).map((c) => ({ id: nouvelId("cc"), text: c.text || "", miradorIds: [] })),
-    planChasse: t.planChasse || {},
+    planChasse: t.planChasse || {}, deposes: Array.isArray(t.deposes) ? t.deposes.filter((d) => d && isFinite(d.gx) && isFinite(d.gy)).slice(0, 40).map((d) => ({ id: String(d.id || ""), nom: String(d.nom || "").slice(0, 40), gx: Number(d.gx), gy: Number(d.gy) })) : [], departs: Array.isArray(t.departs) ? t.departs.filter((d) => d && isFinite(d.gx) && isFinite(d.gy)).slice(0, 40).map((d) => ({ id: String(d.id || ""), nom: String(d.nom || "").slice(0, 40), gx: Number(d.gx), gy: Number(d.gy) })) : [],
     tracks: (t.tracks || []).map((tr) => ({
       id: nouvelId("tr"),
       name: tr.name || "Traque",
@@ -1660,6 +1660,193 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
     </div>
   </div>);
 }
+// ---------- Pose des points de dépose et de départ de traque ----------
+// Même principe que les miradors : on touche la carte, le point se pose.
+// Noir = point du territoire (réutilisé), ambre = point du jour, vert = départ de traque.
+// ---------- Voitures et covoiturage ----------
+function VoituresSection({ journee, terrain, participants, presentIds, onSet, onOuvrirPoints }) {
+  const voitures = journee.voitures || [];
+  const transport = journee.transport || {};
+  const pts = [
+    ...(terrain ? (terrain.deposes || []).map((d) => ({ ...d, src: "terr" })) : []),
+    ...((journee.deposesJour || []).map((d) => ({ ...d, src: "jour" })))
+  ];
+  const departs = terrain ? (terrain.departs || []) : [];
+  const nom = (id) => { const p = participants.find((x) => x.id === id); return p ? p.name : "?"; };
+  const estTraqueur = (id) => { const p = participants.find((x) => x.id === id); return p && p.role === "rabatteur"; };
+
+  const presents = presentIds.filter((id) => participants.some((p) => p.id === id));
+  const conducteurs = voitures.map((v) => v.conducteurId);
+  const passagers = Object.keys(transport).filter((id) => (transport[id] || {}).voitureId);
+  const sansVoiture = presents.filter((id) => conducteurs.indexOf(id) < 0 && passagers.indexOf(id) < 0);
+
+  const majT = (hid, patch) => onSet({ transport: { ...transport, [hid]: { ...(transport[hid] || {}), ...patch } } });
+
+  const ajouterVoiture = () => {
+    const libres = presents.filter((id) => conducteurs.indexOf(id) < 0 && passagers.indexOf(id) < 0);
+    if (!libres.length) { window.alert("Tout le monde a déjà une voiture."); return; }
+    const choix = window.prompt("Qui conduit ?\n\n" + libres.map((id, i) => (i + 1) + ". " + nom(id)).join("\n"), "1");
+    const k = parseInt(choix, 10);
+    if (!k || k < 1 || k > libres.length) return;
+    onSet({ voitures: [...voitures, { id: "v-" + Date.now().toString(36), conducteurId: libres[k - 1], places: 4 }] });
+  };
+
+  const ajouterPassager = (v) => {
+    const libres = presents.filter((id) => conducteurs.indexOf(id) < 0 && passagers.indexOf(id) < 0);
+    if (!libres.length) { window.alert("Plus personne à placer."); return; }
+    const choix = window.prompt("Qui monte avec " + nom(v.conducteurId) + " ?\n\n" + libres.map((id, i) => (i + 1) + ". " + nom(id)).join("\n"), "1");
+    const k = parseInt(choix, 10);
+    if (!k || k < 1 || k > libres.length) return;
+    majT(libres[k - 1], { voitureId: v.id });
+  };
+
+  return (<div className="space-y-3">
+    <div>
+      <div className="flex items-baseline justify-between mb-1.5">
+        <span className="text-[11px] uppercase tracking-widest text-stone-400">Points de dépose</span>
+        <button onClick={onOuvrirPoints} className="text-[11px] text-emerald-800 underline">Gérer sur la carte</button>
+      </div>
+      {pts.length === 0 ? (
+        <p className="text-[12px] text-stone-400 italic">Aucun point. Touche « Gérer sur la carte » pour en poser.</p>
+      ) : (<div className="flex flex-wrap gap-1.5">
+        {pts.map((d) => (<span key={d.id} className={`rounded-full px-2.5 py-1 text-[12px] border ${d.src === "jour" ? "bg-amber-50 border-amber-300 text-amber-900" : "bg-white border-stone-300 text-stone-700"}`}>
+          📍 {d.nom} <span className={d.src === "jour" ? "text-amber-600" : "text-stone-400"}>{d.src === "jour" ? "ce jour" : "territoire"}</span>
+        </span>))}
+      </div>)}
+    </div>
+
+    <div className="border-t border-stone-200 pt-3 space-y-2">
+      <span className="text-[11px] uppercase tracking-widest text-stone-400">Les voitures</span>
+
+      {voitures.length === 0 && <p className="text-[12px] text-stone-400 italic">Aucun conducteur désigné.</p>}
+
+      {voitures.map((v) => {
+        const mes = presents.filter((id) => (transport[id] || {}).voitureId === v.id);
+        const trop = v.places > 0 && mes.length > v.places;
+        return (<div key={v.id} className="bg-white border border-stone-200 rounded-xl overflow-hidden">
+          <div className="bg-stone-100 px-3 py-2 flex items-center gap-2">
+            <span className="text-lg">🚗</span>
+            <span className="text-sm font-medium text-stone-800 flex-1 truncate">{nom(v.conducteurId)}</span>
+            <input type="number" min="0" max="9" value={v.places} onChange={(e) => onSet({ voitures: voitures.map((x) => x.id === v.id ? { ...x, places: Math.max(0, Math.min(9, Number(e.target.value) || 0)) } : x) })}
+              className="w-12 text-[11px] border border-stone-300 rounded px-1 py-0.5 bg-white text-center" />
+            <span className="text-[11px] text-stone-500">places</span>
+            <button onClick={() => { if (!window.confirm("Retirer cette voiture ?")) return;
+              const t2 = { ...transport }; mes.forEach((id) => { t2[id] = { ...(t2[id] || {}), voitureId: "" }; });
+              onSet({ voitures: voitures.filter((x) => x.id !== v.id), transport: t2 }); }} className="text-red-600 px-1 text-sm">✕</button>
+          </div>
+
+          {trop && <p className="text-[11px] text-amber-800 bg-amber-50 px-3 py-1">Plus de passagers que de places — simple repère, rien n'est bloqué.</p>}
+
+          <div className="divide-y divide-stone-100">
+            {mes.length === 0 && <p className="px-3 py-2 text-[12px] text-stone-400 italic">Aucun passager.</p>}
+            {mes.map((id) => { const tq = estTraqueur(id); const inf = transport[id] || {};
+              return (<div key={id} className={tq ? "bg-emerald-50/50" : ""}>
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <span className="text-sm text-stone-700 flex-1 truncate">{tq ? "🚩 " : ""}{nom(id)}</span>
+                  <select value={inf.deposeId || ""} onChange={(e) => majT(id, { deposeId: e.target.value })} className="text-[11px] border border-stone-300 rounded px-1.5 py-1 bg-white max-w-[42%]">
+                    <option value="">Point de dépose…</option>
+                    {pts.map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
+                  </select>
+                  <button onClick={() => majT(id, { voitureId: "" })} className="text-red-600 px-1 text-sm">✕</button>
+                </div>
+                {tq && (<div className="px-3 pb-2">
+                  <span className="text-[11px] text-stone-500">↳ départ de traque : </span>
+                  <select value={inf.departId || ""} onChange={(e) => majT(id, { departId: e.target.value })} className="text-[11px] border border-stone-300 rounded px-1.5 py-0.5 bg-white">
+                    <option value="">à définir…</option>
+                    {departs.map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
+                  </select>
+                </div>)}
+              </div>); })}
+          </div>
+          <button onClick={() => ajouterPassager(v)} className="w-full text-[12px] text-emerald-800 py-2 border-t border-stone-100">+ Ajouter un passager</button>
+        </div>);
+      })}
+
+      <button onClick={ajouterVoiture} className="w-full text-[12px] text-stone-700 bg-white border border-stone-300 rounded-lg py-2">+ Désigner un conducteur</button>
+    </div>
+
+    {sansVoiture.length > 0 && (<div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5">
+      <p className="text-[12px] text-amber-900"><b>{sansVoiture.length} personne(s) sans voiture</b> — {sansVoiture.map(nom).join(", ")}</p>
+    </div>)}
+  </div>);
+}
+
+function PointsView({ terrain, deposesTerr, deposesJour, departs, onAjouter, onRenommer, onSupprimer, onBack }) {
+  const [type, setType] = useState("terr");   // terr | jour | depart
+  const boxRef = useRef(null);
+  const tap = useRef(null);
+  const ar = useAspect(terrain.planImage);
+  const crop = { ...FULL_CROP };
+
+  const listes = { terr: deposesTerr || [], jour: deposesJour || [], depart: departs || [] };
+  const couleurs = { terr: "#1c1917", jour: "#b45309", depart: "#166534" };
+  const libelles = { terr: "Dépose du territoire", jour: "Dépose du jour", depart: "Départ de traque" };
+
+  const onDown = (e) => { tap.current = { x: e.clientX, y: e.clientY, t: Date.now() }; };
+  const onUp = (e) => {
+    const t = tap.current; tap.current = null;
+    if (!t || !boxRef.current) return;
+    if (Math.hypot(e.clientX - t.x, e.clientY - t.y) > 12) return;
+    if (Date.now() - t.t > 700) return;
+    const r = boxRef.current.getBoundingClientRect();
+    const gx = crop.x + ((e.clientX - r.left) / r.width) * crop.w;
+    const gy = crop.y + ((e.clientY - r.top) / r.height) * crop.h;
+    const nom = (window.prompt("Nom du point ?", libelles[type]) || "").trim();
+    if (!nom) return;
+    onAjouter(type, { id: "pt-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), nom: nom.slice(0, 40), gx: gx, gy: gy });
+  };
+
+  return (<div className="fixed inset-0 z-50 bg-stone-100 flex flex-col">
+    <div className="bg-stone-900 text-stone-50 px-4 py-3 flex items-center gap-3 shrink-0" style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}>
+      <button onClick={onBack} className="p-1 -ml-1"><ArrowLeft size={22} /></button>
+      <h2 className="font-serif text-lg">Points de dépose</h2>
+    </div>
+
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-3xl mx-auto p-3.5 space-y-3">
+
+        <div className="flex gap-1.5">
+          {[["terr", "📍 Territoire"], ["jour", "📍 Ce jour"], ["depart", "🚩 Départ"]].map(([k, lab]) => (
+            <button key={k} onClick={() => setType(k)} className={`flex-1 text-[12px] font-medium py-2 rounded-md border ${type === k ? "text-stone-50 border-transparent" : "bg-white text-stone-700 border-stone-300"}`}
+              style={type === k ? { background: couleurs[k] } : {}}>{lab}</button>
+          ))}
+        </div>
+        <p className="text-[11px] text-stone-500">
+          {type === "terr" ? "Ces points reviennent à chaque battue sur ce territoire."
+            : type === "jour" ? "Ces points ne valent que pour cette journée."
+            : "Point où un traqueur commence sa traque."}
+          {" Touche la carte pour en poser un."}
+        </p>
+
+        {terrain.planImage ? (
+          <div ref={boxRef} onPointerDown={onDown} onPointerUp={onUp}
+            style={{ ...cropWrapperStyle(crop, ar), touchAction: "none" }}
+            className="border border-stone-300 select-none relative">
+            <div style={cropBgStyle(terrain.planImage, crop)} />
+            {["terr", "jour", "depart"].map((k) => (listes[k] || []).map((d) => {
+              const lx = ((d.gx - crop.x) / crop.w) * 100, ly = ((d.gy - crop.y) / crop.h) * 100;
+              return (<div key={k + d.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%` }} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
+                <span className="w-5 h-5 rounded-full border-2 border-white shadow" style={{ background: couleurs[k] }} />
+                <span className="text-[9px] bg-white/90 rounded px-1 mt-0.5 whitespace-nowrap">{d.nom}</span>
+              </div>);
+            }))}
+          </div>
+        ) : <p className="text-sm text-stone-500 italic">Ce territoire n'a pas encore de carte.</p>}
+
+        <div className="bg-white border border-stone-200 rounded-xl divide-y divide-stone-100">
+          {(listes[type] || []).length === 0 && <p className="text-sm text-stone-400 italic px-3 py-3">Aucun point pour l'instant.</p>}
+          {(listes[type] || []).map((d) => (<div key={d.id} className="flex items-center gap-2 px-3 py-2">
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: couleurs[type] }} />
+            <span className="text-sm text-stone-800 flex-1 truncate">{d.nom}</span>
+            <button onClick={() => { const n = (window.prompt("Nouveau nom ?", d.nom) || "").trim(); if (n) onRenommer(type, d.id, n.slice(0, 40)); }} className="text-stone-400 px-1 text-sm">✎</button>
+            <button onClick={() => { if (window.confirm("Supprimer « " + d.nom + " » ?")) onSupprimer(type, d.id); }} className="text-red-600 px-1 text-sm">✕</button>
+          </div>))}
+        </div>
+      </div>
+    </div>
+  </div>);
+}
+
 function PosterFusils({ terrain, track, placements, participants, presentIds, journeeArmes, onSetArme, chefs, chefLignes, rdv, onSetRdv, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const [selectedHunter, setSelectedHunter] = useState(null);
   const [flagChef, setFlagChef] = useState(null);
@@ -2310,7 +2497,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   const chefLignesData = journee.chefLignes || {};
   const chefPostsOf = (hid) => Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid).map((mid) => { let f = null; (terrain.tracks || []).forEach((trk) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) { const pl = journee.placements[trk.id] || {}; const occHid = Object.keys(pl).find((h) => pl[h] === mid); const occ = occHid ? participants.find((x) => x.id === occHid) : null; f = { traqueName: trk.name, label: m.label, hunter: occ ? occ.name : "" }; } }); return f; }).filter(Boolean);
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { name: p ? p.name : "Chasseur", posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => byNom(a.name || "", b.name || ""));
-  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
+  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", voitures: (journee.voitures || []).map((v) => { const c = participants.find((p) => p.id === v.conducteurId); const mes = Object.keys(journee.transport || {}).filter((id) => ((journee.transport || {})[id] || {}).voitureId === v.id); return { id: v.id, conducteur: c ? c.name : "", passagers: mes.map((id) => { const q = participants.find((p) => p.id === id); return { id: id, nom: q ? q.name : "" }; }) }; }), transport: journee.transport || {}, deposes: [].concat((terrain.deposes || []), (journee.deposesJour || [])).map((d) => ({ id: d.id, nom: d.nom })), departs: (terrain.departs || []).map((d) => ({ id: d.id, nom: d.nom })), traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
   // Source unique : le calcul des cônes de la page chasseurs est généré à partir
   // de tirRender, la fonction utilisée côté organisateur. Impossible qu'elles divergent.
   const tail = SHARED_TAIL.replace("/*__TIRRENDER__*/", String(tirRender).replace(/^function\s+tirRender/, "function tirRenderJS"));
@@ -3126,6 +3313,28 @@ function StepGroup({ label, children }) {
 
 function JourneesView({ journees, setJournees, terrains, participants, safety, github, setGithub, openSettings, userId, orgEmail }) {
   const [openJournee, setOpenJournee] = useState(null);
+  const majJournee = (jid, patch) => setJournees((prev) => prev.map((j) => j.id === jid ? { ...j, ...patch } : j));
+  const majPoints = (jid, tid, type, action, data) => {
+    if (type === "jour") {
+      setJournees((prev) => prev.map((j) => {
+        if (j.id !== jid) return j;
+        const l = j.deposesJour || [];
+        if (action === "add") return { ...j, deposesJour: [...l, data] };
+        if (action === "ren") return { ...j, deposesJour: l.map((d) => d.id === data.id ? { ...d, nom: data.nom } : d) };
+        return { ...j, deposesJour: l.filter((d) => d.id !== data.id) };
+      }));
+      return;
+    }
+    const champ = type === "depart" ? "departs" : "deposes";
+    setTerrains((prev) => prev.map((t) => {
+      if (t.id !== tid) return t;
+      const l = t[champ] || [];
+      if (action === "add") return { ...t, [champ]: [...l, data] };
+      if (action === "ren") return { ...t, [champ]: l.map((d) => d.id === data.id ? { ...d, nom: data.nom } : d) };
+      return { ...t, [champ]: l.filter((d) => d.id !== data.id) };
+    }));
+  };
+
   const [openStep, setOpenStep] = useState(null); // vignette dépliée dans la journée ouverte
   // Ouvrir « Envoyer les postes » prépare le lien immédiatement : l'organisateur
   // n'a plus qu'à le transmettre. On ne relance pas si un envoi est déjà en cours.
@@ -3140,7 +3349,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
     publish(j);
   }, [openStep, openJournee]);
   useEffect(() => { if (openStep !== "partage") dejaEnvoye.current = null; }, [openStep]);
-  const [posterView, setPosterView] = useState(null); const [shareView, setShareView] = useState(null); const [chefView, setChefView] = useState(null);
+  const [posterView, setPosterView] = useState(null); const [pointsView, setPointsView] = useState(null); const [shareView, setShareView] = useState(null); const [chefView, setChefView] = useState(null);
   const [pub, setPub] = useState({ status: "idle" });
   const pubSlug = userId ? String(userId).replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 12) : "public";
   // Une adresse par journée : identifiant du compte + identifiant de la journée.
@@ -3224,6 +3433,17 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
   const setMiradorState = (jid, trackId, mid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, miradorStates: { ...(j.miradorStates || {}), [trackId]: { ...((j.miradorStates || {})[trackId] || {}), [mid]: { ...(((j.miradorStates || {})[trackId] || {})[mid] || {}), ...patch } } } })));
 
   if (chefView) { const journee = journees.find((j) => j.id === chefView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const chef = participants.find((p) => p.id === chefView.chefId); if (!journee || !terrain || !chef) { setChefView(null); return null; } return <ChefAssign terrain={terrain} journee={journee} chefId={chefView.chefId} chefName={chef.name} participants={participants} onToggle={(mid, chefId) => setChefLigne(journee.id, mid, chefId)} onBack={() => setChefView(null)} />; }
+  if (pointsView) {
+    const journee = journees.find((j) => j.id === pointsView.journeeId);
+    const terrain = terrains.find((t) => t.id === journee?.terrainId);
+    if (!journee || !terrain) { setPointsView(null); return null; }
+    return <PointsView terrain={terrain} deposesTerr={terrain.deposes || []} deposesJour={journee.deposesJour || []} departs={terrain.departs || []}
+      onAjouter={(type, d) => majPoints(journee.id, terrain.id, type, "add", d)}
+      onRenommer={(type, id, nom) => majPoints(journee.id, terrain.id, type, "ren", { id, nom })}
+      onSupprimer={(type, id) => majPoints(journee.id, terrain.id, type, "del", { id })}
+      onBack={() => setPointsView(null)} />;
+  }
+
   if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
     return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} journeeArmes={journee.armes || {}} onSetArme={(hid, arme) => setArmeJour(journee.id, hid, arme)} chefs={journee.chefs || []} chefLignes={journee.chefLignes || {}} rdv={(journee.rdv || {})[track.id] || {}} onSetRdv={(cid, pos) => setRdv(journee.id, track.id, cid, pos)} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
   if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
@@ -3245,6 +3465,13 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
       const totalPostes = tracks.reduce((n, t) => n + (t.miradors || []).length, 0);
       const totalPlaces = tracks.reduce((n, t) => n + Object.keys(j.placements[t.id] || {}).length, 0);
       const nbChefs = (j.chefs || []).length;
+      const nbVoitures = (j.voitures || []).length;
+      const transp = j.transport || {};
+      const nbPassagers = Object.keys(transp).filter((id) => (transp[id] || {}).voitureId).length;
+      const conducteursIds = (j.voitures || []).map((v) => v.conducteurId);
+      const presentsIds = participants.filter((p) => (pres[p.id] || {}).statut === "present").map((p) => p.id);
+      const nbSansVoiture = presentsIds.filter((id) => conducteursIds.indexOf(id) < 0 && !(transp[id] || {}).voitureId).length;
+      const stVoitures = nbVoitures === 0 ? "todo" : (nbSansVoiture > 0 ? "partial" : "done");
       const especes = terrain ? ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled) : [];
       const nbAttr = especes.filter((e) => { const a = (j.attributions || {})[e.key] || {}; return a.mode === "bracelets" || a.mode === "interdit" || (a.note || "").trim(); }).length;
       const nbPrises = (j.tableau || []).reduce((n, k) => n + (Number(k.quantite) || 0), 0);
@@ -3254,7 +3481,7 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
       const stAttr = ((j.canal || "").trim() || nbAttr) ? "done" : "todo";
       const stPostes = totalPlaces === 0 ? "todo" : ((nbPres > 0 && totalPlaces >= Math.min(nbPres, totalPostes)) ? "done" : "partial");
       const stChefs = nbChefs ? "done" : "todo";
-      const nbFaites = [stInvit, stPres, stAttr, stPostes, stChefs].filter((x) => x === "done").length;
+      const nbFaites = [stInvit, stPres, stAttr, stPostes, stChefs, stVoitures].filter((x) => x === "done").length;
 
       const step = isOpen ? openStep : null;
       const setStep = (id) => setOpenStep((o) => (o === id ? null : id));
@@ -3275,8 +3502,8 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
               <button onClick={() => { setOpenJournee(null); setOpenStep(null); }} className="text-stone-400 text-xs shrink-0 p-1">▲</button>
             </div>
             <div className="mt-3">
-              <div className="flex items-center justify-between text-[11px] text-stone-400 mb-1"><span>Préparation</span><span>{nbFaites} étape{nbFaites > 1 ? "s" : ""} sur 5</span></div>
-              <div className="h-1.5 bg-stone-700 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: (nbFaites / 5 * 100) + "%" }} /></div>
+              <div className="flex items-center justify-between text-[11px] text-stone-400 mb-1"><span>Préparation</span><span>{nbFaites} étape{nbFaites > 1 ? "s" : ""} sur 6</span></div>
+              <div className="h-1.5 bg-stone-700 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: (nbFaites / 6 * 100) + "%" }} /></div>
             </div>
           </div>
 
@@ -3326,6 +3553,14 @@ function JourneesView({ journees, setJournees, terrains, participants, safety, g
                 <StepTile id="chefs" num={5} emoji="👨‍✈️" title="Chefs de ligne" sub={nbChefs ? nbChefs + " désigné" + (nbChefs > 1 ? "s" : "") : "aucun désigné"} state={stChefs} open={step} onToggle={setStep} />
                 <StepPanel id="chefs" open={step}>
                   {terrain ? <ChefsSection bare journee={j} terrain={terrain} participants={participants} onToggleChef={toggleChef} onSetChefLigne={setChefLigne} onAssignPosts={(jid, chefId) => setChefView({ journeeId: jid, chefId })} /> : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
+                </StepPanel>
+
+                <StepTile id="voitures" num={6} emoji="🚗" title="Voitures & dépose" sub={nbVoitures ? nbVoitures + " conducteur" + (nbVoitures > 1 ? "s" : "") + " · " + nbPassagers + " passager" + (nbPassagers > 1 ? "s" : "") + (nbSansVoiture ? " · " + nbSansVoiture + " sans voiture" : "") : "personne n'est affecté"} state={stVoitures} open={step} onToggle={setStep} />
+                <StepPanel id="voitures" open={step}>
+                  {terrain ? <VoituresSection journee={j} terrain={terrain} participants={participants} presentIds={presentsIds}
+                    onSet={(patch) => majJournee(j.id, patch)}
+                    onOuvrirPoints={() => setPointsView({ journeeId: j.id })} />
+                    : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
                 </StepPanel>
               </div>
             </StepGroup>
