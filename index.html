@@ -261,7 +261,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.67";
+const APP_VERSION = "v1.68";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1691,7 +1691,7 @@ function VoituresSection({ journee, terrain, participants, presentIds, onSet, on
   const setT = (t) => onSet({ transport: { ...(journee.transport || {}), [tid]: t } });
   const majT = (hid, patch) => setT({ ...transport, [hid]: { ...(transport[hid] || {}), ...patch } });
 
-  const designerConducteur = (hid) => setV([...voitures, { id: "v-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), conducteurId: hid, places: 4 }]);
+  const designerConducteur = (hid) => setV([...voitures, { id: "v-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), conducteurId: hid, places: 4, deposeId: "" }]);
 
   const ListeLibres = ({ titre, onChoisir }) => (
     <div className="bg-stone-50 border-t border-stone-200 p-2.5">
@@ -1747,13 +1747,31 @@ function VoituresSection({ journee, terrain, participants, presentIds, onSet, on
             <span className="text-lg">🚗</span>
             <span className="text-sm font-medium text-stone-800 flex-1 truncate">{nom(v.conducteurId)}</span>
             <input type="number" min="0" max="9" value={v.places} onChange={(e) => setV(voitures.map((x) => x.id === v.id ? { ...x, places: Math.max(0, Math.min(9, Number(e.target.value) || 0)) } : x))}
-              className="w-12 text-[11px] border border-stone-300 rounded px-1 py-0.5 bg-white text-center" />
-            <span className="text-[11px] text-stone-500">places</span>
+              className="w-11 text-[11px] border border-stone-300 rounded px-1 py-0.5 bg-white text-center" />
+            <span className="text-[11px] text-stone-500">pl.</span>
             <button onClick={() => { if (!window.confirm("Retirer cette voiture ?")) return;
               const t2 = { ...transport }; mes.forEach((id) => { t2[id] = { ...(t2[id] || {}), voitureId: "" }; });
               onSet({ voitures: { ...(journee.voitures || {}), [tid]: voitures.filter((x) => x.id !== v.id) }, transport: { ...(journee.transport || {}), [tid]: t2 } }); }} className="text-red-600 px-1 text-sm">✕</button>
           </div>
 
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-50 border-b border-stone-100">
+            <span className="text-[11px] text-stone-500 shrink-0">Se gare à</span>
+            <select value={v.deposeId || ""} onChange={(e) => {
+              const np = e.target.value, ancien = v.deposeId || "";
+              setV(voitures.map((x) => x.id === v.id ? { ...x, deposeId: np } : x));
+              // les passagers restés sur l'ancien point suivent la voiture
+              const t2 = { ...transport };
+              Object.keys(t2).forEach((id) => {
+                if ((t2[id] || {}).voitureId !== v.id) return;
+                const d = (t2[id] || {}).deposeId || "";
+                if (!d || d === ancien) t2[id] = { ...t2[id], deposeId: np };
+              });
+              setT(t2);
+            }} className="text-[11px] border border-stone-300 rounded px-1.5 py-1 bg-white flex-1 min-w-0">
+              <option value="">Point de dépose de la voiture…</option>
+              {pts.map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
+            </select>
+          </div>
           {trop && <p className="text-[11px] text-amber-800 bg-amber-50 px-3 py-1">Plus de passagers que de places — simple repère, rien n'est bloqué.</p>}
 
           <div className="divide-y divide-stone-100">
@@ -1763,7 +1781,7 @@ function VoituresSection({ journee, terrain, participants, presentIds, onSet, on
                 <div className="flex items-center gap-2 px-3 py-2">
                   <span className="text-sm text-stone-700 flex-1 truncate">{tq ? "🚩 " : ""}{nom(id)}</span>
                   <select value={inf.deposeId || ""} onChange={(e) => majT(id, { deposeId: e.target.value })} className="text-[11px] border border-stone-300 rounded px-1.5 py-1 bg-white max-w-[42%]">
-                    <option value="">Point de dépose…</option>
+                    <option value="">Comme la voiture</option>
                     {pts.map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
                   </select>
                   <button onClick={() => majT(id, { voitureId: "" })} className="text-red-600 px-1 text-sm">✕</button>
@@ -1778,7 +1796,7 @@ function VoituresSection({ journee, terrain, participants, presentIds, onSet, on
               </div>); })}
           </div>
           {choix === v.id
-            ? <ListeLibres titre={"Qui monte avec " + nom(v.conducteurId) + " ?"} onChoisir={(hid) => majT(hid, { voitureId: v.id })} />
+            ? <ListeLibres titre={"Qui monte avec " + nom(v.conducteurId) + " ?"} onChoisir={(hid) => majT(hid, { voitureId: v.id, deposeId: (transport[hid] || {}).deposeId || v.deposeId || "" })} />
             : <button onClick={() => setChoix(v.id)} className="w-full text-[12px] text-emerald-800 py-2 border-t border-stone-100">+ Ajouter un passager</button>}
         </div>);
       })}
@@ -2177,7 +2195,7 @@ function monTrajet(pp){
     if(vs[a].conducteurId===me.id)jeC=vs[a];
   }
   if(!maV&&!jeC)return "";
-  var np=nomDe(t.deposes,tr.deposeId),nd=nomDe(t.departs,tr.departId);
+  var np=nomDe(t.deposes,tr.deposeId||((maV||jeC)||{}).deposeId),nd=nomDe(t.departs,tr.departId);
   var h=" <span style='color:#7c2d12;font-weight:600'>\u00b7 \u{1F697} "+aesc(jeC?"Tu conduis":maV.conducteur);
   if(np)h+=" \u2192 "+aesc(np);
   h+="</span>";
@@ -2210,13 +2228,13 @@ function remplirVoiture(myId){
       if(ps2.length){
         h+="<p style='font-size:11px;color:var(--stone-400);margin:4px 0 2px'>Tes passagers</p><ul style='margin:0;padding-left:18px;font-size:14px'>";
         for(var n=0;n<ps2.length;n++){
-          var np2=nomDe(t.deposes,(tt[ps2[n].id]||{}).deposeId);
+          var np2=nomDe(t.deposes,(tt[ps2[n].id]||{}).deposeId||jeC.deposeId);
           h+="<li>"+aesc(ps2[n].nom)+(np2?" &mdash; <b>"+aesc(np2)+"</b>":"")+"</li>";
         }
         h+="</ul>";
       }else{h+="<p style='font-size:14px;color:var(--stone-500);margin:0'>Aucun passager.</p>";}
     }else{
-      var np=nomDe(t.deposes,tr.deposeId);
+      var np=nomDe(t.deposes,tr.deposeId||maV.deposeId);
       if(np)h+="<p style='font-size:14px;color:var(--stone-700);margin:0'>Il te depose a <b>"+aesc(np)+"</b></p>";
       var autres=(maV.passagers||[]).filter(function(x){return x.id!==myId;}).map(function(x){return x.nom;});
       if(autres.length)h+="<p style='font-size:13px;color:var(--stone-500);margin:5px 0 0'>Avec toi : "+aesc(autres.join(", "))+"</p>";
@@ -2610,7 +2628,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   const chefLignesData = journee.chefLignes || {};
   const chefPostsOf = (hid) => Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid).map((mid) => { let f = null; (terrain.tracks || []).forEach((trk) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) { const pl = journee.placements[trk.id] || {}; const occHid = Object.keys(pl).find((h) => pl[h] === mid); const occ = occHid ? participants.find((x) => x.id === occHid) : null; f = { traqueName: trk.name, label: m.label, hunter: occ ? occ.name : "" }; } }); return f; }).filter(Boolean);
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { id: hid, name: p ? p.name : "Chasseur", posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => byNom(a.name || "", b.name || ""));
-  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, deposes: [].concat((t.deposes || []), (((journee.deposesJourParTraque || {})[t.id]) || [])).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), departs: (t.departs || []).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), voitures: (((journee.voitures || {})[t.id]) || []).map((v) => { const c = participants.find((x) => x.id === v.conducteurId); const tp = ((journee.transport || {})[t.id]) || {}; const mes = Object.keys(tp).filter((id) => (tp[id] || {}).voitureId === v.id); return { id: v.id, conducteurId: v.conducteurId, conducteur: c ? c.name : "", passagers: mes.map((id) => { const q = participants.find((x) => x.id === id); return { id: id, nom: q ? q.name : "" }; }) }; }), transport: ((journee.transport || {})[t.id]) || {}, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
+  const DATA = { date: journee.date, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, deposes: [].concat((t.deposes || []), (((journee.deposesJourParTraque || {})[t.id]) || [])).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), departs: (t.departs || []).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), voitures: (((journee.voitures || {})[t.id]) || []).map((v) => { const c = participants.find((x) => x.id === v.conducteurId); const tp = ((journee.transport || {})[t.id]) || {}; const mes = Object.keys(tp).filter((id) => (tp[id] || {}).voitureId === v.id); return { id: v.id, conducteurId: v.conducteurId, deposeId: v.deposeId || "", conducteur: c ? c.name : "", passagers: mes.map((id) => { const q = participants.find((x) => x.id === id); return { id: id, nom: q ? q.name : "" }; }) }; }), transport: ((journee.transport || {})[t.id]) || {}, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
   // Source unique : le calcul des cônes de la page chasseurs est généré à partir
   // de tirRender, la fonction utilisée côté organisateur. Impossible qu'elles divergent.
   const tail = SHARED_TAIL.replace("/*__TIRRENDER__*/", String(tirRender).replace(/^function\s+tirRender/, "function tirRenderJS"));
