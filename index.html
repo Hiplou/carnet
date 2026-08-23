@@ -182,6 +182,70 @@ function normJournee(j) { return { ...j, placements: j.placements || {}, presenc
 function normTirZone(z) { z = z || {}; return { dir: ((Number(z.dir) || 0) % 360 + 360) % 360, width: Math.max(10, Math.min(360, Number(z.width) || 60)) }; }
 function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, deposeHab: m.deposeHab || "", armes: (Array.isArray(m.armes) ? m.armes : (m.arme && m.arme !== "indifferent" ? [m.arme] : [])).filter((k) => ARMES.some((x) => x.key === k)), tir: { zones: tz } }; }
 const nettoiePts = (l) => Array.isArray(l) ? l.filter((d) => d && isFinite(d.gx) && isFinite(d.gy)).slice(0, 40).map((d) => ({ id: String(d.id || ""), nom: String(d.nom || "").slice(0, 40), gx: Number(d.gx), gy: Number(d.gy) })) : [];
+// --- Suggestions tirees des journees passees (2 occurrences minimum) ---
+const SUGG_MIN = 2;
+// Nombre de journees ou chaque personne a conduit.
+function histoConducteurs(journees) {
+  const n = {};
+  (journees || []).forEach((j) => {
+    const vus = {};
+    Object.keys(j.voitures || {}).forEach((tid) => ((j.voitures[tid]) || []).forEach((v) => { if (v && v.conducteurId) vus[v.conducteurId] = true; }));
+    Object.keys(vus).forEach((id) => { n[id] = (n[id] || 0) + 1; });
+  });
+  return n;
+}
+// Pour chaque mirador, le point de depose le plus souvent utilise par celui qui y etait poste.
+function histoDeposes(journees, terrainId) {
+  const cpt = {};
+  (journees || []).filter((j) => j.terrainId === terrainId).forEach((j) => {
+    Object.keys(j.placements || {}).forEach((tid) => {
+      const pl = j.placements[tid] || {};
+      const tp = ((j.transport || {})[tid]) || {};
+      const vv = ((j.voitures || {})[tid]) || [];
+      Object.keys(pl).forEach((hid) => {
+        const mid = pl[hid]; if (!mid) return;
+        let d = (tp[hid] || {}).deposeId || "";
+        if (!d) {
+          const v = vv.find((x) => x.conducteurId === hid || (tp[hid] || {}).voitureId === x.id);
+          d = v ? (v.deposeId || "") : "";
+        }
+        if (!d) return;
+        cpt[mid] = cpt[mid] || {};
+        cpt[mid][d] = (cpt[mid][d] || 0) + 1;
+      });
+    });
+  });
+  const out = {};
+  Object.keys(cpt).forEach((mid) => {
+    let best = "", n = 0;
+    Object.keys(cpt[mid]).forEach((d) => { if (cpt[mid][d] > n) { n = cpt[mid][d]; best = d; } });
+    if (n >= SUGG_MIN) out[mid] = { deposeId: best, n };
+  });
+  return out;
+}
+// Historique des chefs de ligne sur un territoire : qui a ete chef, et quel poste allait a qui.
+function histoChefs(journees, terrainId, journeeId) {
+  const nChef = {}, parMir = {}; const tailles = [];
+  (journees || []).filter((j) => j.terrainId === terrainId && j.id !== journeeId).forEach((j) => {
+    const ch = j.chefs || [];
+    ch.forEach((id) => { nChef[id] = (nChef[id] || 0) + 1; });
+    if (ch.length) tailles.push(ch.length);
+    const cl = j.chefLignes || {};
+    Object.keys(cl).forEach((mid) => {
+      const c = cl[mid]; if (!c) return;
+      parMir[mid] = parMir[mid] || {};
+      parMir[mid][c] = (parMir[mid][c] || 0) + 1;
+    });
+  });
+  const nbLignes = tailles.length ? Math.round(tailles.reduce((a, b) => a + b, 0) / tailles.length) : 0;
+  return { nChef, parMir, nbLignes };
+}
+// Le chef qui revient le plus souvent sur un poste donne.
+function chefHabituel(stats, filtre) {
+  let best = "", n = 0;
+  Object.keys(stats || {}).forEach((c) => { if (filtre && !filtre(c)) return; if (stats[c] > n) { n = stats[c]; best = c; } });
+  return best;
+}
 function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, zone: Array.isArray(t.zone) ? t.zone.filter((p) => p && isFinite(p.gx) && isFinite(p.gy)).slice(0, 60) : [], zoneFermee: !!t.zoneFermee, deposes: nettoiePts(t.deposes), departs: nettoiePts(t.departs), miradors: (t.miradors || []).map(normMirador) }; }
 function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
@@ -198,7 +262,7 @@ function armeOk(armes, hunterArme) { const list = Array.isArray(armes) ? armes :
 function armesLabel(armes) { const list = Array.isArray(armes) ? armes : []; if (!list.length) return "toutes armes"; return list.map(armeLabel).join(" / "); }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
-function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == null && nom == null) { const sp = splitFullName(p.name); prenom = sp.prenom; nom = sp.nom; } prenom = prenom || ""; nom = nom || ""; const name = (prenom + " " + nom).trim() || p.name || ""; return { id: p.id, prenom, nom, name, phone: fixPhone(p.phone || ""), email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, arme: p.arme || null, conduit: !!p.conduit, places: Math.max(1, Math.min(9, Number(p.places) || 4)), vehicule: String(p.vehicule || "").slice(0, 24), dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], groupes: Array.isArray(p.groupes) ? p.groupes.filter((g) => typeof g === "string" && g.trim()).slice(0, 20) : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
+function normParticipant(p) { let prenom = p.prenom, nom = p.nom; if (prenom == null && nom == null) { const sp = splitFullName(p.name); prenom = sp.prenom; nom = sp.nom; } prenom = prenom || ""; nom = nom || ""; const name = (prenom + " " + nom).trim() || p.name || ""; return { id: p.id, prenom, nom, name, phone: fixPhone(p.phone || ""), email: p.email || "", permis: p.permis || "", validation: p.validation || "", assurance: p.assurance || "", participe: !!p.participe, invitation: !!p.invitation, role: p.role || null, mobility: p.mobility || null, arme: p.arme || null, places: Math.max(1, Math.min(9, Number(p.places) || 4)), vehicule: String(p.vehicule || "").slice(0, 24), dupIgnore: Array.isArray(p.dupIgnore) ? p.dupIgnore : [], groupes: Array.isArray(p.groupes) ? p.groupes.filter((g) => typeof g === "string" && g.trim()).slice(0, 20) : [], diner: { vient: !!(p.diner && p.diner.vient), invitesSupplementaires: Number(p.diner && p.diner.invitesSupplementaires) || 0 } }; }
 function normSafety(s) { if (!s) return DEFAULT_SAFETY; return { consignes: Array.isArray(s.consignes) && s.consignes.length ? s.consignes : DEFAULT_SAFETY.consignes, sonneries: Array.isArray(s.sonneries) && s.sonneries.length ? s.sonneries : DEFAULT_SAFETY.sonneries }; }
 
 function seasonOf(dateStr) { const d = new Date(dateStr); if (isNaN(d)) return "—"; const y = d.getFullYear(); return (d.getMonth() >= 6) ? (y + "-" + (y + 1)) : ((y - 1) + "-" + y); }
@@ -261,7 +325,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.75";
+const APP_VERSION = "v1.78";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -691,7 +755,7 @@ function TirPreview({ image, crop, m, miradors }) {
     <div style={{ position: "absolute", left: lx + "%", top: ly + "%", width: 13, height: 13, borderRadius: "50%", background: "#1c1917", border: "2px solid #fff", transform: "translate(-50%,-50%)", boxShadow: "0 0 0 1px rgba(0,0,0,.4)" }} />
   </div>);
 }
-function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, image, crop }) {
+function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, image, crop, sugg }) {
   const [open, setOpen] = useState(false); const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [renaming, setRenaming] = useState(false);
   const patch = (p) => updateTrack({ miradors: track.miradors.map((x) => (x.id === m.id ? { ...x, ...p } : x)) });
   const del = () => updateTrack({ miradors: track.miradors.filter((x) => x.id !== m.id) });
@@ -723,6 +787,15 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
           <option value="">Non renseignée</option>
           {(track.deposes || []).map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
         </select>)}
+        {(() => {
+          if (!sugg || m.deposeHab) return null;
+          const cible = (track.deposes || []).find((d) => d.id === sugg.deposeId);
+          if (!cible) return null;
+          return (<div className="mt-1.5 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+            <span className="text-[11px] text-amber-900 flex-1">Le plus souvent déposé à <b>{cible.nom}</b> ({sugg.n} journées).</span>
+            <button onClick={() => patch({ deposeHab: sugg.deposeId })} className="text-[11px] font-medium bg-amber-700 text-amber-50 rounded px-2 py-1 shrink-0">Adopter</button>
+          </div>);
+        })()}
         <p className="text-[10px] text-stone-400 mt-1">Là où on dépose le chasseur posté ici. Sert au bouton « Proposer » de l'organisation des voitures.</p></div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Accessibilité (mobilité réduite)</label>
         <div className="flex gap-2 mt-1">
@@ -758,7 +831,7 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
   </div>);
 }
 
-function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsignesCommunes }) {
+function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsignesCommunes, suggDep }) {
   const [showCrop, setShowCrop] = useState(false); const crop = track.crop || DEFAULT_CROP;
   const [dragId, setDragId] = useState(null);
   const groups = consignesCommunes || [];
@@ -792,7 +865,7 @@ function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsigne
       {groups.length > 0 && <p className="text-[10px] text-stone-400">Chaque poste affichera sa consigne propre + toutes les consignes communes qui le concernent.</p>}</div>)}
     {(() => { const seen = {}; const dups = []; track.miradors.forEach((m) => { const k = (m.label || "").trim().toLowerCase(); if (!k) return; seen[k] = (seen[k] || 0) + 1; if (seen[k] === 2) dups.push((m.label || "").trim()); }); return dups.length ? (<div className="bg-red-50 border border-red-300 rounded-md p-2.5 text-sm text-red-800">⚠️ Attention : plusieurs postes portent le même nom sur cette traque ({dups.join(", ")}). Renomme-les distinctement (✏️) — sinon impossible de les distinguer (photos/consignes pourraient sembler manquantes).</div>) : null; })()}
     {track.miradors.length > 0 && (<div><p className="text-xs uppercase tracking-wide text-stone-400 mb-1.5">Miradors ({track.miradors.length}) — glisse ≡ pour réordonner · clic sur le nom = fiche</p>
-      <div className="space-y-1">{track.miradors.map((m) => (<MiradorRow key={m.id} m={m} track={track} updateTrack={updateTrack} onDragStart={setDragId} isDragging={dragId === m.id} inCommon={commonMids.has(m.id)} image={image} crop={crop} />))}</div></div>)}
+      <div className="space-y-1">{track.miradors.map((m) => (<MiradorRow key={m.id} m={m} track={track} updateTrack={updateTrack} onDragStart={setDragId} isDragging={dragId === m.id} sugg={(suggDep || {})[m.id]} inCommon={commonMids.has(m.id)} image={image} crop={crop} />))}</div></div>)}
   </div>);
 }
 
@@ -1001,6 +1074,7 @@ function PlanChasseEditor({ planChasse, setPlanChasse, journees, tid }) {
   </div>);
 }
 function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete, onLiveCommit }) {
+  const suggDep = useMemo(() => histoDeposes(journees, initialTerrain && initialTerrain.id), [journees, initialTerrain]);
   const [tid] = useState(initialTerrain?.id || `t-${Date.now()}`);
   const [name, setName] = useState(initialTerrain?.name || "");
   const [planImage, setPlanImage] = useState(initialTerrain?.planImage || null);
@@ -1026,7 +1100,7 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
     </div>
     {tab === "plan" ? (<div className="space-y-2"><p className="text-xs uppercase tracking-wide text-stone-400">Photo du territoire (une seule pour tout)</p><PlanImagePicker image={planImage} onChange={setPlanImage} /></div>)
       : tab === "chasse" ? (<PlanChasseEditor planChasse={planChasse} setPlanChasse={setPlanChasse} journees={journees} tid={tid} />)
-      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} /></div>) : null}
+      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} suggDep={suggDep} /></div>) : null}
     <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consignesCommunes })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
   </SectionCard>);
 }
@@ -1369,7 +1443,7 @@ function ParticipantsView({ participants, setParticipants }) {
   const dismissPair = (aId, bId) => { setParticipants((prev) => prev.map((p) => { if (p.id === aId) return { ...p, dupIgnore: [...(p.dupIgnore || []), bId] }; if (p.id === bId) return { ...p, dupIgnore: [...(p.dupIgnore || []), aId] }; return p; })); };
   const update = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateDiner = (id, patch) => setParticipants((prev) => prev.map((p) => (p.id === id ? { ...p, diner: { ...p.diner, ...patch } } : p)));
-  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, prenom: "", nom: "", name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, arme: null, conduit: false, places: 4, vehicule: "", diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
+  const addParticipant = () => { const id = `p-${Date.now()}`; setParticipants((prev) => [{ id, prenom: "", nom: "", name: "", phone: "", email: "", permis: "", validation: "", assurance: "", participe: false, invitation: false, role: "chasseur", mobility: null, arme: null, places: 4, vehicule: "", diner: { vient: false, invitesSupplementaires: 0 } }, ...prev]); setExpanded(id); setSearch(""); };
   const removeParticipant = (id) => setParticipants((prev) => prev.filter((p) => p.id !== id));
   const totalConvives = participants.reduce((s, p) => s + (p.diner?.vient ? 1 + Number(p.diner.invitesSupplementaires || 0) : 0), 0);
   const [dinerPrint, setDinerPrint] = useState(null);
@@ -1524,15 +1598,14 @@ function ParticipantsView({ participants, setParticipants }) {
             </div><p className="text-[11px] text-stone-400 mt-1">Sert au placement : une carabine (rayée) peut aller sur un poste lisse, l'inverse est interdit.</p></div>
             <div><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Voiture</p>
               <div className="flex gap-2 items-center">
-                <button onClick={() => update(p.id, { conduit: !p.conduit })} className={`flex-1 px-2 py-2 rounded-md text-xs font-medium border ${p.conduit ? "bg-emerald-700 text-stone-50 border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{p.conduit ? "✓ " : ""}🚗 Conduit habituellement</button>
-                <div className={`flex items-center gap-1 shrink-0 ${p.conduit ? "" : "opacity-40"}`}>
-                  <input type="number" min="1" max="9" value={p.places || 4} disabled={!p.conduit} onChange={(e) => update(p.id, { places: Math.max(1, Math.min(9, Number(e.target.value) || 1)) })} className="w-12 border border-stone-300 rounded px-1 py-1.5 text-sm bg-white text-center" />
+                <input value={p.vehicule || ""} placeholder="Son véhicule (ex. Defender)" onChange={(e) => update(p.id, { vehicule: e.target.value.slice(0, 24) })}
+                  className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white" />
+                <div className="flex items-center gap-1 shrink-0">
+                  <input type="number" min="1" max="9" value={p.places || 4} onChange={(e) => update(p.id, { places: Math.max(1, Math.min(9, Number(e.target.value) || 1)) })} className="w-12 border border-stone-300 rounded px-1 py-1.5 text-sm bg-white text-center" />
                   <span className="text-xs text-stone-500">places</span>
                 </div>
               </div>
-              <input value={p.vehicule || ""} disabled={!p.conduit} placeholder="Son véhicule (ex. Defender)" onChange={(e) => update(p.id, { vehicule: e.target.value.slice(0, 24) })}
-                className={`w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-2 ${p.conduit ? "" : "opacity-40"}`} />
-              <p className="text-[11px] text-stone-400 mt-1">Nombre de passagers qu'il peut prendre, en plus de lui-même. Le véhicule est repris automatiquement quand tu le désignes conducteur.</p></div>
+              <p className="text-[11px] text-stone-400 mt-1">Sert quand il conduit. Nombre de passagers, sans lui : 4 par défaut, soit 5 personnes dans la voiture. Le véhicule est repris automatiquement quand tu le désignes conducteur.</p></div>
             <div className="pt-1">
               <label className="text-[10px] uppercase tracking-wide text-stone-400">Groupes</label>
               <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -1681,7 +1754,8 @@ function AssignSurface({ image, track, placements, participants, selectedHunter,
   </div>);
 }
 // ---------- Voitures et covoiturage, traque par traque ----------
-function VoituresSection({ journee, terrain, participants, presentIds, onSet, onOuvrirPoints }) {
+function VoituresSection({ journee, terrain, participants, presentIds, journees, onSet, onOuvrirPoints }) {
+  const histoCond = useMemo(() => histoConducteurs(journees), [journees]);
   const tracks = terrain.tracks || [];
   const [ti, setTi] = useState(0);
   const [choix, setChoix] = useState(null);
@@ -1710,7 +1784,80 @@ function VoituresSection({ journee, terrain, participants, presentIds, onSet, on
   const setT = (t) => onSet({ transport: { ...(journee.transport || {}), [tid]: t } });
   const majT = (hid, patch) => setT({ ...transport, [hid]: { ...(transport[hid] || {}), ...patch } });
 
-  const designerConducteur = (hid) => { const q = participants.find((x) => x.id === hid); setV([...voitures, { id: "v-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), conducteurId: hid, places: (q && q.conduit && q.places) || 4, vehicule: (q && q.vehicule) || "", deposeId: "" }]); };
+  const designerConducteur = (hid) => { const q = participants.find((x) => x.id === hid); setV([...voitures, { id: "v-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), conducteurId: hid, places: (q && q.places) || 4, vehicule: (q && q.vehicule) || "", deposeId: "" }]); };
+
+  // Propose une organisation pour une traque : complete l'existant, ne l'ecrase jamais.
+  // Regle : on regroupe par point de depose, deduit de la depose habituelle du mirador.
+  const proposerTraque = (tr, voit0, tp0) => {
+    const idsPts = [
+      ...((tr.deposes || []).map((d) => d.id)),
+      ...((((journee.deposesJourParTraque || {})[tr.id]) || []).map((d) => d.id))
+    ];
+    const pl = ((journee.placements || {})[tr.id]) || {};
+    const deposeDe = (hid) => {
+      const mid = pl[hid]; if (!mid) return "";
+      const m = (tr.miradors || []).find((x) => x.id === mid);
+      const d = (m && m.deposeHab) || "";
+      return idsPts.indexOf(d) >= 0 ? d : "";
+    };
+    const fiche = (hid) => participants.find((x) => x.id === hid);
+    // Un chauffeur est quelqu'un qui a deja conduit lors de SUGG_MIN journees.
+    const conduitHab = (hid) => (histoCond[hid] || 0) >= SUGG_MIN;
+
+    const vs = voit0.map((v) => ({ ...v }));
+    const tp = { ...tp0 };
+    const pris = {};
+    vs.forEach((v) => { pris[v.conducteurId] = true; });
+    Object.keys(tp).forEach((id) => { const vid = (tp[id] || {}).voitureId; if (vid && vs.some((v) => v.id === vid)) pris[id] = true; });
+    let libres2 = presents.filter((id) => !pris[id]);
+
+    const nbDans = (v) => Object.keys(tp).filter((id) => (tp[id] || {}).voitureId === v.id).length;
+    const monter = (v, hid, dep) => { tp[hid] = { ...(tp[hid] || {}), voitureId: v.id, deposeId: dep }; libres2 = libres2.filter((x) => x !== hid); };
+
+    // 1. completer d'abord les voitures deja formees, avec les gens du meme point
+    vs.forEach((v) => {
+      if (!v.deposeId) return;
+      libres2.slice().forEach((hid) => {
+        if (nbDans(v) >= (v.places || 0)) return;
+        if (deposeDe(hid) !== v.deposeId) return;
+        monter(v, hid, v.deposeId);
+      });
+    });
+
+    // 2. puis creer des voitures, un point de depose a la fois
+    const groupes = {};
+    libres2.forEach((hid) => { const d = deposeDe(hid); if (d) (groupes[d] = groupes[d] || []).push(hid); });
+    let seq = 0;
+    Object.keys(groupes).forEach((point) => {
+      const reste = groupes[point].slice();
+      while (reste.length) {
+        // le chauffeur le plus souvent au volant passe en premier
+        let ci = -1, meilleur = 0;
+        reste.forEach((hid, k) => { if (conduitHab(hid) && (histoCond[hid] || 0) > meilleur) { meilleur = histoCond[hid] || 0; ci = k; } });
+        if (ci < 0) break;   // personne pour conduire jusqu'a ce point : les autres restent a la main
+        const cond = reste.splice(ci, 1)[0];
+        const q = fiche(cond);
+        seq += 1;
+        const v = {
+          id: "v-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) + seq,
+          conducteurId: cond, places: (q && q.places) || 4, vehicule: (q && q.vehicule) || "", deposeId: point
+        };
+        vs.push(v);
+        libres2 = libres2.filter((x) => x !== cond);
+        while (reste.length && nbDans(v) < v.places) monter(v, reste.shift(), point);
+      }
+    });
+    return { vs, tp };
+  };
+
+  const proposer = (liste) => {
+    const nv = { ...(journee.voitures || {}) }, nt = { ...(journee.transport || {}) };
+    liste.forEach((tr) => {
+      const r = proposerTraque(tr, (nv[tr.id] || []), (nt[tr.id] || {}));
+      nv[tr.id] = r.vs; nt[tr.id] = r.tp;
+    });
+    onSet({ voitures: nv, transport: nt });
+  };
 
   const ListeLibres = ({ titre, onChoisir }) => (
     <div className="bg-stone-50 border-t border-stone-200 p-2.5">
@@ -1755,6 +1902,12 @@ function VoituresSection({ journee, terrain, participants, presentIds, onSet, on
     </div>
 
     <div className="border-t border-stone-200 pt-3 space-y-2">
+      <div className="flex gap-2">
+        <button onClick={() => proposer([track])} className="flex-1 text-[12px] font-medium bg-emerald-800 text-stone-50 rounded-lg py-2">✨ Proposer pour « {track.name} »</button>
+        {tracks.length > 1 && (<button onClick={() => { if (window.confirm("Proposer une organisation sur les " + tracks.length + " traques ?")) proposer(tracks); }}
+          className="text-[12px] font-medium bg-white text-stone-700 border border-stone-300 rounded-lg py-2 px-3 shrink-0">Toutes</button>)}
+      </div>
+      <p className="text-[11px] text-stone-400">Complète ce qui manque sans toucher à ce que tu as déjà organisé : les chauffeurs sont ceux qui ont déjà conduit lors d'au moins {SUGG_MIN} journées, les passagers sont regroupés par point de dépose habituel de leur poste.</p>
       <span className="text-[11px] uppercase tracking-widest text-stone-400">Voitures de cette traque</span>
       {voitures.length === 0 && <p className="text-[12px] text-stone-400 italic">Aucun conducteur désigné.</p>}
 
@@ -1769,7 +1922,7 @@ function VoituresSection({ journee, terrain, participants, presentIds, onSet, on
               className="flex-1 min-w-0 text-[12px] text-stone-600 bg-transparent border-b border-transparent focus:border-stone-300 focus:bg-white rounded px-1 py-0.5" />
             <input type="number" min="0" max="9" value={v.places} onChange={(e) => setV(voitures.map((x) => x.id === v.id ? { ...x, places: Math.max(0, Math.min(9, Number(e.target.value) || 0)) } : x))}
               className="w-11 text-[11px] border border-stone-300 rounded px-1 py-0.5 bg-white text-center" />
-            <span className="text-[11px] text-stone-500">pl.</span>
+            <span className="text-[11px] text-stone-500">passagers</span>
             <button onClick={() => { if (!window.confirm("Retirer cette voiture ?")) return;
               const t2 = { ...transport }; mes.forEach((id) => { t2[id] = { ...(t2[id] || {}), voitureId: "" }; });
               onSet({ voitures: { ...(journee.voitures || {}), [tid]: voitures.filter((x) => x.id !== v.id) }, transport: { ...(journee.transport || {}), [tid]: t2 } }); }} className="text-red-600 px-1 text-sm">✕</button>
@@ -1794,7 +1947,9 @@ function VoituresSection({ journee, terrain, participants, presentIds, onSet, on
               {pts.map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
             </select>
           </div>
-          {trop && <p className="text-[11px] text-amber-800 bg-amber-50 px-3 py-1">Plus de passagers que de places — simple repère, rien n'est bloqué.</p>}
+          <p className={`text-[11px] px-3 py-1 ${trop ? "text-amber-800 bg-amber-50" : "text-stone-500 bg-white"}`}>
+            {mes.length}/{v.places} passagers — soit {mes.length + 1} personnes avec le conducteur{trop ? " · au-delà des places, mais rien n'est bloqué" : ""}
+          </p>
 
           <div className="divide-y divide-stone-100">
             {mes.length === 0 && <p className="px-3 py-2 text-[12px] text-stone-400 italic">Aucun passager.</p>}
@@ -3241,7 +3396,7 @@ function SecWrap({ bare, children }) {
   if (bare) return <div className="space-y-2">{children}</div>;
   return <SectionCard className="p-3 space-y-2">{children}</SectionCard>;
 }
-function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefLigne, onAssignPosts, bare }) {
+function ChefsSection({ journee, terrain, participants, journees, onSet, onToggleChef, onSetChefLigne, onAssignPosts, bare }) {
   const [open, setOpen] = useState(false);
   const placedPosts = []; (terrain.tracks || []).forEach((trk) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (!m) return; const p = participants.find((x) => x.id === hid); placedPosts.push({ mid, label: m.label, trackId: trk.id, traqueName: trk.name, hid, hunterName: p ? p.name : "?" }); }); });
   const seen = {}; const placedHunters = []; placedPosts.forEach((pp) => { if (!seen[pp.hid]) { seen[pp.hid] = 1; placedHunters.push({ id: pp.hid, name: pp.hunterName }); } }); placedHunters.sort((a, b) => byNom(a.name || "", b.name || ""));
@@ -3251,6 +3406,36 @@ function ChefsSection({ journee, terrain, participants, onToggleChef, onSetChefL
     {!bare && <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between"><span className="font-medium text-stone-800">👨‍✈️ Chefs de ligne</span><span className="text-xs text-stone-500">{nb ? nb + " désigné(s)" : "aucun"} {open ? "▲" : "▼"}</span></button>}
     {(bare || open) && (placedPosts.length === 0 ? <p className="text-xs text-stone-400 italic">Place d'abord des chasseurs sur les postes.</p> : (<div className="space-y-2 pt-1">
       <p className="text-[11px] text-stone-400">Désigne les chefs (parmi les chasseurs placés), puis coche les postes dont chacun est responsable.</p>
+      <button onClick={() => {
+        const h = histoChefs(journees, terrain.id, journee.id);
+        const retenus = chefs.slice();
+        const cible = Math.max(retenus.length, h.nbLignes);
+        placedHunters.filter((x) => (h.nChef[x.id] || 0) >= SUGG_MIN)
+          .sort((a, b) => (h.nChef[b.id] || 0) - (h.nChef[a.id] || 0))
+          .forEach((x) => { if (retenus.length < cible && retenus.indexOf(x.id) < 0) retenus.push(x.id); });
+        const cl2 = { ...cl };
+        // 1. chaque poste va a son chef habituel, s'il est de la partie
+        placedPosts.forEach((pp) => {
+          if (cl2[pp.mid]) return;
+          const c = chefHabituel(h.parMir[pp.mid], (x) => retenus.indexOf(x) >= 0);
+          if (c) cl2[pp.mid] = c;
+        });
+        // 2. sinon on suit la ligne : le chef retenu qui a repris le plus de postes du chef absent
+        placedPosts.forEach((pp) => {
+          if (cl2[pp.mid]) return;
+          const hab = chefHabituel(h.parMir[pp.mid]);
+          if (!hab) return;
+          const siens = Object.keys(h.parMir).filter((mid) => chefHabituel(h.parMir[mid]) === hab);
+          const score = {};
+          siens.forEach((mid) => { const c = cl2[mid]; if (c) score[c] = (score[c] || 0) + 1; });
+          const pick = chefHabituel(score);
+          if (pick) cl2[pp.mid] = pick;
+        });
+        const rien = retenus.length === chefs.length && Object.keys(cl2).length === Object.keys(cl).length;
+        if (rien) { window.alert("Pas encore assez d'historique sur ce territoire : il faut au moins " + SUGG_MIN + " journées avec des chefs de ligne."); return; }
+        onSet(journee.id, { chefs: retenus, chefLignes: cl2 });
+      }} className="w-full text-[12px] font-medium bg-emerald-800 text-stone-50 rounded-lg py-2">✨ Proposer d'après l'historique</button>
+      <p className="text-[11px] text-stone-400">Reprend les chefs habituels présents aujourd'hui et leurs postes, sans toucher à ce que tu as déjà désigné.</p>
       <div><span className="text-[10px] uppercase tracking-wide text-stone-400">Qui est chef de ligne ?</span>
         <div className="flex flex-wrap gap-1.5 mt-1">{placedHunters.map((h) => { const on = chefs.indexOf(h.id) >= 0; return (<button key={h.id} onClick={() => onToggleChef(journee.id, h.id)} className={`text-xs px-2 py-1 rounded-full border ${on ? "bg-stone-800 text-white border-stone-800" : "bg-white text-stone-600 border-stone-300"}`}>{on ? "👨‍✈️ " : ""}{h.name}</button>); })}</div></div>
       {chefs.map((chefId) => { const chef = placedHunters.find((h) => h.id === chefId); if (!chef) return null; const mine = placedPosts.filter((pp) => cl[pp.mid] === chefId); return (<div key={chefId} className="bg-white border border-stone-200 rounded-md p-2">
@@ -3739,12 +3924,12 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
 
                 <StepTile id="chefs" num={5} emoji="👨‍✈️" title="Chefs de ligne" sub={nbChefs ? nbChefs + " désigné" + (nbChefs > 1 ? "s" : "") : "aucun désigné"} state={stChefs} open={step} onToggle={setStep} />
                 <StepPanel id="chefs" open={step}>
-                  {terrain ? <ChefsSection bare journee={j} terrain={terrain} participants={participants} onToggleChef={toggleChef} onSetChefLigne={setChefLigne} onAssignPosts={(jid, chefId) => setChefView({ journeeId: jid, chefId })} /> : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
+                  {terrain ? <ChefsSection bare journee={j} terrain={terrain} participants={participants} journees={journees} onSet={majJournee} onToggleChef={toggleChef} onSetChefLigne={setChefLigne} onAssignPosts={(jid, chefId) => setChefView({ journeeId: jid, chefId })} /> : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
                 </StepPanel>
 
                 <StepTile id="voitures" num={6} emoji="🚗" title="Voitures & dépose" sub={nbVoitures ? nbVoitures + " voiture" + (nbVoitures > 1 ? "s" : "") + " · " + nbPassagers + " passager" + (nbPassagers > 1 ? "s" : "") + (traquesIncompletes ? " · " + traquesIncompletes + " traque(s) incomplète(s)" : "") : "personne n'est affecté"} state={stVoitures} open={step} onToggle={setStep} />
                 <StepPanel id="voitures" open={step}>
-                  {terrain ? <VoituresSection journee={j} terrain={terrain} participants={participants} presentIds={presentsIds}
+                  {terrain ? <VoituresSection journee={j} terrain={terrain} participants={participants} presentIds={presentsIds} journees={journees}
                     onSet={(patch) => majJournee(j.id, patch)}
                     onOuvrirPoints={() => setPointsView({ journeeId: j.id })} />
                     : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
@@ -4383,7 +4568,7 @@ function CarnetApp({ session, onSignOut }) {
   const buildWorkbook = () => {
     const wb = XLSX.utils.book_new();
     const add = (rows, fb, name) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [fb]), name);
-    add(participants.map((p) => ({ Nom: p.name, Prénom_: p.prenom || "", Nom_: p.nom || "", Téléphone: p.phone || "", Participe: yn(p.participe), Invité: yn(p.invitation), Rôle: p.role || "", Arme: p.arme || "", Mobilité: p.mobility || "", Conduit: yn(p.conduit), Places: p.places || 4, Vehicule: p.vehicule || "", Dîner: yn(p.diner?.vient), Invités_sup: p.diner?.invitesSupplementaires || 0, id: p.id })), { Nom: "" }, "Participants");
+    add(participants.map((p) => ({ Nom: p.name, Prénom_: p.prenom || "", Nom_: p.nom || "", Téléphone: p.phone || "", Participe: yn(p.participe), Invité: yn(p.invitation), Rôle: p.role || "", Arme: p.arme || "", Mobilité: p.mobility || "", Places: p.places || 4, Vehicule: p.vehicule || "", Dîner: yn(p.diner?.vient), Invités_sup: p.diner?.invitesSupplementaires || 0, id: p.id })), { Nom: "" }, "Participants");
     add(terrains.map((t) => ({ Territoire: t.name, id: t.id })), { Territoire: "" }, "Territoires");
     const trk = []; terrains.forEach((t) => t.tracks.forEach((k) => trk.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Couleur: k.color, crop_x: k.crop?.x ?? 0, crop_y: k.crop?.y ?? 0, crop_w: k.crop?.w ?? 100, crop_h: k.crop?.h ?? 100 })));
     add(trk, { Traque: "" }, "Traques");
@@ -4426,7 +4611,7 @@ function CarnetApp({ session, onSignOut }) {
     const P = sh("Participants"), T = sh("Territoires"), TRK = sh("Traques"), M = sh("Miradors"), J = sh("Journées"), PL = sh("Placements"), PH = sh("_Photos"), CO = sh("Consignes"), SO = sh("Sonneries");
     const photoMap = {}; PH.forEach((r) => { if (!r.Kind) return; const key = `${r.Kind}|${r.OwnerId}|${r.PhotoIndex || 0}`; (photoMap[key] = photoMap[key] || []).push({ c: Number(r.Chunk) || 0, d: String(r.Data || "") }); });
     const blob = (key) => (photoMap[key] ? photoMap[key].sort((a, b) => a.c - b.c).map((x) => x.d).join("") : null);
-    const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: (function(){ var rr = String(r.Rôle || r.Role || "").toLowerCase(); return rr.indexOf("rab") >= 0 ? "rabatteur" : (rr ? "chasseur" : null); })(), mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })(), arme: (function(){ var a=String(r.Arme||"").toLowerCase(); return a.indexOf("ray")>=0?"rayee":(a.indexOf("liss")>=0?"lisse":(a.indexOf("arc")>=0?"arc":null)); })(), conduit: /^(oui|yes|x|1|true)$/i.test(String(r.Conduit||"").trim()), places: Number(r.Places)||4, vehicule: String(r.Vehicule||"").slice(0,24), prenom: r["Prénom_"]!=null?String(r["Prénom_"]):undefined, nom: r["Nom_"]!=null?String(r["Nom_"]):undefined }));
+    const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: (function(){ var rr = String(r.Rôle || r.Role || "").toLowerCase(); return rr.indexOf("rab") >= 0 ? "rabatteur" : (rr ? "chasseur" : null); })(), mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })(), arme: (function(){ var a=String(r.Arme||"").toLowerCase(); return a.indexOf("ray")>=0?"rayee":(a.indexOf("liss")>=0?"lisse":(a.indexOf("arc")>=0?"arc":null)); })(), places: Number(r.Places)||4, vehicule: String(r.Vehicule||"").slice(0,24), prenom: r["Prénom_"]!=null?String(r["Prénom_"]):undefined, nom: r["Nom_"]!=null?String(r["Nom_"]):undefined }));
     const terrs = T.filter((r) => r.Territoire || r.id).map((r) => ({ id: r.id || `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: r.Territoire || "Territoire", planImage: blob(`plan|${r.id}|0`), tracks: [] }));
     const terrById = Object.fromEntries(terrs.map((t) => [t.id, t]));
     TRK.filter((r) => r.TraqueId).forEach((r) => { const t = terrById[r.TerritoireId]; if (!t) return; t.tracks.push({ id: r.TraqueId, name: r.Traque || "Traque", color: r.Couleur || "#dc2626", crop: { x: Number(r.crop_x) || 0, y: Number(r.crop_y) || 0, w: Number(r.crop_w) || 100, h: Number(r.crop_h) || 100 }, miradors: [] }); });
