@@ -325,7 +325,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v1.78";
+const APP_VERSION = "v2.0";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -2330,7 +2330,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 <div class="card" id="chefCard" style="display:none"><div class="pad"><h3 class="sec">👨‍✈️ Tu es chef de ligne</h3><p class="maphint">Postes sous ta responsabilité :</p><div id="chefPosts"></div><div id="chefTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0"></div><div class="map" id="chefMap" style="margin-top:8px;display:none"></div></div></div>
 <footer>Document en lecture seule — transmis par l'organisateur.</footer>
 </main>
-<div class="sheet-back" id="sheet-carte" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🗺️ Ma carte</h2><p class="maphint">Ton poste est surligné en orange.</p><div class="tabs" id="mapTabs" style="margin-bottom:10px"></div><div class="map" id="map"></div><label class="conetoggle"><input type="checkbox" id="deposeToggle" checked onchange="toggleDepose(this.checked)"> <span>🚗 Afficher ma dépose</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="departToggle" checked onchange="toggleDepart(this.checked)"> <span>🚩 Afficher les départs de traque</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="zoneToggle" onchange="toggleZone(this.checked)"> <span>Afficher le contour de la traque</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="coneToggle" onchange="toggleCones(this.checked)"> <span>Afficher les zones de sécurité</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="rdvToggle" onchange="toggleRdv(this.checked)"> <span>🚩 Afficher le RDV après la traque</span></label><div class="conelegend"><span class="lg"><i class="sw green"></i> Tir autorisé</span><span class="lg"><i class="sw hatch"></i> Angle 30° — ne pas tirer</span><span class="lg"><i class="sw red"></i> Interdit — ne jamais tirer</span></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
+<div class="sheet-back" id="sheet-carte" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🗺️ Ma carte</h2><p class="maphint">Ton poste est surligné en orange.</p><div class="tabs" id="mapTabs" style="margin-bottom:10px"></div><div class="map" id="map"></div><label class="conetoggle"><input type="checkbox" id="deposeToggle" checked onchange="toggleDepose(this.checked)"> <span>🚗 Afficher ma dépose</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="departToggle" checked onchange="toggleDepart(this.checked)"> <span>🚩 Afficher les départs de traque</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="coneToggle" onchange="toggleCones(this.checked)"> <span>Afficher les zones de sécurité</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="rdvToggle" onchange="toggleRdv(this.checked)"> <span>🚩 Afficher le RDV après la traque</span></label><label class="conetoggle" style="margin-top:8px"><input type="checkbox" id="zoneToggle" onchange="toggleZone(this.checked)"> <span>Afficher le contour de la traque</span></label><div class="conelegend"><span class="lg"><i class="sw green"></i> Tir autorisé</span><span class="lg"><i class="sw hatch"></i> Angle 30° — ne pas tirer</span><span class="lg"><i class="sw red"></i> Interdit — ne jamais tirer</span></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-poste" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth" id="postInfoTitle">📍 Ton poste</h2><div class="tabs" id="postTabs" style="margin-bottom:10px"></div><div id="postInfoCard"><div id="myChef" style="display:none;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:8px;padding:6px 10px;font-size:14px;font-weight:600;color:#1c1917;margin-bottom:8px"></div><div class="consigne" id="myConsigne" style="display:none"><b>⚠️ Consignes :</b><span></span></div><div id="myPhotos"></div></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-annonces" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🔔 Annonces &amp; sonneries</h2><ul class="list son" id="sonneries"></ul><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-securite" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">🛡️ Consignes de sécurité</h2><ul class="list" id="consignes"></ul><button class="close" onclick="closeSheet()">Fermer</button></div></div>
@@ -3955,27 +3955,40 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                     <p className="text-sm text-stone-600">Préparation du lien…</p>
                   </div>)}
 
-                  {(pub.status === "live" || pub.status === "ok") && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-3 space-y-2">
-                    <p className="text-sm font-semibold text-emerald-800">✅ Le lien est prêt</p>
-                    <a href={urlDe(j)} target="_blank" rel="noreferrer" className="block bg-white border-2 border-emerald-400 rounded-md px-3 py-2 text-xs text-emerald-800 font-medium underline break-all">{urlDe(j)}</a>
-                    <button onClick={() => shareLinkWhatsApp(urlDe(j))} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium px-3 py-3 rounded-lg"><Send size={16} /> Envoyer sur WhatsApp</button>
-                  </div>)}
+                  <div className="bg-white border-2 border-emerald-700 rounded-xl p-3.5">
+                    <p className="text-[17px] font-extrabold text-emerald-900 leading-tight">Lien à envoyer aux chasseurs</p>
+                    {(pub.status === "live" || pub.status === "ok") ? (<>
+                      <p className="text-xs text-stone-500 mt-1 mb-3 leading-snug">Il est en ligne. Chacun y retrouve son poste, sa carte, ses consignes et sa voiture.</p>
+                      <a href={urlDe(j)} target="_blank" rel="noreferrer" className="block bg-emerald-50 border-2 border-emerald-300 rounded-xl p-3 mb-2">
+                        <span className="block text-[10px] uppercase tracking-widest text-emerald-700 font-bold">Ton lien du jour</span>
+                        <span className="block text-[15px] font-bold text-emerald-900 break-all leading-tight mt-1">{urlDe(j)}</span>
+                      </a>
+                      <button onClick={() => shareLinkWhatsApp(urlDe(j))} className="w-full flex items-center justify-center gap-2 bg-green-700 hover:bg-green-800 text-stone-50 text-[15px] font-bold py-3.5 rounded-xl"><Send size={17} /> Envoyer sur WhatsApp</button>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={copyPubLink} className="flex-1 text-[12.5px] font-medium text-stone-600 bg-white border border-stone-300 rounded-lg py-2.5">📋 Copier le lien</button>
+                        <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="flex-1 text-[12.5px] font-medium text-stone-600 bg-white border border-stone-300 disabled:opacity-50 rounded-lg py-2.5">↻ Mettre à jour</button>
+                      </div>
+                    </>) : (<>
+                      <p className="text-xs text-stone-500 mt-1 mb-3 leading-snug">Pas encore publié. Une fois en ligne, chacun ouvre le lien et retrouve son poste, sa carte, ses consignes et sa voiture.</p>
+                      <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="w-full bg-emerald-700 disabled:opacity-60 text-stone-50 text-[15px] font-bold py-3.5 rounded-xl">📤 Publier la page en ligne</button>
+                    </>)}
+                    <div className="bg-stone-50 border border-stone-200 rounded-xl p-3 mt-3">
+                      <p className="text-[13px] font-bold text-stone-800 mb-1.5">Comment l'envoyer</p>
+                      <ol className="list-decimal pl-4 space-y-1">
+                        <li className="text-[12px] text-stone-600 leading-snug">Crée <b className="text-stone-800">un groupe WhatsApp avec tes chasseurs</b>, une fois pour toutes.</li>
+                        <li className="text-[12px] text-stone-600 leading-snug">Avant chaque battue, <b className="text-stone-800">colle ce lien dans le groupe</b>.</li>
+                        <li className="text-[12px] text-stone-600 leading-snug">Chacun ouvre le lien, choisit son nom, et retrouve son poste.</li>
+                      </ol>
+                      <p className="text-[11.5px] text-stone-500 mt-2 leading-snug">Chaque journée a son propre lien, et il ne change plus. Si tu modifies un placement, touche « Mettre à jour » : le lien déjà envoyé affichera la nouvelle version.</p>
+                    </div>
+                  </div>
 
                   {pub.status === "error" && (<div className="bg-red-50 border border-red-200 rounded-lg p-2.5 space-y-2">
                     <p className="text-sm text-red-800">⚠ Échec : {pub.msg}</p>
                     <button onClick={() => publish(j)} className="w-full bg-stone-800 text-stone-50 text-sm font-medium py-2 rounded-lg">Réessayer</button>
                   </div>)}
 
-                  {(pub.status === "live" || pub.status === "ok") && (<div className="bg-white border border-stone-200 rounded-lg p-3">
-                    <p className="text-[13px] font-medium text-stone-800 mb-1.5">💬 Comment le transmettre</p>
-                    <p className="text-[12px] text-stone-600 leading-snug">Le plus simple est de créer <b>un groupe WhatsApp avec tes chasseurs</b>, une fois pour toutes. Tu y colles ce lien avant chaque battue : chacun ouvre le sien et retrouve son poste, sa carte et les consignes.</p>
-                    <p className="text-[12px] text-stone-600 leading-snug mt-1.5"><b>Chaque journée a son propre lien.</b> Celui-ci ne changera plus : si tu modifies un placement, reviens ici et touche « Mettre à jour » — le lien déjà envoyé affichera la nouvelle version.</p>
-                  </div>)}
-
-                  <div className="flex gap-2">
-                    <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="flex-1 text-[12px] text-stone-600 bg-white border border-stone-300 disabled:opacity-50 rounded-lg py-2">↻ Mettre à jour</button>
-                    <button onClick={() => setShareView({ journeeId: j.id })} className="flex-1 text-[12px] text-stone-600 bg-white border border-stone-300 rounded-lg py-2">💬 Liste en texte</button>
-                  </div>
+                  <button onClick={() => setShareView({ journeeId: j.id })} className="w-full text-[12px] text-stone-600 bg-white border border-stone-300 rounded-lg py-2">💬 Liste en texte</button>
                 </div>) : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
               </StepPanel>
             </StepGroup>
@@ -3986,6 +3999,17 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                 <TableauSection j={j} terrain={terrain} participants={participants} onAddKill={() => addKill(j.id)} onUpdateKill={(kid, patch) => updateKill(j.id, kid, patch)} onRemoveKill={(kid) => removeKill(j.id, kid)} onSetShot={(trackId, mid, val) => setShot(j.id, trackId, mid, val)} onSetState={(trackId, mid, patch) => setMiradorState(j.id, trackId, mid, patch)} />
               </StepPanel>
             </StepGroup>
+
+            {terrain && (<div className="sticky bottom-0 z-30 -mx-4 px-4 pt-2 bg-stone-50/95 backdrop-blur border-t border-stone-200"
+              style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}>
+              {(pub.status === "live" || pub.status === "ok") ? (<>
+                <button onClick={() => shareLinkWhatsApp(urlDe(j))} className="w-full flex items-center justify-center gap-2 bg-green-700 hover:bg-green-800 text-stone-50 text-[15px] font-bold py-3.5 rounded-xl"><Send size={17} /> Envoyer le lien sur WhatsApp</button>
+                <p className="text-[10.5px] text-stone-400 text-center mt-1.5 truncate">En ligne · {urlDe(j)}</p>
+              </>) : (<>
+                <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="w-full bg-emerald-700 disabled:opacity-60 text-stone-50 text-[15px] font-bold py-3.5 rounded-xl">{pub.status === "publishing" ? "Préparation du lien…" : "📤 Publier la page en ligne"}</button>
+                <p className="text-[10.5px] text-stone-400 text-center mt-1.5">Le lien à envoyer aux chasseurs sera prêt en quelques secondes</p>
+              </>)}
+            </div>)}
 
           </div>
         </div>)}
