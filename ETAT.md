@@ -1,6 +1,7 @@
 # Carnet de Chasse — état du projet
 
 > À donner à Claude en début de session, **avec `index.html`**.
+> Ce dépôt est public : ne jamais écrire ici de clé, de jeton, ni le détail d'une faille non corrigée.
 > Sans le fichier `index.html`, Claude ne connaît pas le code : il garde un résumé du projet entre les sessions, jamais le code lui-même.
 
 **Version en cours : v2.2** — incrémenter à chaque livraison, sans exception.
@@ -60,8 +61,8 @@ Application web de gestion de battues. Deux faces : l'interface de l'organisateu
 ## À faire
 
 ### Avant de diffuser largement
-- [ ] **Sécuriser la route de retour du Worker.** Décidé : jeton signé posé dans la page à la publication, un retour par nom et par traque (une correction remplace l'ancien envoi), limites larges calibrées pour trente chasseurs simultanés. En attente du code actuel du Worker.
-- [ ] Vérifier dans Supabase la contrainte d'unicité sur `feedbacks` (journée + nom + traque), nécessaire pour que la correction remplace au lieu d'ajouter.
+- [ ] **Durcir la route de retour du Worker.** Décidé : jeton signé posé dans la page à la publication, un retour par nom et par traque (une correction remplace l'ancien envoi), limites calibrées pour trente chasseurs simultanés. En attente du code du Worker. *(Détails à ne pas écrire ici : le dépôt est public.)*
+- [ ] Contrainte d'unicité à confirmer sur `feedbacks` (journée + nom + traque), pour que la correction remplace au lieu d'ajouter.
 - [ ] Suppression de compte par une route dédiée du Worker.
 - [ ] Personnaliser l'email « Confirm signup » dans Supabase. **Ne jamais retirer `{{ .ConfirmationURL }}`.**
 - [ ] Page Confidentialité : manquent le nom de l'éditeur, l'adresse postale, le SIREN éventuel, la région Supabase à confirmer. Relecture juridique conseillée.
