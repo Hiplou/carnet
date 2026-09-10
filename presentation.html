@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Carnet de Chasse — organiser une battue et envoyer les postes aux chasseurs</title>
+<meta name="description" content="Application web pour organiser une battue : placer les chasseurs sur les postes, former les voitures, et envoyer à chacun un lien avec son poste, sa carte et ses consignes de sécurité." />
+<link rel="canonical" href="https://carnetdechasse.fr/presentation.html" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Carnet de Chasse — organiser une battue et envoyer les postes" />
+<meta property="og:description" content="Placer les chasseurs, former les voitures, envoyer à chacun son poste par un simple lien." />
+<meta property="og:url" content="https://carnetdechasse.fr/presentation.html" />
+<meta property="og:locale" content="fr_FR" />
+<style>
+  :root{ --s50:#fafaf9; --s100:#f5f5f4; --s200:#e7e5e4; --s400:#a8a29e; --s500:#78716c;
+         --s600:#57534e; --s700:#44403c; --s800:#292524; --s900:#1c1917; --em:#047857; --em8:#065f46; --amb:#b45309; }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--s50);color:var(--s800);
+       font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:0 20px}
+  header{background:var(--s900);color:var(--s50);padding:46px 0 40px}
+  header .k{display:flex;align-items:center;gap:12px;margin-bottom:22px}
+  header .k span{font-size:26px}
+  header .k b{font-size:15px;letter-spacing:.02em}
+  h1{font-size:30px;line-height:1.18;margin:0 0 14px;letter-spacing:-.5px;font-weight:800}
+  header p{font-size:17px;color:#d6d3d1;margin:0 0 24px;max-width:34em}
+  .cta{display:inline-block;background:var(--em);color:#fff;text-decoration:none;
+       font-weight:700;font-size:16px;padding:15px 26px;border-radius:12px}
+  .cta.g{background:#fff;color:var(--s800);margin-left:8px}
+  section{padding:42px 0;border-bottom:1px solid var(--s200)}
+  h2{font-size:22px;margin:0 0 6px;letter-spacing:-.3px}
+  .sub{color:var(--s500);margin:0 0 24px;font-size:15px}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .card{background:#fff;border:1px solid var(--s200);border-radius:14px;padding:18px}
+  .card .e{font-size:22px;display:block;margin-bottom:8px}
+  .card h3{font-size:15.5px;margin:0 0 5px}
+  .card p{font-size:14px;color:var(--s600);margin:0;line-height:1.5}
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:0}
+  ol.steps li{position:relative;padding-left:46px;margin-bottom:20px}
+  ol.steps li:before{counter-increment:s;content:counter(s);position:absolute;left:0;top:1px;
+    width:30px;height:30px;border-radius:50%;background:var(--s900);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+  ol.steps h3{margin:2px 0 3px;font-size:16px}
+  ol.steps p{margin:0;color:var(--s600);font-size:14.5px}
+  .qa{border-top:1px solid var(--s200);padding:18px 0}
+  .qa:first-of-type{border-top:0}
+  .qa h3{font-size:16px;margin:0 0 6px}
+  .qa p{margin:0;color:var(--s600);font-size:15px}
+  .end{text-align:center;padding:44px 0 20px}
+  footer{padding:26px 0 40px;color:var(--s400);font-size:13px;text-align:center}
+  footer a{color:var(--s500)}
+  @media (max-width:560px){
+    h1{font-size:25px} header{padding:34px 0 32px}
+    .cards{grid-template-columns:1fr}
+    .cta{display:block;text-align:center} .cta.g{margin:10px 0 0}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="k"><span>🦌</span><b>CARNET DE CHASSE</b></div>
+    <h1>Organiser une battue, et envoyer son poste à chaque chasseur.</h1>
+    <p>Vous placez les chasseurs sur la carte du territoire, vous formez les voitures, vous publiez. Chacun reçoit un lien et retrouve son poste, sa carte, ses consignes et qui l'emmène.</p>
+    <a class="cta" href="https://carnetdechasse.fr/">Ouvrir l'application</a>
+    <a class="cta g" href="#comment">Comment ça marche</a>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>Ce que fait l'application</h2>
+    <p class="sub">Tout ce qu'un responsable de battue prépare la veille au soir.</p>
+    <div class="cards">
+      <div class="card"><span class="e">🗺️</span><h3>Votre territoire sur une carte</h3>
+        <p>Vos traques, vos postes, vos miradors, vos points de dépose et vos départs de traque, posés une fois pour toutes sur le plan.</p></div>
+      <div class="card"><span class="e">🎯</span><h3>Le placement des chasseurs</h3>
+        <p>Les présents sont répartis sur les postes selon leur arme et leur mobilité. Un poste à accès facile pour qui en a besoin.</p></div>
+      <div class="card"><span class="e">🚗</span><h3>Les voitures et les déposes</h3>
+        <p>Qui conduit, qui monte avec qui, où chacun est déposé. Une proposition se construit à partir de vos battues précédentes.</p></div>
+      <div class="card"><span class="e">📤</span><h3>Un lien à envoyer</h3>
+        <p>Vous collez le lien dans votre groupe. Chacun ouvre le sien : son poste, sa carte, ses consignes, sa voiture.</p></div>
+      <div class="card"><span class="e">🛡️</span><h3>La sécurité affichée</h3>
+        <p>Angles de tir interdits, contour de la traque, chef de ligne, point de rendez-vous. Et un bouton d'urgence avec les numéros et la position GPS.</p></div>
+      <div class="card"><span class="e">📋</span><h3>Le retour de battue</h3>
+        <p>Chaque chasseur déclare ses balles tirées et ses observations. Le tableau de chasse se remplit tout seul.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="comment">
+  <div class="wrap">
+    <h2>Comment ça marche</h2>
+    <p class="sub">Trois étapes, et le travail du territoire ne se refait qu'une fois.</p>
+    <ol class="steps">
+      <li><h3>Vous dessinez votre territoire</h3>
+        <p>Vous chargez votre plan, vous tracez vos traques et vous posez vos postes. C'est la seule étape longue, et elle sert toutes les saisons suivantes.</p></li>
+      <li><h3>Vous préparez la journée</h3>
+        <p>Vous cochez les présents, vous placez, vous formez les voitures et vous désignez les chefs de ligne. L'application propose, vous décidez.</p></li>
+      <li><h3>Vous publiez et vous envoyez le lien</h3>
+        <p>Un seul lien pour toute la battue. Chacun y trouve ce qui le concerne, sans compte à créer ni application à installer.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Pour qui</h2>
+    <p class="sub">Pour celui qui organise, et pour ceux qui suivent.</p>
+    <div class="cards">
+      <div class="card"><span class="e">🎽</span><h3>Le responsable de battue</h3>
+        <p>Il prépare la journée au chaud, corrige jusqu'au dernier moment, et n'a plus à répéter vingt fois la même chose au rendez-vous.</p></div>
+      <div class="card"><span class="e">🔫</span><h3>Le chasseur</h3>
+        <p>Il ouvre un lien sur son téléphone. Rien à installer, rien à créer. Son poste, sa carte, ses consignes.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Questions fréquentes</h2>
+    <div class="qa"><h3>Les chasseurs doivent-ils installer quelque chose ?</h3>
+      <p>Non. Ils ouvrent un lien dans le navigateur de leur téléphone. Aucun compte, aucune installation.</p></div>
+    <div class="qa"><h3>Faut-il du réseau sur le terrain ?</h3>
+      <p>Il en faut pour ouvrir le lien la première fois. Une fois la page ouverte, elle reste consultable sur le téléphone.</p></div>
+    <div class="qa"><h3>Est-ce que je dois refaire mon territoire chaque année ?</h3>
+      <p>Non. Le territoire, les traques et les postes sont enregistrés une fois. Chaque battue ne demande que le placement du jour.</p></div>
+    <div class="qa"><h3>Qui peut voir la page publiée ?</h3>
+      <p>Uniquement les personnes à qui vous envoyez le lien. Ces pages ne sont pas référencées dans les moteurs de recherche.</p></div>
+    <div class="qa"><h3>Et les données de mon territoire ?</h3>
+      <p>Elles appartiennent à votre compte seul. Aucun autre compte n'y accède.</p></div>
+  </div>
+</section>
+
+<div class="end">
+  <div class="wrap">
+    <a class="cta" href="https://carnetdechasse.fr/">Ouvrir l'application</a>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    Carnet de Chasse · <a href="mailto:contact@carnetdechasse.fr">contact@carnetdechasse.fr</a>
+  </div>
+</footer>
+
+</body>
+</html>
