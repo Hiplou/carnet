@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://carnetdechasse.fr/sitemap.xml
