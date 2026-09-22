@@ -261,8 +261,30 @@ function chefHabituel(stats, filtre) {
   Object.keys(stats || {}).forEach((c) => { if (filtre && !filtre(c)) return; if (stats[c] > n) { n = stats[c]; best = c; } });
   return best;
 }
-function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, zone: Array.isArray(t.zone) ? t.zone.filter((p) => p && isFinite(p.gx) && isFinite(p.gy)).slice(0, 60) : [], zoneFermee: !!t.zoneFermee, deposes: nettoiePts(t.deposes), departs: nettoiePts(t.departs), miradors: (t.miradors || []).map(normMirador) }; }
-function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; } return { id: t.id, name: t.name || "Territoire", planImage: t.planImage || null, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
+// --- Secteurs d'un territoire ---
+// Deux bois eloignes ne tiennent pas sur une seule capture lisible : chacun a la sienne.
+// Pas de limite pratique : on borne seulement pour qu un carnet abime ne fasse pas boucler l app.
+const MAX_SECTEURS = 50;
+function secteurDe(terrain, track) {
+  const l = (terrain && terrain.secteurs) || [];
+  if (!l.length) return null;
+  return l.find((s) => s.id === (track && track.secteurId)) || l[0];
+}
+function imageDe(terrain, track) { const s = secteurDe(terrain, track); return (s && s.image) || null; }
+function aUneImage(terrain) { return ((terrain && terrain.secteurs) || []).some((s) => s && s.image); }
+function normTrack(t, i) { return { id: t.id || `trk-${i}`, name: t.name || `Traque ${i + 1}`, secteurId: t.secteurId || "", color: t.color || "#dc2626", crop: t.crop || { ...FULL_CROP }, zone: Array.isArray(t.zone) ? t.zone.filter((p) => p && isFinite(p.gx) && isFinite(p.gy)).slice(0, 60) : [], zoneFermee: !!t.zoneFermee, deposes: nettoiePts(t.deposes), departs: nettoiePts(t.departs), miradors: (t.miradors || []).map(normMirador) }; }
+function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc = Array.isArray(t.consignesCommunes) ? t.consignesCommunes.map((c) => ({ id: c.id || ("cc-" + Math.random().toString(36).slice(2, 8)), text: c.text || "", miradorIds: Array.isArray(c.miradorIds) ? c.miradorIds : [] })) : []; if (!cc.length && (t.consigneCommune || "").trim()) { const ids = []; tracks.forEach((tr) => tr.miradors.forEach((m) => { if (m.useCommon) ids.push(m.id); })); cc = [{ id: "cc-legacy", text: t.consigneCommune, miradorIds: ids }]; }   // Un territoire peut porter plusieurs secteurs, chacun avec sa propre capture.
+  // Les territoires d'avant la v2.8 n'ont qu'une image : elle devient le premier secteur.
+  const bornerZone = (z) => {
+    if (!z || !isFinite(z.x) || !isFinite(z.y) || !isFinite(z.w) || !isFinite(z.h)) return null;
+    return { x: Math.max(0, Math.min(100, +z.x)), y: Math.max(0, Math.min(100, +z.y)), w: Math.max(4, Math.min(100, +z.w)), h: Math.max(4, Math.min(100, +z.h)) };
+  };
+  let secteurs = Array.isArray(t.secteurs) ? t.secteurs.filter((s) => s && s.id).slice(0, MAX_SECTEURS)
+    .map((s, k) => ({ id: s.id, nom: String(s.nom || `Secteur ${k + 1}`).slice(0, 30), image: s.image || null, zone: bornerZone(s.zone) })) : [];
+  if (!secteurs.length) secteurs = [{ id: "sec-1", nom: "Secteur 1", image: t.planImage || null }];
+  const idsSec = secteurs.map((s) => s.id);
+  tracks.forEach((tr) => { if (idsSec.indexOf(tr.secteurId) < 0) tr.secteurId = secteurs[0].id; });
+  return { id: t.id, name: t.name || "Territoire", vueEnsemble: t.vueEnsemble || null, secteurs, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
 function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
 function splitFullName(full) { const parts = (full || "").trim().split(/\s+/).filter(Boolean); if (!parts.length) return { prenom: "", nom: "" }; if (parts.length === 1) return { prenom: parts[0], nom: "" }; return { prenom: parts[0], nom: parts.slice(1).join(" ") }; }
@@ -340,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v2.7";
+const APP_VERSION = "v2.9";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -506,6 +528,66 @@ function cropWrapperStyle(crop, ar) { const pb = ar > 0 ? (crop.h / crop.w) / ar
 function cropBgStyle(image, crop) { const fw = crop.w / 100, fh = crop.h / 100, fx = crop.x / 100, fy = crop.y / 100; return { position: "absolute", inset: 0, backgroundImage: `url(${image})`, backgroundRepeat: "no-repeat", backgroundSize: `${100 / fw}% ${100 / fh}%`, backgroundPosition: `${fw < 1 ? (fx / (1 - fw)) * 100 : 0}% ${fh < 1 ? (fy / (1 - fh)) * 100 : 0}%` }; }
 
 // ---------- Recadrage ----------
+// Puzzle des secteurs : chaque secteur occupe un rectangle de la carte d'ensemble.
+// Une capture n'a aucune coordonnee : c'est l'utilisateur qui pose ses morceaux.
+function PuzzleBox({ image, secteurs, actifId, onSelect, onZone }) {
+  const boxRef = useRef(null); const drag = useRef(null);
+  const secRef = useRef(secteurs); secRef.current = secteurs;
+  const MIN = 6;
+  const pct = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); return { x: Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)), y: Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)) }; };
+  useEffect(() => {
+    const onMove = (e) => {
+      const d = drag.current; if (!d || !boxRef.current) return; e.preventDefault();
+      const s = (secRef.current || []).find((x) => x.id === d.id); if (!s || !s.zone) return;
+      const p = pct(e.clientX, e.clientY); const z = { ...s.zone };
+      if (d.type === "move") { z.x = Math.max(0, Math.min(100 - z.w, d.ox + (p.x - d.px))); z.y = Math.max(0, Math.min(100 - z.h, d.oy + (p.y - d.py))); }
+      else {
+        let x1 = z.x, y1 = z.y, x2 = z.x + z.w, y2 = z.y + z.h;
+        if (d.type.includes("l")) x1 = Math.min(p.x, x2 - MIN);
+        if (d.type.includes("r")) x2 = Math.max(p.x, x1 + MIN);
+        if (d.type.includes("t")) y1 = Math.min(p.y, y2 - MIN);
+        if (d.type.includes("b")) y2 = Math.max(p.y, y1 + MIN);
+        z.x = x1; z.y = y1; z.w = x2 - x1; z.h = y2 - y1;
+      }
+      onZone(d.id, { x: +z.x.toFixed(2), y: +z.y.toFixed(2), w: +z.w.toFixed(2), h: +z.h.toFixed(2) });
+    };
+    const onUp = () => { drag.current = null; };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp); window.addEventListener("pointercancel", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onUp); };
+  }, [onZone]);
+  const startMove = (e, s) => {
+    e.stopPropagation(); e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    onSelect(s.id);
+    const p = pct(e.clientX, e.clientY);
+    drag.current = { id: s.id, type: "move", px: p.x, py: p.y, ox: s.zone.x, oy: s.zone.y };
+  };
+  const startResize = (e, s, type) => {
+    e.stopPropagation(); e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    onSelect(s.id); drag.current = { id: s.id, type };
+  };
+  const poses = (secteurs || []).filter((s) => s.zone);
+  return (<div ref={boxRef} className="relative w-full rounded-lg overflow-hidden border border-stone-300 bg-stone-100" style={{ touchAction: "none" }}>
+    <img src={image} alt="Vue d'ensemble" className="w-full block select-none pointer-events-none" draggable={false} />
+    {poses.map((s) => {
+      const actif = s.id === actifId;
+      return (<div key={s.id} onPointerDown={(e) => startMove(e, s)}
+        style={{ position: "absolute", left: `${s.zone.x}%`, top: `${s.zone.y}%`, width: `${s.zone.w}%`, height: `${s.zone.h}%`,
+          border: actif ? "2.5px solid #b45309" : "2px solid rgba(255,255,255,.9)",
+          boxShadow: actif ? "0 0 0 2px rgba(180,83,9,.35)" : "0 0 0 1px rgba(0,0,0,.35)",
+          background: actif ? "rgba(180,83,9,.18)" : "rgba(28,25,23,.14)", borderRadius: 6, cursor: "move" }}>
+        <span style={{ position: "absolute", left: 3, top: 3, fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 4,
+          background: actif ? "#b45309" : "rgba(28,25,23,.8)", color: "#fafaf9", whiteSpace: "nowrap", maxWidth: "95%", overflow: "hidden" }}>{s.nom}</span>
+        {actif && ["tl", "tr", "bl", "br"].map((c) => (<span key={c} onPointerDown={(e) => startResize(e, s, c)}
+          style={{ position: "absolute", width: 18, height: 18, background: "#b45309", border: "2px solid #fff", borderRadius: "50%",
+            left: c.includes("l") ? -9 : undefined, right: c.includes("r") ? -9 : undefined,
+            top: c.includes("t") ? -9 : undefined, bottom: c.includes("b") ? -9 : undefined, cursor: "nwse-resize" }} />))}
+      </div>);
+    })}
+  </div>);
+}
 function CropBox({ image, crop, setCrop }) {
   const boxRef = useRef(null); const drag = useRef(null); const cropRef = useRef(crop); cropRef.current = crop; const MIN = 8;
   const pct = (cx, cy) => { const r = boxRef.current.getBoundingClientRect(); return { x: Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)), y: Math.max(0, Math.min(100, ((cy - r.top) / r.height) * 100)) }; };
@@ -846,7 +928,7 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
   </div>);
 }
 
-function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsignesCommunes, suggDep }) {
+function TrackEditor({ image, secteurs, track, updateTrack, consignesCommunes, setConsignesCommunes, suggDep }) {
   const [showCrop, setShowCrop] = useState(false); const crop = track.crop || DEFAULT_CROP;
   const [dragId, setDragId] = useState(null);
   const groups = consignesCommunes || [];
@@ -864,6 +946,15 @@ function TrackEditor({ image, track, updateTrack, consignesCommunes, setConsigne
   return (<div className="space-y-3">
     <div><label className="text-xs uppercase tracking-wide text-stone-400">Nom de la traque</label>
       <input value={track.name} onChange={(e) => updateTrack({ name: e.target.value })} placeholder="Ex. La Mare, Le Grand Layon…" className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1" /></div>
+    {(secteurs || []).length > 1 && (<div><label className="text-xs uppercase tracking-wide text-stone-400">🗺️ Secteur</label>
+      <select value={track.secteurId || (secteurs[0] || {}).id || ""} disabled={(track.miradors || []).length > 0}
+        onChange={(e) => updateTrack({ secteurId: e.target.value, crop: { ...DEFAULT_CROP } })}
+        className={`w-full border border-stone-300 rounded px-2 py-1.5 text-sm bg-white mt-1 ${(track.miradors || []).length > 0 ? "opacity-50" : ""}`}>
+        {secteurs.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+      </select>
+      <p className="text-[10px] text-stone-400 mt-1">{(track.miradors || []).length > 0
+        ? "Verrouillé : des postes sont déjà placés sur cette carte. Supprime-les pour changer de secteur."
+        : "La carte sur laquelle cette traque est dessinée."}</p></div>)}
     <div><label className="text-xs uppercase tracking-wide text-stone-400 block mb-1.5">Couleur des pastilles</label><ColorPicker value={track.color || "#dc2626"} onChange={(c) => updateTrack({ color: c })} /></div>
     <button onClick={() => setShowCrop((s) => !s)} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Crop size={15} /> {showCrop ? "Terminer le cadrage" : "Choisir le cadrage de la traque"}</button>
     {showCrop && (<div className="space-y-1.5"><p className="text-xs text-stone-500">Déplace le rectangle (au centre) et tire ses 4 coins pour délimiter la zone de cette traque.</p><CropBox image={image} crop={crop} setCrop={(c) => updateTrack({ crop: c })} /></div>)}
@@ -1092,16 +1183,22 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
   const suggDep = useMemo(() => histoDeposes(journees, initialTerrain && initialTerrain.id), [journees, initialTerrain]);
   const [tid] = useState(initialTerrain?.id || `t-${Date.now()}`);
   const [name, setName] = useState(initialTerrain?.name || "");
-  const [planImage, setPlanImage] = useState(initialTerrain?.planImage || null);
+  const [vueEnsemble, setVueEnsemble] = useState(initialTerrain?.vueEnsemble || null);
+  const [secActif, setSecActif] = useState(null);
+  const [secteurs, setSecteurs] = useState(() => {
+    const l = initialTerrain && Array.isArray(initialTerrain.secteurs) ? initialTerrain.secteurs : null;
+    if (l && l.length) return l.map((s, k) => ({ id: s.id, nom: s.nom || `Secteur ${k + 1}`, image: s.image || null, zone: s.zone || null }));
+    return [{ id: "sec-1", nom: "Secteur 1", image: (initialTerrain && initialTerrain.planImage) || null }];
+  });
   const [planChasse, setPlanChasse] = useState(normPlan(initialTerrain?.planChasse));
   const [tracks, setTracks] = useState(initialTerrain?.tracks?.length ? initialTerrain.tracks.map(normTrack) : [{ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }]);
   const [tab, setTab] = useState("plan");
   const [consignesCommunes, setConsignesCommunes] = useState(initialTerrain?.consignesCommunes || []);
   const firstRun = useRef(true);
   // Auto-enregistrement en direct : dès qu'on change photo / traque / mirador, on l'enregistre sans attendre le bouton
-  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consignesCommunes }); }, [name, planImage, tracks, planChasse, consignesCommunes]);
+  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", vueEnsemble, secteurs, tracks, planChasse, consignesCommunes }); }, [name, vueEnsemble, secteurs, tracks, planChasse, consignesCommunes]);
   const updateTrack = (id, patch) => setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  const addTrack = () => { const id = `trk-${Date.now()}`; setTracks((prev) => [...prev, { id, name: `Traque ${prev.length + 1}`, color: PALETTE[prev.length % PALETTE.length], crop: { ...DEFAULT_CROP }, miradors: [] }]); setTab(id); };
+  const addTrack = () => { const id = `trk-${Date.now()}`; setTracks((prev) => [...prev, { id, name: `Traque ${prev.length + 1}`, secteurId: (secteurs[0] || {}).id || "sec-1", color: PALETTE[prev.length % PALETTE.length], crop: { ...DEFAULT_CROP }, miradors: [] }]); setTab(id); };
   const deleteTrack = (id) => { if (tracks.length === 1) { alert("Il faut au moins une traque."); return; } if (!window.confirm("Supprimer cette traque ?")) return; setTracks((prev) => { const next = prev.filter((t) => t.id !== id); if (tab === id) setTab("plan"); return next; }); };
   const current = tracks.find((t) => t.id === tab);
   return (<SectionCard className="p-4 space-y-4">
@@ -1113,10 +1210,50 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
       {tracks.map((t) => (<button key={t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 text-sm font-medium rounded-md ${tab === t.id ? "bg-emerald-800 text-stone-50" : "bg-stone-100 text-stone-600"}`}>{t.name}</button>))}
       <button onClick={addTrack} className="px-2.5 py-1.5 text-sm font-medium rounded-md bg-stone-100 text-amber-800 flex items-center gap-1"><Plus size={14} /> Traque</button>
     </div>
-    {tab === "plan" ? (<div className="space-y-2"><p className="text-xs uppercase tracking-wide text-stone-400">Photo du territoire (une seule pour tout)</p><PlanImagePicker image={planImage} onChange={setPlanImage} /></div>)
+    {tab === "plan" ? (<div className="space-y-3">
+      <p className="text-xs uppercase tracking-wide text-stone-400">Secteurs du territoire</p>
+      <p className="text-[11px] text-stone-400 -mt-1.5">Un secteur = une capture de carte. Utilise-en plusieurs si tes bois sont trop éloignés pour tenir sur une seule image lisible.</p>
+
+      <div className="border border-stone-200 rounded-lg p-2.5 bg-stone-50 space-y-2">
+        <p className="text-[10px] uppercase tracking-wide text-stone-400">🧩 Vue d'ensemble</p>
+        <p className="text-[11px] text-stone-500">Charge une capture large de tout le territoire, puis pose chaque secteur dessus. Touche un morceau pour ouvrir son secteur.</p>
+        <PlanImagePicker image={vueEnsemble} onChange={setVueEnsemble} />
+        {vueEnsemble && (<>
+          <PuzzleBox image={vueEnsemble} secteurs={secteurs} actifId={secActif}
+            onSelect={(id) => setSecActif(id)}
+            onZone={(id, z) => setSecteurs((prev) => prev.map((x) => x.id === id ? { ...x, zone: z } : x))} />
+          {secteurs.filter((s) => !s.zone).length > 0 && (<div className="flex flex-wrap gap-2">
+            {secteurs.filter((s) => !s.zone).map((s, k) => (<button key={s.id} onClick={() => {
+              setSecteurs((prev) => prev.map((x) => x.id === s.id ? { ...x, zone: { x: 10 + (k % 3) * 12, y: 10 + (k % 3) * 12, w: 30, h: 30 } } : x));
+              setSecActif(s.id);
+            }} className="bg-white border border-dashed border-amber-700 text-amber-800 rounded-lg px-3 py-1.5 text-[12px] font-medium">Poser « {s.nom} »</button>))}
+          </div>)}
+          {secActif && (<button onClick={() => { setSecteurs((prev) => prev.map((x) => x.id === secActif ? { ...x, zone: null } : x)); setSecActif(null); }}
+            className="w-full text-[12px] font-medium text-stone-600 bg-white border border-stone-300 rounded-lg py-2">Retirer ce morceau de la vue d'ensemble</button>)}
+        </>)}
+      </div>
+      {secteurs.map((s, k) => {
+        const nbTraques = tracks.filter((t) => t.secteurId === s.id).length;
+        return (<div key={s.id} onClick={() => setSecActif(s.id)} className={`border rounded-lg p-2.5 bg-white space-y-2 ${secActif === s.id ? "border-amber-700 ring-1 ring-amber-700" : "border-stone-200"}`}>
+          <div className="flex items-center gap-2">
+            <input value={s.nom} onChange={(e) => setSecteurs((prev) => prev.map((x) => x.id === s.id ? { ...x, nom: e.target.value.slice(0, 30) } : x))}
+              placeholder={`Secteur ${k + 1}`} className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1.5 text-sm bg-white font-medium" />
+            {secteurs.length > 1 && (<button onClick={() => {
+              if (nbTraques > 0) { alert(`Impossible : ${nbTraques} traque(s) utilisent ce secteur. Déplace-les d'abord.`); return; }
+              if (!window.confirm(`Supprimer « ${s.nom} » et sa carte ?`)) return;
+              setSecteurs((prev) => prev.filter((x) => x.id !== s.id));
+            }} className="text-red-700 shrink-0 px-1.5" title="Supprimer ce secteur"><Trash2 size={15} /></button>)}
+          </div>
+          <PlanImagePicker image={s.image} onChange={(img) => setSecteurs((prev) => prev.map((x) => x.id === s.id ? { ...x, image: img } : x))} />
+          <p className="text-[10px] text-stone-400">{nbTraques === 0 ? "Aucune traque sur ce secteur." : `${nbTraques} traque(s) sur ce secteur.`}</p>
+        </div>);
+      })}
+      <button onClick={() => setSecteurs((prev) => [...prev, { id: "sec-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), nom: `Secteur ${prev.length + 1}`, image: null }])}
+        className="w-full border border-dashed border-stone-300 rounded-lg py-2.5 text-sm font-medium text-amber-800 bg-white">+ Ajouter un secteur</button>
+    </div>)
       : tab === "chasse" ? (<PlanChasseEditor planChasse={planChasse} setPlanChasse={setPlanChasse} journees={journees} tid={tid} />)
-      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={planImage} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} suggDep={suggDep} /></div>) : null}
-    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", planImage, tracks, planChasse, consignesCommunes })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
+      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={(secteurs.find((s) => s.id === current.secteurId) || secteurs[0] || {}).image || null} secteurs={secteurs} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} suggDep={suggDep} /></div>) : null}
+    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", vueEnsemble, secteurs, tracks, planChasse, consignesCommunes })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
   </SectionCard>);
 }
 
@@ -1131,7 +1268,8 @@ function copierTerritoire(t) {
   return {
     id: nouvelId("t"),
     name: (t.name || "Territoire") + " (copie)",
-    planImage: t.planImage || null,
+    vueEnsemble: t.vueEnsemble || null,
+    secteurs: (t.secteurs || []).map((s) => ({ ...s })),
     consignesCommunes: (t.consignesCommunes || []).map((c) => ({ id: nouvelId("cc"), text: c.text || "", miradorIds: [] })),
     planChasse: t.planChasse || {},
     tracks: (t.tracks || []).map((tr) => ({
@@ -1154,7 +1292,7 @@ function allegerTerritoire(t, niveau) {
       miradors: (tr.miradors || []).map((m) => Object.assign({}, m, { photos: [] }))
     }));
   }
-  if (niveau === "tout") out.planImage = null;
+  if (niveau === "tout") { out.secteurs = (out.secteurs || []).map((s) => ({ ...s, image: null })); out.vueEnsemble = null; }
   return out;
 }
 function poidsDe(obj) { try { return JSON.stringify(obj).length; } catch (e) { return 0; } }
@@ -1320,7 +1458,7 @@ function TerrainsView({ terrains, setTerrains, journees, github }) {
     {editorState ? (<TerritoryEditor initialTerrain={editorState === "new" ? null : editorState} journees={journees} onSave={saveTerrain} onCancel={() => setEditorState(null)} onDelete={() => deleteTerrain(editorState.id)} onLiveCommit={commitTerrain} />)
       : (<div className="grid sm:grid-cols-2 gap-3">{terrains.length === 0 && <p className="text-sm text-stone-500 italic sm:col-span-2">Aucun territoire. Clique « Nouveau territoire ».</p>}
         {[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => (<SectionCard key={t.id} className="overflow-hidden cursor-pointer hover:border-emerald-700 transition-colors" onClick={() => setEditorState(t)}>
-          {t.planImage ? <img src={t.planImage} alt={t.name} className="h-28 w-full object-cover" /> : <div className="h-28 bg-gradient-to-br from-emerald-900 via-emerald-800 to-stone-700 flex items-center justify-center text-stone-300"><MapPin size={20} /></div>}
+          {(((t.secteurs || []).find((s) => s && s.image) || {}).image) ? <img src={((t.secteurs || []).find((s) => s && s.image) || {}).image} alt={t.name} className="h-28 w-full object-cover" /> : <div className="h-28 bg-gradient-to-br from-emerald-900 via-emerald-800 to-stone-700 flex items-center justify-center text-stone-300"><MapPin size={20} /></div>}
           <div className="p-3"><p className="font-medium text-stone-800 truncate">{t.name}</p><p className="text-xs text-stone-500">{t.tracks.length} traque(s) · appuie pour ouvrir</p></div></SectionCard>))}
       </div>)}
   </div>);
@@ -1710,7 +1848,7 @@ const ARROW_COLORS = ["#2563eb", "#dc2626", "#ea580c", "#7c3aed", "#059669", "#1
 function ChefAssign({ terrain, journee, chefId, chefName, participants, onToggle, onBack }) {
   const [tab, setTab] = useState(0);
   const track = terrain.tracks[tab] || terrain.tracks[0];
-  const image = terrain.planImage; const ar = useImageAR(image);
+  const image = imageDe(terrain, track); const ar = useImageAR(image);
   if (!track) return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button><p className="text-sm text-stone-500">Aucune traque.</p></div>);
   const crop = track.crop || FULL_CROP;
   const placements = journee.placements[track.id] || {};
@@ -2013,9 +2151,9 @@ function PointsView({ terrain, journee, onAjouter, onRenommer, onSupprimer, onDe
   const [renomme, setRenomme] = useState(null);
   const boxRef = useRef(null);
   const tap = useRef(null);
-  const ar = useImageAR(terrain.planImage);
-
   const track = tracks[ti];
+  const imgSecteur = imageDe(terrain, track);
+  const ar = useImageAR(imgSecteur);
   const crop = (track && track.crop) || { ...FULL_CROP };
   const listes = track ? {
     terr: track.deposes || [],
@@ -2080,12 +2218,12 @@ function PointsView({ terrain, journee, onAjouter, onRenommer, onSupprimer, onDe
             {" Touche la carte pour en poser un, glisse un point pour le déplacer."}
           </p>
 
-          {terrain.planImage ? (
+          {imgSecteur ? (
             <div ref={boxRef} onPointerDown={onDown} onPointerMove={onMove}
               onPointerUp={(e) => { if (drag.current) { finDrag(); return; } onUp(e); }} onPointerCancel={finDrag}
               style={{ ...cropWrapperStyle(crop, ar), touchAction: "none" }}
               className="border border-stone-300 select-none relative">
-              <div style={cropBgStyle(terrain.planImage, crop)} />
+              <div style={cropBgStyle(imgSecteur, crop)} />
               <ZoneSvg zone={track.zone} crop={crop} color={track.color} fermee={track.zoneFermee} />
               {(track.miradors || []).map((m) => {
                 const lx = ((m.gx - crop.x) / crop.w) * 100, ly = ((m.gy - crop.y) / crop.h) * 100;
@@ -2150,9 +2288,9 @@ function PosterFusils({ terrain, track, placements, participants, presentIds, jo
             {flagChef && (rdv || {})[flagChef] && <button onClick={() => { onSetRdv(flagChef, null); }} className="text-xs text-red-700 px-2 py-1 rounded border border-red-200 bg-white">Retirer</button>}</div>
           {flagChef && <p className="text-[11px] text-amber-700 mt-1">Tape la carte pour poser le drapeau de {(chefList.find((c) => c.id === flagChef) || {}).name}.</p>}
         </div>)}
-        {!terrain.planImage ? <MapNotice>Photo manquante. Importe ta sauvegarde ou rajoute la photo (onglet Territoires).</MapNotice>
+        {!imageDe(terrain, track) ? <MapNotice>Carte manquante pour ce secteur. Importe ta sauvegarde ou rajoute la capture (onglet Territoires).</MapNotice>
           : track.miradors.length === 0 ? <MapNotice>Cette traque n'a pas de miradors (onglet Territoires).</MapNotice>
-          : <AssignSurface image={terrain.planImage} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={assignWithCheck} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} flagMode={!!flagChef} rdvList={rdvList} onSetRdv={(g) => { if (flagChef) { onSetRdv(flagChef, g); setFlagChef(null); } }} />}</SectionCard></div>
+          : <AssignSurface image={imageDe(terrain, track)} track={track} placements={placements} participants={participants} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} onAssign={assignWithCheck} onUnassign={onUnassign} recommendedIds={recommendedIds} arrows={arrows} onAddArrow={onAddArrow} onClearArrows={onClearArrows} onUpdateArrow={onUpdateArrow} onDeleteArrow={onDeleteArrow} flagMode={!!flagChef} rdvList={rdvList} onSetRdv={(g) => { if (flagChef) { onSetRdv(flagChef, g); setFlagChef(null); } }} />}</SectionCard></div>
   </div>);
 }
 
@@ -2180,7 +2318,7 @@ function EnvoiChasseurs({ journee, terrain, participants, safety, onBack }) {
     setBusy(p.id);
     try {
       const assigns = getAssignments(journee, terrain, p.id); const files = [];
-      for (const a of assigns) { if (terrain.planImage) files.push(await buildTrackImage(terrain.planImage, a.track, a.mirador.id, `${p.name.split(" ")[0]} — ${a.mirador.label}`, `${a.track.name} · ${terrain.name}`)); (a.mirador.photos || []).forEach((ph, i) => files.push(dataUrlToFile(ph, `poste-photo-${i + 1}.jpg`))); }
+      for (const a of assigns) { const imgA = imageDe(terrain, a.track); if (imgA) files.push(await buildTrackImage(imgA, a.track, a.mirador.id, `${p.name.split(" ")[0]} — ${a.mirador.label}`, `${a.track.name} · ${terrain.name}`)); (a.mirador.photos || []).forEach((ph, i) => files.push(dataUrlToFile(ph, `poste-photo-${i + 1}.jpg`))); }
       const text = buildHunterText(p, terrain, assigns, journee, safety);
       if (navigator.canShare && files.length && navigator.canShare({ files })) { await navigator.share({ text, files }); }
       else { files.forEach((f) => { const u = URL.createObjectURL(f); const a = document.createElement("a"); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000); }); const ph = waPhone(p.phone); window.open(`https://wa.me/${ph}?text=${encodeURIComponent(text)}`, "_blank"); }
@@ -2398,13 +2536,29 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 
 const SHARED_TAIL = `;
 var AR=1.5, me=null;
+/* Chaque secteur a sa propre capture : on mesure les proportions de chacune. */
+var ARS={};
+function arDe(t){
+  var src=(t&&t.image)||DATA.image;if(!src)return AR;
+  if(ARS[src])return ARS[src];
+  ARS[src]=AR;
+  var im2=new Image();
+  im2.onload=function(){
+    if(!im2.naturalWidth||!im2.naturalHeight)return;
+    ARS[src]=im2.naturalWidth/im2.naturalHeight;
+    var mp=$("map");if(mp&&mp.innerHTML!=="")renderMap(MAP_I);
+    var cm=$("chefMap");if(cm&&cm.innerHTML!=="")renderChefMap(CHEF_I);
+  };
+  im2.src=src;
+  return ARS[src];
+}
 var DEF_IMG="data:image/svg+xml;utf8,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 520' preserveAspectRatio='xMidYMid slice'><defs><linearGradient id='sky' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#d7e7f2'/><stop offset='1' stop-color='#eef2e4'/></linearGradient></defs><rect width='900' height='520' fill='url(#sky)'/><circle cx='720' cy='120' r='46' fill='#f4ecd8'/><path d='M0 360 Q225 300 450 350 T900 340 V520 H0 Z' fill='#7fa060'/><path d='M0 410 Q250 360 520 400 T900 395 V520 H0 Z' fill='#5f8049'/><path d='M0 460 Q300 430 600 455 T900 450 V520 H0 Z' fill='#496b3a'/><g fill='#33502c'><polygon points='120,360 150,300 180,360'/><polygon points='128,382 150,330 172,382'/><rect x='146' y='378' width='8' height='24' fill='#5a3d24'/><polygon points='760,352 792,285 824,352'/><polygon points='768,374 792,318 816,374'/><rect x='788' y='370' width='9' height='26' fill='#5a3d24'/></g><g><rect x='420' y='250' width='60' height='60' rx='4' fill='#7a5a3a'/><polygon points='410,250 450,214 490,250' fill='#63472c'/><rect x='432' y='262' width='36' height='30' fill='#3f3020'/><rect x='426' y='310' width='10' height='150' fill='#63472c'/><rect x='464' y='310' width='10' height='150' fill='#63472c'/><line x1='426' y1='360' x2='474' y2='360' stroke='#63472c' stroke-width='7'/><line x1='426' y1='410' x2='474' y2='410' stroke='#63472c' stroke-width='7'/></g></svg>");
 function $(id){return document.getElementById(id);}
 function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s;}
 function fmtDate(d){try{return cap(new Date(d).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));}catch(e){return d;}}
 function myMir(ti){if(!me)return null;for(var k=0;k<me.posts.length;k++){if(me.posts[k].traqueIndex===ti)return me.posts[k].miradorId;}return null;}
 var MAP_I=0;
-function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();(function(){var dep=t.deposes||[],dpt=t.departs||[],tr=t.transport||{};var utilises={};for(var q in tr){if(tr[q]&&tr[q].departId)utilises[tr[q].departId]=1;}function poser(d,couleur,icone){if(!isFinite(d.gx)||!isFinite(d.gy))return;var lx=(d.gx-c.x)/c.w*100,ly=(d.gy-c.y)/c.h*100;if(lx<-5||lx>105||ly<-5||ly>105)return;var el=document.createElement('div');el.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;z-index:2';el.innerHTML="<span style='width:13px;height:13px;border-radius:50%;background:"+couleur+";border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)'></span>"+"<span style='font-size:9px;line-height:1.1;background:rgba(255,255,255,.85);color:#1c1917;padding:1px 4px;border-radius:4px;white-space:nowrap'>"+icone+" "+d.nom+"</span>";map.appendChild(el);}if(SHOW_DEPOSE&&typeof me!=='undefined'&&me&&me.id){var moi=me.id,maV=null,vv=t.voitures||[];for(var w=0;w<vv.length;w++){if(vv[w].conducteurId===moi){maV=vv[w];break;}var pz=vv[w].passagers||[];for(var y=0;y<pz.length;y++){if(pz[y].id===moi){maV=vv[w];break;}}if(maV)break;}var ptDe=function(id){if(!id)return null;for(var i=0;i<dep.length;i++){if(dep[i].id===id)return dep[i];}return null;};var trouve=ptDe((tr[moi]||{}).deposeId)||ptDe(maV&&maV.deposeId);if(trouve)poser(trouve,'#1c1917','\u{1F17F}\u{FE0F}');}if(SHOW_DEPART)for(var j2=0;j2<dpt.length;j2++)poser(dpt[j2],'#166534','\u{1F6A9}');})();(function(){if(!SHOW_ZONE)return;var z=t.zone||[];if(z.length<2)return;var pts=z.map(function(q){return ((q.gx-c.x)/c.w*100)+' '+((q.gy-c.y)/c.h*100);});var d='M '+pts.join(' L ')+((t.zoneFermee&&z.length>=3)?' Z':'');var NSZ='http://www.w3.org/2000/svg';var sv=document.createElementNS(NSZ,'svg');sv.setAttribute('viewBox','0 0 100 100');sv.setAttribute('preserveAspectRatio','none');sv.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';var col=t.color||'#dc2626';function trait(couleur,ep,op){var pa=document.createElementNS(NSZ,'path');pa.setAttribute('d',d);pa.setAttribute('fill','none');pa.setAttribute('stroke',couleur);pa.setAttribute('stroke-width',ep);pa.setAttribute('stroke-linejoin','round');pa.setAttribute('stroke-linecap','round');pa.setAttribute('opacity',op);pa.setAttribute('vector-effect','non-scaling-stroke');return pa;}sv.appendChild(trait('#ffffff','5','.55'));sv.appendChild(trait(col,'3.5','.85'));map.appendChild(sv);})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}(function(){var tr2=t.transport||{},moi=(me&&me.id)||"",dep2=t.deposes||[],maV2=null,vv2=t.voitures||[];for(var w1=0;w1<vv2.length;w1++){if(vv2[w1].conducteurId===moi){maV2=vv2[w1];break;}var pz2=vv2[w1].passagers||[];for(var y1=0;y1<pz2.length;y1++){if(pz2[y1].id===moi){maV2=vv2[w1];break;}}if(maV2)break;}var idDep=((tr2[moi]||{}).deposeId)||(maV2&&maV2.deposeId)||"",okDep=false;for(var i2=0;i2<dep2.length;i2++){if(dep2[i2].id===idDep)okDep=true;}var okDepart=(t.departs||[]).length>0;var mid2=myMir(index),okCone=false;(t.miradors||[]).forEach(function(m){if(m.id===mid2&&m.tir&&m.tir.zones&&m.tir.zones.length)okCone=true;});var okZone=((t.zone||[]).length>=2),okRdv=false;(function(){var mine=null,ps=(me&&me.posts)||[];for(var q2=0;q2<ps.length;q2++){if(ps[q2].traqueIndex===index){mine=ps[q2];break;}}var wanted=(mine&&mine.chefId)||"",lst=t.rdv||[];if(!wanted&&((me&&me.chefMids)||[]).length){for(var z2=0;z2<lst.length;z2++){if(me&&me.name&&lst[z2].chefName===me.name){wanted=lst[z2].chefId;break;}}}if(!wanted)return;for(var w2=0;w2<lst.length;w2++){if(lst[w2].chefId===wanted)okRdv=true;}})();function majCase(id,ok,val){var el=$(id);if(!el)return;el.disabled=!ok;el.checked=!!(ok&&val);var lb=el.parentElement;if(lb)lb.className="conetoggle"+(ok?"":" off");}majCase("deposeToggle",okDep,SHOW_DEPOSE);majCase("departToggle",okDepart,SHOW_DEPART);majCase("coneToggle",okCone,SHOW_CONES);majCase("rdvToggle",okRdv,SHOW_RDV);majCase("zoneToggle",okZone,SHOW_ZONE);})();activerZoom(map);}
+function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+(t.image||DATA.image)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();(function(){var dep=t.deposes||[],dpt=t.departs||[],tr=t.transport||{};var utilises={};for(var q in tr){if(tr[q]&&tr[q].departId)utilises[tr[q].departId]=1;}function poser(d,couleur,icone){if(!isFinite(d.gx)||!isFinite(d.gy))return;var lx=(d.gx-c.x)/c.w*100,ly=(d.gy-c.y)/c.h*100;if(lx<-5||lx>105||ly<-5||ly>105)return;var el=document.createElement('div');el.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;z-index:2';el.innerHTML="<span style='width:13px;height:13px;border-radius:50%;background:"+couleur+";border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)'></span>"+"<span style='font-size:9px;line-height:1.1;background:rgba(255,255,255,.85);color:#1c1917;padding:1px 4px;border-radius:4px;white-space:nowrap'>"+icone+" "+d.nom+"</span>";map.appendChild(el);}if(SHOW_DEPOSE&&typeof me!=='undefined'&&me&&me.id){var moi=me.id,maV=null,vv=t.voitures||[];for(var w=0;w<vv.length;w++){if(vv[w].conducteurId===moi){maV=vv[w];break;}var pz=vv[w].passagers||[];for(var y=0;y<pz.length;y++){if(pz[y].id===moi){maV=vv[w];break;}}if(maV)break;}var ptDe=function(id){if(!id)return null;for(var i=0;i<dep.length;i++){if(dep[i].id===id)return dep[i];}return null;};var trouve=ptDe((tr[moi]||{}).deposeId)||ptDe(maV&&maV.deposeId);if(trouve)poser(trouve,'#1c1917','\u{1F17F}\u{FE0F}');}if(SHOW_DEPART)for(var j2=0;j2<dpt.length;j2++)poser(dpt[j2],'#166534','\u{1F6A9}');})();(function(){if(!SHOW_ZONE)return;var z=t.zone||[];if(z.length<2)return;var pts=z.map(function(q){return ((q.gx-c.x)/c.w*100)+' '+((q.gy-c.y)/c.h*100);});var d='M '+pts.join(' L ')+((t.zoneFermee&&z.length>=3)?' Z':'');var NSZ='http://www.w3.org/2000/svg';var sv=document.createElementNS(NSZ,'svg');sv.setAttribute('viewBox','0 0 100 100');sv.setAttribute('preserveAspectRatio','none');sv.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';var col=t.color||'#dc2626';function trait(couleur,ep,op){var pa=document.createElementNS(NSZ,'path');pa.setAttribute('d',d);pa.setAttribute('fill','none');pa.setAttribute('stroke',couleur);pa.setAttribute('stroke-width',ep);pa.setAttribute('stroke-linejoin','round');pa.setAttribute('stroke-linecap','round');pa.setAttribute('opacity',op);pa.setAttribute('vector-effect','non-scaling-stroke');return pa;}sv.appendChild(trait('#ffffff','5','.55'));sv.appendChild(trait(col,'3.5','.85'));map.appendChild(sv);})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}(function(){var tr2=t.transport||{},moi=(me&&me.id)||"",dep2=t.deposes||[],maV2=null,vv2=t.voitures||[];for(var w1=0;w1<vv2.length;w1++){if(vv2[w1].conducteurId===moi){maV2=vv2[w1];break;}var pz2=vv2[w1].passagers||[];for(var y1=0;y1<pz2.length;y1++){if(pz2[y1].id===moi){maV2=vv2[w1];break;}}if(maV2)break;}var idDep=((tr2[moi]||{}).deposeId)||(maV2&&maV2.deposeId)||"",okDep=false;for(var i2=0;i2<dep2.length;i2++){if(dep2[i2].id===idDep)okDep=true;}var okDepart=(t.departs||[]).length>0;var mid2=myMir(index),okCone=false;(t.miradors||[]).forEach(function(m){if(m.id===mid2&&m.tir&&m.tir.zones&&m.tir.zones.length)okCone=true;});var okZone=((t.zone||[]).length>=2),okRdv=false;(function(){var mine=null,ps=(me&&me.posts)||[];for(var q2=0;q2<ps.length;q2++){if(ps[q2].traqueIndex===index){mine=ps[q2];break;}}var wanted=(mine&&mine.chefId)||"",lst=t.rdv||[];if(!wanted&&((me&&me.chefMids)||[]).length){for(var z2=0;z2<lst.length;z2++){if(me&&me.name&&lst[z2].chefName===me.name){wanted=lst[z2].chefId;break;}}}if(!wanted)return;for(var w2=0;w2<lst.length;w2++){if(lst[w2].chefId===wanted)okRdv=true;}})();function majCase(id,ok,val){var el=$(id);if(!el)return;el.disabled=!ok;el.checked=!!(ok&&val);var lb=el.parentElement;if(lb)lb.className="conetoggle"+(ok?"":" off");}majCase("deposeToggle",okDep,SHOW_DEPOSE);majCase("departToggle",okDepart,SHOW_DEPART);majCase("coneToggle",okCone,SHOW_CONES);majCase("rdvToggle",okRdv,SHOW_RDV);majCase("zoneToggle",okZone,SHOW_ZONE);})();activerZoom(map);}
 function selectTraque(i){["tabs","mapTabs","postTabs"].forEach(function(id){var c=$(id);if(!c)return;var ks=c.children;for(var k=0;k<ks.length;k++)ks[k].classList.toggle("active",k===i);});renderMap(i);renderPostInfo(i);setHeroFor(i);}
 function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
 function setHeroFor(index){var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
@@ -2834,7 +2988,8 @@ function renderAttribs(){var card=$("attribsCard");var box=$("attribs");if(!card
 function renderPostInfo(index){var card=$("postInfoCard");if(!card)return;if(!me||!me.posts){card.style.display="none";return;}var post=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){post=me.posts[i];break;}}var title=$("postInfoTitle");var cons=$("myConsigne");var ph=$("myPhotos");if(!post){if(title)title.textContent="📍 Tu n'as pas de poste sur cette traque";if(cons)cons.style.display="none";if(ph)ph.innerHTML="";card.style.display="block";return;}if(title)title.textContent="📍 Ton poste : "+post.label;var mc=$("myChef");if(mc){if(post.chef){mc.style.display="block";mc.textContent="👨‍✈️ Chef de ligne : "+post.chef;}else{mc.style.display="none";}}if(cons){if(post.consignes){cons.style.display="flex";var cs=cons.querySelector("span");cs.textContent=post.consignes;cs.style.whiteSpace="pre-line";}else{cons.style.display="none";}}if(ph){ph.innerHTML="";(post.photos||[]).forEach(function(src){var im=document.createElement("img");im.className="postphoto";im.src=src;im.style.display="block";im.style.marginTop="8px";ph.appendChild(im);});}card.style.display="block";}
 function renderHero(){var hc=document.querySelector("#appview .hero");try{remplirVoiture(me&&me.id);}catch(e){}if(hc)hc.style.display="";var mh=document.querySelector(".maphint");if(mh)mh.textContent="Ton poste est surligné en orange · lecture seule";var p=me.posts[0];$("myTraque").textContent=p?p.traqueName:"—";$("myPost").textContent=p?p.label:"—";$("myName").textContent="🦌 "+me.name;var hchef=$("myHeroChef");if(hchef)hchef.style.display="none";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var ex=$("extra");ex.innerHTML="";me.posts.forEach(function(pp){var d=document.createElement("div");d.style.cssText="margin-top:7px;font-size:15px;line-height:1.35";d.innerHTML="• <b>"+aesc(pp.traqueName)+"</b> → "+aesc(pp.label)+(pp.chef?" <span style='color:#166534;font-weight:600'>· 👨‍✈️ "+aesc(pp.chef)+"</span>":"")+(typeof monTrajet==="function"?monTrajet(pp):"");ex.appendChild(d);});setupFeedback();renderAttribs();renderChef();}
 function renderChef(){var card=$("chefCard");var box=$("chefPosts");if(!card||!box)return;var list=(me&&me.chefPosts)||[];if(!list.length){card.style.display="none";return;}card.style.display="block";box.innerHTML="";var grp={};var ord=[];list.forEach(function(pp){if(!grp[pp.traqueName]){grp[pp.traqueName]=[];ord.push(pp.traqueName);}grp[pp.traqueName].push(pp);});ord.forEach(function(tn){var h=document.createElement("div");h.textContent=tn;h.style.cssText="font-weight:700;color:#166534;margin:10px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.03em";box.appendChild(h);grp[tn].forEach(function(pp){var d=document.createElement("div");d.style.cssText="display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:8px;margin-bottom:4px;background:#f5f5f4;font-size:14px";d.innerHTML="<span style='font-weight:600;color:#1c1917'>"+aesc(pp.label)+"</span><span style='color:#57534e'>"+aesc(pp.hunter||"libre")+"</span>";box.appendChild(d);});});var mids=(me&&me.chefMids)||[];var tabsEl=$("chefTabs");var mapEl=$("chefMap");if(!tabsEl||!mapEl)return;tabsEl.innerHTML="";var rel=[];DATA.traques.forEach(function(t,i){if((t.placed||[]).some(function(pp){return mids.indexOf(pp.mid)>=0;}))rel.push(i);});if(!rel.length){mapEl.style.display="none";return;}mapEl.style.display="block";rel.forEach(function(idx,k){var b=document.createElement("button");b.className="tab"+(k===0?" active":"");b.textContent=DATA.traques[idx].name;b.onclick=function(){var ch=tabsEl.children;for(var j=0;j<ch.length;j++)ch[j].className="tab";b.className="tab active";renderChefMap(idx);};tabsEl.appendChild(b);});renderChefMap(rel[0]);}
-function renderChefMap(index){var t=DATA.traques[index];var c=t.crop;var map=$("chefMap");if(!map)return;map.style.paddingBottom=((c.h/c.w)/AR*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+DATA.image+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);var mids=(me&&me.chefMids)||[];(t.placed||[]).forEach(function(pp){var lx=(pp.gx-c.x)/c.w*100,ly=(pp.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var isChef=mids.indexOf(pp.mid)>=0;var el=document.createElement("div");el.className="marker"+(isChef?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(isChef?"★ ":"")+aesc(pp.hunter||"")+"</span>";map.appendChild(el);});activerZoom(map);}
+var CHEF_I=0;
+function renderChefMap(index){CHEF_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("chefMap");if(!map)return;map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+(t.image||DATA.image)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);var mids=(me&&me.chefMids)||[];(t.placed||[]).forEach(function(pp){var lx=(pp.gx-c.x)/c.w*100,ly=(pp.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var isChef=mids.indexOf(pp.mid)>=0;var el=document.createElement("div");el.className="marker"+(isChef?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(isChef?"★ ":"")+aesc(pp.hunter||"")+"</span>";map.appendChild(el);});activerZoom(map);}
 var FB_SENT=true, FB_B=[], FB_S=[], FB_A=[];
 function fbHasData(){for(var i=0;i<FB_B.length;i++){if((FB_B[i]||0)>0)return true;if(FB_S[i])return true;var c=$("fbC"+i);if(c&&c.value)return true;if(FB_A[i]){for(var k in FB_A[i]){if(FB_A[i][k]>0)return true;}}}return false;}
 window.addEventListener("beforeunload",function(e){if(!FB_SENT&&fbHasData()){e.preventDefault();e.returnValue="";return "";}});
@@ -2900,7 +3055,7 @@ function fillLists(){var so=$("sonneries");DATA.sonneries.forEach(function(s){va
 if(DATA.orgName){try{document.title=DATA.orgName;}catch(e){}var pt=$("pickTitle");if(pt)pt.textContent=DATA.orgName;}
 function setupRabatteurs(){me=null;$("pick").style.display="none";$("appview").style.display="block";var hero=document.querySelector("#appview .hero");if(hero)hero.style.display="none";var fc=$("feedbackCard");if(fc)fc.style.display="none";var bk=$("back");if(bk)bk.style.display="";$("myName").textContent="🥁 Rabatteurs";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var mh=document.querySelector(".maphint");if(mh)mh.textContent="Vue d'ensemble des traques · lecture seule";buildTabs(0);renderAttribs();window.scrollTo(0,0);}
 renderPicker();fillLists();var wb=document.getElementById("welcomeBtn");if(wb)wb.onclick=function(){var w=document.getElementById("welcome");if(w)w.style.display="none";};var rhb=document.getElementById("retourHelpBtn");if(rhb)rhb.onclick=function(){var r=document.getElementById("retourHelp");if(r)r.style.display="none";};
-var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR=im.naturalWidth/im.naturalHeight;var mp=$("map");if(mp&&mp.innerHTML!=="")renderMap(MAP_I);}};im.src=DATA.image;
+if(DATA.image){var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR=im.naturalWidth/im.naturalHeight;var mp=$("map");if(mp&&mp.innerHTML!=="")renderMap(MAP_I);}};im.src=DATA.image;}
 </scr` + `ipt></body></html>`;
 
 function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId) {
@@ -2917,7 +3072,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
     Object.keys(ids).forEach((id) => { const p = participants.find((x) => x.id === id); if (p) gens[id] = { n: p.name || "", t: String(p.phone || "").trim() }; });
     return { respId: journee.responsableId || "", gens: gens };
   })();
-  const DATA = { date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: terrain.planImage || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, deposes: [].concat((t.deposes || []), (((journee.deposesJourParTraque || {})[t.id]) || [])).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), departs: (t.departs || []).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), voitures: (((journee.voitures || {})[t.id]) || []).map((v) => { const c = participants.find((x) => x.id === v.conducteurId); const tp = ((journee.transport || {})[t.id]) || {}; const mes = Object.keys(tp).filter((id) => (tp[id] || {}).voitureId === v.id); return { id: v.id, conducteurId: v.conducteurId, deposeId: v.deposeId || "", vehicule: v.vehicule || "", conducteur: c ? c.name : "", passagers: mes.map((id) => { const q = participants.find((x) => x.id === id); return { id: id, nom: q ? q.name : "" }; }) }; }), transport: ((journee.transport || {})[t.id]) || {}, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
+  const DATA = { date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, image: imageDe(terrain, t) || "", color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, deposes: [].concat((t.deposes || []), (((journee.deposesJourParTraque || {})[t.id]) || [])).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), departs: (t.departs || []).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), voitures: (((journee.voitures || {})[t.id]) || []).map((v) => { const c = participants.find((x) => x.id === v.conducteurId); const tp = ((journee.transport || {})[t.id]) || {}; const mes = Object.keys(tp).filter((id) => (tp[id] || {}).voitureId === v.id); return { id: v.id, conducteurId: v.conducteurId, deposeId: v.deposeId || "", vehicule: v.vehicule || "", conducteur: c ? c.name : "", passagers: mes.map((id) => { const q = participants.find((x) => x.id === id); return { id: id, nom: q ? q.name : "" }; }) }; }), transport: ((journee.transport || {})[t.id]) || {}, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
   // Source unique : le calcul des cônes de la page chasseurs est généré à partir
   // de tirRender, la fonction utilisée côté organisateur. Impossible qu'elles divergent.
   const tail = SHARED_TAIL.replace("/*__TIRRENDER__*/", String(tirRender).replace(/^function\s+tirRender/, "function tirRenderJS"));
@@ -3465,11 +3620,11 @@ function buildPrintHtml(journee, terrain, participants, safety) {
     let rows = "";
     (trk.miradors || []).forEach((m, mi) => { const hid = byMir[m.id]; rows += "<tr><td class='num'>" + (mi + 1) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td><td class='chef'>" + ((journee.chefLignes && journee.chefLignes[m.id]) ? esc(nameOf(journee.chefLignes[m.id])) : "") + "</td></tr>"; });
     if (!trk.miradors || !trk.miradors.length) rows = "<tr><td colspan='4' class='free'>Aucun mirador</td></tr>";
-    const mapHtml = terrain.planImage ? "<div class='mapbox' id='map" + idx + "'></div>" : "";
+    const mapHtml = imageDe(terrain, trk) ? "<div class='mapbox' id='map" + idx + "'></div>" : "";
     sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th><th>Chef de ligne</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
-    traquesData.push({ color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m, mi) => ({ gx: m.gx, gy: m.gy, n: mi + 1, tir: m.tir || null })) });
+    traquesData.push({ img: imageDe(terrain, trk) || "", color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m, mi) => ({ gx: m.gx, gy: m.gy, n: mi + 1, tir: m.tir || null })) });
   });
-  const script = terrain.planImage ? ("<script>var IMG=" + JSON.stringify(terrain.planImage) + ";var TQ=" + JSON.stringify(traquesData) + ";" + "var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;TQ.forEach(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var img=document.createElement('img');img.src=IMG;img.style.position='absolute';img.style.maxWidth='none';img.style.width=(100/fw)+'%';img.style.left=(-(fx/fw)*100)+'%';img.style.top=(-(fy/fh)*100)+'%';box.appendChild(img);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);min-width:16px;height:16px;padding:0 3px;border-radius:9px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);background:'+t.color+';color:#fff;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:3;font-family:Helvetica,Arial,sans-serif';d.textContent=m.n;box.appendChild(d);});});};im.src=IMG;" + "</scr" + "ipt>") : "";
+  const script = aUneImage(terrain) ? ("<script>var TQ=" + JSON.stringify(traquesData) + ";" + "TQ.forEach(function(t,i){if(!t.img)return;var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;var IMG=t.img;(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var img=document.createElement('img');img.src=IMG;img.style.position='absolute';img.style.maxWidth='none';img.style.width=(100/fw)+'%';img.style.left=(-(fx/fw)*100)+'%';img.style.top=(-(fy/fh)*100)+'%';box.appendChild(img);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);min-width:16px;height:16px;padding:0 3px;border-radius:9px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);background:'+t.color+';color:#fff;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:3;font-family:Helvetica,Arial,sans-serif';d.textContent=m.n;box.appendChild(d);});})(t,i);};im.src=t.img;});" + "</scr" + "ipt>") : "";
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + PRINT_CSS + "</style></head><body>"
     + "<header><div class='emo'>🦌</div><div><h1>" + esc(terrain.name) + "</h1><p>" + esc(d) + "</p></div></header>"
     + "<div>" + sections + "</div>"
@@ -4752,8 +4907,8 @@ function CarnetApp({ session, onSignOut }) {
     const wb = XLSX.utils.book_new();
     const add = (rows, fb, name) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [fb]), name);
     add(participants.map((p) => ({ Nom: p.name, Prénom_: p.prenom || "", Nom_: p.nom || "", Téléphone: p.phone || "", Participe: yn(p.participe), Invité: yn(p.invitation), Rôle: p.role || "", Arme: p.arme || "", Mobilité: p.mobility || "", Places: p.places || 4, Vehicule: p.vehicule || "", Dîner: yn(p.diner?.vient), Invités_sup: p.diner?.invitesSupplementaires || 0, id: p.id })), { Nom: "" }, "Participants");
-    add(terrains.map((t) => ({ Territoire: t.name, id: t.id })), { Territoire: "" }, "Territoires");
-    const trk = []; terrains.forEach((t) => t.tracks.forEach((k) => trk.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Couleur: k.color, crop_x: k.crop?.x ?? 0, crop_y: k.crop?.y ?? 0, crop_w: k.crop?.w ?? 100, crop_h: k.crop?.h ?? 100 })));
+    add(terrains.map((t) => ({ Territoire: t.name, Secteurs: (t.secteurs || []).map((s) => s.nom).join("|"), Zones: (t.secteurs || []).map((s) => s.zone ? [s.zone.x, s.zone.y, s.zone.w, s.zone.h].join(",") : "").join("|"), id: t.id })), { Territoire: "" }, "Territoires");
+    const trk = []; terrains.forEach((t) => t.tracks.forEach((k) => trk.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, SecteurId: k.secteurId || "", Couleur: k.color, crop_x: k.crop?.x ?? 0, crop_y: k.crop?.y ?? 0, crop_w: k.crop?.w ?? 100, crop_h: k.crop?.h ?? 100 })));
     add(trk, { Traque: "" }, "Traques");
     const mir = []; terrains.forEach((t) => t.tracks.forEach((k) => k.miradors.forEach((m) => mir.push({ Territoire: t.name, TerritoireId: t.id, Traque: k.name, TraqueId: k.id, Mirador: m.label, MiradorId: m.id, gx: m.gx, gy: m.gy, Priorite: m.priority || 1, Armes: armesList(m).join("|"), DeposeHab: m.deposeHab || "", Consignes: m.consignes || "" }))));
     add(mir, { Mirador: "" }, "Miradors");
@@ -4764,7 +4919,7 @@ function CarnetApp({ session, onSignOut }) {
     add(pl, { Chasseur: "" }, "Placements");
     add(safety.consignes.map((c, i) => ({ Ordre: i, Consigne: c })), { Ordre: 0, Consigne: "" }, "Consignes");
     add(safety.sonneries.map((s, i) => ({ Ordre: i, Événement: s.evenement, Signal: s.signal })), { Ordre: 0, Événement: "", Signal: "" }, "Sonneries");
-    const ph = []; terrains.forEach((t) => { if (t.planImage) chunkStr(t.planImage).forEach((d, i) => ph.push({ Kind: "plan", OwnerId: t.id, PhotoIndex: 0, Chunk: i, Data: d })); t.tracks.forEach((k) => k.miradors.forEach((m) => (m.photos || []).forEach((pht, pi) => chunkStr(pht).forEach((d, i) => ph.push({ Kind: "mirador", OwnerId: m.id, PhotoIndex: pi, Chunk: i, Data: d }))))); });
+    const ph = []; terrains.forEach((t) => { (t.secteurs || []).forEach((sec, si) => { if (sec && sec.image) chunkStr(sec.image).forEach((d, i) => ph.push({ Kind: "plan", OwnerId: t.id, PhotoIndex: si, Chunk: i, Data: d })); }); if (t.vueEnsemble) chunkStr(t.vueEnsemble).forEach((d, i) => ph.push({ Kind: "vue", OwnerId: t.id, PhotoIndex: 0, Chunk: i, Data: d })); t.tracks.forEach((k) => k.miradors.forEach((m) => (m.photos || []).forEach((pht, pi) => chunkStr(pht).forEach((d, i) => ph.push({ Kind: "mirador", OwnerId: m.id, PhotoIndex: pi, Chunk: i, Data: d }))))); });
     add(ph, { Kind: "", OwnerId: "", PhotoIndex: 0, Chunk: 0, Data: "" }, "_Photos");
     return wb;
   };
@@ -4795,9 +4950,21 @@ function CarnetApp({ session, onSignOut }) {
     const photoMap = {}; PH.forEach((r) => { if (!r.Kind) return; const key = `${r.Kind}|${r.OwnerId}|${r.PhotoIndex || 0}`; (photoMap[key] = photoMap[key] || []).push({ c: Number(r.Chunk) || 0, d: String(r.Data || "") }); });
     const blob = (key) => (photoMap[key] ? photoMap[key].sort((a, b) => a.c - b.c).map((x) => x.d).join("") : null);
     const parts = P.filter((r) => r.Nom || r.Prénom || r.Prenom).map((r, i) => ({ id: r.id || `p-${Date.now()}-${i}`, name: [r.Prénom || r.Prenom, r.Nom].filter(Boolean).map((x) => String(x).trim()).join(" ").trim() || String(r.Nom || ""), phone: r.Téléphone ? String(r.Téléphone) : "", email: r.Email ? String(r.Email) : "", permis: r.Permis ? String(r.Permis) : "", validation: r.Validation ? String(r.Validation) : "", assurance: r.Assurance ? String(r.Assurance) : "", role: (function(){ var rr = String(r.Rôle || r.Role || "").toLowerCase(); return rr.indexOf("rab") >= 0 ? "rabatteur" : (rr ? "chasseur" : null); })(), mobility: (function(m){ m=String(r.Mobilité||r.Mobilite||"").toLowerCase(); return m.indexOf("fauteuil")>=0?"fauteuil":(m.indexOf("canne")>=0?"canne":null); })(), arme: (function(){ var a=String(r.Arme||"").toLowerCase(); return a.indexOf("ray")>=0?"rayee":(a.indexOf("liss")>=0?"lisse":(a.indexOf("arc")>=0?"arc":null)); })(), places: Number(r.Places)||4, vehicule: String(r.Vehicule||"").slice(0,24), prenom: r["Prénom_"]!=null?String(r["Prénom_"]):undefined, nom: r["Nom_"]!=null?String(r["Nom_"]):undefined }));
-    const terrs = T.filter((r) => r.Territoire || r.id).map((r) => ({ id: r.id || `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: r.Territoire || "Territoire", planImage: blob(`plan|${r.id}|0`), tracks: [] }));
+    const terrs = T.filter((r) => r.Territoire || r.id).map((r) => ({ id: r.id || `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: r.Territoire || "Territoire", vueEnsemble: blob(`vue|${r.id}|0`) || null, secteurs: (function () {
+      const noms = String(r.Secteurs || "").split("|").map((x) => x.trim()).filter(Boolean);
+      const out = [];
+      for (let k = 0; k < MAX_SECTEURS; k++) {
+        const img = blob(`plan|${r.id}|${k}`);
+        if (k > 0 && !img && !noms[k]) continue;
+        const zs = String(r.Zones || "").split("|")[k] || "";
+        const zp = zs.split(",").map(Number);
+        out.push({ id: k === 0 ? "sec-1" : `sec-${k + 1}`, nom: noms[k] || `Secteur ${k + 1}`, image: img || null,
+          zone: zp.length === 4 && zp.every((v) => isFinite(v)) ? { x: zp[0], y: zp[1], w: zp[2], h: zp[3] } : null });
+      }
+      return out.length ? out : [{ id: "sec-1", nom: "Secteur 1", image: null }];
+    })(), tracks: [] }));
     const terrById = Object.fromEntries(terrs.map((t) => [t.id, t]));
-    TRK.filter((r) => r.TraqueId).forEach((r) => { const t = terrById[r.TerritoireId]; if (!t) return; t.tracks.push({ id: r.TraqueId, name: r.Traque || "Traque", color: r.Couleur || "#dc2626", crop: { x: Number(r.crop_x) || 0, y: Number(r.crop_y) || 0, w: Number(r.crop_w) || 100, h: Number(r.crop_h) || 100 }, miradors: [] }); });
+    TRK.filter((r) => r.TraqueId).forEach((r) => { const t = terrById[r.TerritoireId]; if (!t) return; t.tracks.push({ id: r.TraqueId, name: r.Traque || "Traque", secteurId: r.SecteurId || "", color: r.Couleur || "#dc2626", crop: { x: Number(r.crop_x) || 0, y: Number(r.crop_y) || 0, w: Number(r.crop_w) || 100, h: Number(r.crop_h) || 100 }, miradors: [] }); });
     const trkById = {}; terrs.forEach((t) => t.tracks.forEach((k) => { trkById[k.id] = k; }));
     M.filter((r) => r.MiradorId).forEach((r) => { const k = trkById[r.TraqueId]; if (!k) return; const photos = []; for (let pi = 0; ; pi++) { const b = blob(`mirador|${r.MiradorId}|${pi}`); if (!b) break; photos.push(b); } k.miradors.push({ id: r.MiradorId, label: r.Mirador || "Poste", gx: Number(r.gx) || 50, gy: Number(r.gy) || 50, priority: Number(r.Priorite) || 1, armes: String(r.Armes || r.Arme || "").split("|").map((x) => x.trim().toLowerCase()).filter((x) => x && x !== "indifferent"), deposeHab: r.DeposeHab ? String(r.DeposeHab) : "", consignes: r.Consignes || "", photos }); });
     terrs.forEach((t) => { if (!t.tracks.length) t.tracks.push({ id: `trk-${Date.now()}`, name: "Traque 1", color: "#dc2626", crop: { ...DEFAULT_CROP }, miradors: [] }); });
@@ -4820,7 +4987,7 @@ function CarnetApp({ session, onSignOut }) {
       setDismissBanner(true); skipDirty.current = true; setDirty(false); window.alert("Sauvegarde importée ✔ (photos comprises).");
     } catch (ex) { window.alert("Import impossible : " + (ex.message || ex)); } finally { if (importFileRef.current) importFileRef.current.value = ""; }
   };
-  const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !t.planImage);
+  const missingImages = terrains.some((t) => (t.tracks || []).some((k) => (k.miradors?.length > 0)) && !aUneImage(t));
   const tabs = [{ id: "journees", label: "Journées", icon: CalendarDays }, { id: "terrains", label: "Territoires", icon: MapPin }, { id: "carnet", label: "Carnet de chasse", icon: BookOpen }, { id: "participants", label: "Membres", icon: Users }, { id: "securite", label: "Sécurité", icon: Shield }];
 
   if (!loaded) return <div className="min-h-screen bg-stone-100 flex items-center justify-center text-stone-500 text-sm">Chargement du carnet…</div>;
