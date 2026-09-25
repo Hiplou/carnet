@@ -280,11 +280,11 @@ function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc
     return { x: Math.max(0, Math.min(100, +z.x)), y: Math.max(0, Math.min(100, +z.y)), w: Math.max(4, Math.min(100, +z.w)), h: Math.max(4, Math.min(100, +z.h)) };
   };
   let secteurs = Array.isArray(t.secteurs) ? t.secteurs.filter((s) => s && s.id).slice(0, MAX_SECTEURS)
-    .map((s, k) => ({ id: s.id, nom: String(s.nom || `Secteur ${k + 1}`).slice(0, 30), image: s.image || null, zone: bornerZone(s.zone) })) : [];
+    .map((s, k) => ({ id: s.id, nom: String(s.nom || `Secteur ${k + 1}`).slice(0, 30), image: s.image || null, zone: bornerZone(s.zone), geo: (s.geo && isFinite(s.geo.x1)) ? s.geo : null })) : [];
   if (!secteurs.length) secteurs = [{ id: "sec-1", nom: "Secteur 1", image: t.planImage || null }];
   const idsSec = secteurs.map((s) => s.id);
   tracks.forEach((tr) => { if (idsSec.indexOf(tr.secteurId) < 0) tr.secteurId = secteurs[0].id; });
-  return { id: t.id, name: t.name || "Territoire", vueEnsemble: t.vueEnsemble || null, secteurs, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
+  return { id: t.id, name: t.name || "Territoire", vueEnsemble: t.vueEnsemble || null, vueGeo: (t.vueGeo && isFinite(t.vueGeo.x1)) ? t.vueGeo : null, secteurs, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
 function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
 function splitFullName(full) { const parts = (full || "").trim().split(/\s+/).filter(Boolean); if (!parts.length) return { prenom: "", nom: "" }; if (parts.length === 1) return { prenom: parts[0], nom: "" }; return { prenom: parts[0], nom: parts.slice(1).join(" ") }; }
@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v2.9";
+const APP_VERSION = "v3.2";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -528,9 +528,34 @@ function cropWrapperStyle(crop, ar) { const pb = ar > 0 ? (crop.h / crop.w) / ar
 function cropBgStyle(image, crop) { const fw = crop.w / 100, fh = crop.h / 100, fx = crop.x / 100, fy = crop.y / 100; return { position: "absolute", inset: 0, backgroundImage: `url(${image})`, backgroundRepeat: "no-repeat", backgroundSize: `${100 / fw}% ${100 / fh}%`, backgroundPosition: `${fw < 1 ? (fx / (1 - fw)) * 100 : 0}% ${fh < 1 ? (fy / (1 - fh)) * 100 : 0}%` }; }
 
 // ---------- Recadrage ----------
+// Report d'un point d'une carte a l'autre. Les deux cartes connaissent leurs bornes
+// geographiques : un poste garde donc sa position reelle, quel que soit le recadrage.
+function reporterPoint(gx, gy, A, B) {
+  const X = A.x1 + (gx / 100) * (A.x2 - A.x1);
+  const Y = A.y2 - (gy / 100) * (A.y2 - A.y1);
+  return { gx: +(((X - B.x1) / (B.x2 - B.x1)) * 100).toFixed(2), gy: +(((B.y2 - Y) / (B.y2 - B.y1)) * 100).toFixed(2) };
+}
+function dansLaCarte(p) { return p.gx >= -2 && p.gx <= 102 && p.gy >= -2 && p.gy <= 102; }
+// Reporte tout ce qu'une traque porte : postes, points de depose, departs, contour, cadrage.
+function reporterTraque(tr, A, B) {
+  const pt = (o) => { const p = reporterPoint(o.gx, o.gy, A, B); return { ...o, gx: p.gx, gy: p.gy }; };
+  const out = { ...tr };
+  let perdus = 0;
+  out.miradors = (tr.miradors || []).map((m) => { const n = pt(m); if (!dansLaCarte(n)) perdus++; return n; });
+  out.deposes = (tr.deposes || []).map(pt);
+  out.departs = (tr.departs || []).map(pt);
+  out.zone = Array.isArray(tr.zone) ? tr.zone.map(pt) : [];
+  if (tr.crop) {
+    const a = reporterPoint(tr.crop.x, tr.crop.y, A, B);
+    const b = reporterPoint(tr.crop.x + tr.crop.w, tr.crop.y + tr.crop.h, A, B);
+    const x = Math.max(0, Math.min(100, a.gx)), y = Math.max(0, Math.min(100, a.gy));
+    out.crop = { x, y, w: Math.max(5, Math.min(100 - x, b.gx - a.gx)), h: Math.max(5, Math.min(100 - y, b.gy - a.gy)) };
+  }
+  return { tr: out, perdus };
+}
 // Puzzle des secteurs : chaque secteur occupe un rectangle de la carte d'ensemble.
 // Une capture n'a aucune coordonnee : c'est l'utilisateur qui pose ses morceaux.
-function PuzzleBox({ image, secteurs, actifId, onSelect, onZone }) {
+function PuzzleBox({ image, secteurs, actifId, onSelect, onZone, onZoneFin }) {
   const boxRef = useRef(null); const drag = useRef(null);
   const secRef = useRef(secteurs); secRef.current = secteurs;
   const MIN = 6;
@@ -551,11 +576,11 @@ function PuzzleBox({ image, secteurs, actifId, onSelect, onZone }) {
       }
       onZone(d.id, { x: +z.x.toFixed(2), y: +z.y.toFixed(2), w: +z.w.toFixed(2), h: +z.h.toFixed(2) });
     };
-    const onUp = () => { drag.current = null; };
+    const onUp = () => { const d = drag.current; drag.current = null; if (d && onZoneFin) onZoneFin(d.id); };
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp); window.addEventListener("pointercancel", onUp);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onUp); };
-  }, [onZone]);
+  }, [onZone, onZoneFin]);
   const startMove = (e, s) => {
     e.stopPropagation(); e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
@@ -976,6 +1001,30 @@ function TrackEditor({ image, secteurs, track, updateTrack, consignesCommunes, s
 }
 
 const IGN_WMTS = "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}";
+// Recupere une portion de carte IGN pour des bornes donnees (coordonnees projetees EPSG:3857).
+function loadWms(layer, fmt, sw, ne, W, H) {
+  return new Promise((resolve, reject) => {
+    const url = "https://data.geopf.fr/wms-r/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=" + layer + "&STYLES=&CRS=EPSG:3857&BBOX=" + sw.x + "," + sw.y + "," + ne.x + "," + ne.y + "&WIDTH=" + W + "&HEIGHT=" + H + "&FORMAT=" + fmt + "&TRANSPARENT=true";
+    const img = new Image(); img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Téléchargement de la carte impossible."));
+    img.src = url;
+  });
+}
+// Compose une image a partir des fonds IGN demandes, pour la zone donnee.
+async function composeIgn(sw, ne, op, largeur) {
+  const ratio = (ne.y - sw.y) / (ne.x - sw.x);
+  const W = largeur || 1600, H = Math.max(400, Math.min(2000, Math.round(W * ratio)));
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+  for (let fi = 0; fi < IGN_FONDS.length; fi++) {
+    const f = IGN_FONDS[fi]; const a = (op[f.key] || 0) / 100; if (a <= 0) continue;
+    try { const im = await loadWms(f.wms, fi === 0 ? f.fmt : "image/png", sw, ne, W, H); ctx.globalAlpha = a; ctx.drawImage(im, 0, 0, W, H); ctx.globalAlpha = 1; }
+    catch (e) { if (fi === 0) throw e; }
+  }
+  return cv.toDataURL("image/jpeg", 0.85);
+}
 const IGN_FONDS = [
   { key: "ortho", label: "🛰️ Satellite", wmts: "HR.ORTHOIMAGERY.ORTHOPHOTOS", wms: "ORTHOIMAGERY.ORTHOPHOTOS", fmt: "image/jpeg" },
   { key: "plan", label: "🗺️ Plan IGN", wmts: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", wms: "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2", fmt: "image/png" }
@@ -1022,27 +1071,14 @@ function IgnMapPicker({ onCapture, onCancel }) {
     return () => clearTimeout(id);
   }, [q]);
   const goTo = (r) => { const map = mapRef.current; if (map) map.setView([r.lat, r.lon], 15); setRes([]); skipRef.current = true; setQ(r.label); };
-  const loadWms = (layer, fmt, sw, ne, W, H) => new Promise((resolve, reject) => {
-    const url = "https://data.geopf.fr/wms-r/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=" + layer + "&STYLES=&CRS=EPSG:3857&BBOX=" + sw.x + "," + sw.y + "," + ne.x + "," + ne.y + "&WIDTH=" + W + "&HEIGHT=" + H + "&FORMAT=" + fmt + "&TRANSPARENT=true";
-    const img = new Image(); img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Téléchargement de la carte impossible."));
-    img.src = url;
-  });
   const capture = async () => {
     const map = mapRef.current; if (!map) return;
     setBusy(true); setErr("");
     try {
       const b = map.getBounds(); const sw = L.CRS.EPSG3857.project(b.getSouthWest()); const ne = L.CRS.EPSG3857.project(b.getNorthEast());
-      const ratio = (ne.y - sw.y) / (ne.x - sw.x);
-      const W = 1600, H = Math.max(400, Math.min(1600, Math.round(W * ratio)));
-      const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const ctx = cv.getContext("2d");
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
-      for (let fi = 0; fi < IGN_FONDS.length; fi++) {
-        const f = IGN_FONDS[fi]; const a = (op[f.key] || 0) / 100; if (a <= 0) continue;
-        try { const imX = await loadWms(f.wms, fi === 0 ? f.fmt : "image/png", sw, ne, W, H); ctx.globalAlpha = a; ctx.drawImage(imX, 0, 0, W, H); ctx.globalAlpha = 1; } catch (e) { if (fi === 0) throw e; }
-      }
-      onCapture(cv.toDataURL("image/jpeg", 0.85));
+      const data = await composeIgn(sw, ne, op);
+      // On retient les bornes : elles permettront de redecouper la carte secteur par secteur.
+      onCapture(data, { x1: sw.x, y1: sw.y, x2: ne.x, y2: ne.y, op: { ...op } });
     } catch (e) { setErr("Capture impossible : " + (e.message || e) + " Réessaie ou importe une image."); } finally { setBusy(false); }
   };
   const [panel, setPanel] = useState(false);
@@ -1097,7 +1133,7 @@ function PlanImagePicker({ image, onChange }) {
     } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
   };
   const onFile = async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); setErr(""); try { onChange(await downscaleImage(file)); } catch (ex) { setErr(ex.message); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } };
-  if (ign) return <IgnMapPicker onCancel={() => setIgn(false)} onCapture={(d) => { onChange(d); setIgn(false); }} />;
+  if (ign) return <IgnMapPicker onCancel={() => setIgn(false)} onCapture={(d, geo) => { onChange(d, geo); setIgn(false); }} />;
   return (<div className="space-y-2"><input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
     <div className="flex gap-2 items-center flex-wrap"><button onClick={() => setIgn(true)} className="flex items-center gap-2 bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><MapPin size={16} /> Choisir sur la carte IGN</button><button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Upload size={16} /> {image ? "Changer la photo" : "Importer une image"}</button>{image && <button onClick={() => { setCrop({ x: 0, y: 0, w: 100, h: 100 }); setCropMode(true); }} className="flex items-center gap-2 bg-stone-100 border border-stone-300 text-stone-700 text-sm font-medium px-3 py-2 rounded-md"><Crop size={16} /> Rogner</button>}{image && <button onClick={() => onChange(null)} className="text-sm text-red-700">Retirer</button>}</div>
     {busy && <p className="text-sm text-stone-500">Préparation…</p>}{err && <p className="text-sm text-red-700">{err}</p>}
@@ -1184,10 +1220,13 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
   const [tid] = useState(initialTerrain?.id || `t-${Date.now()}`);
   const [name, setName] = useState(initialTerrain?.name || "");
   const [vueEnsemble, setVueEnsemble] = useState(initialTerrain?.vueEnsemble || null);
+  const [vueGeo, setVueGeo] = useState(initialTerrain?.vueGeo || null);
+  const [fondSec, setFondSec] = useState({ ortho: 100, plan: 0 });
+  const [decoupe, setDecoupe] = useState("");
   const [secActif, setSecActif] = useState(null);
   const [secteurs, setSecteurs] = useState(() => {
     const l = initialTerrain && Array.isArray(initialTerrain.secteurs) ? initialTerrain.secteurs : null;
-    if (l && l.length) return l.map((s, k) => ({ id: s.id, nom: s.nom || `Secteur ${k + 1}`, image: s.image || null, zone: s.zone || null }));
+    if (l && l.length) return l.map((s, k) => ({ id: s.id, nom: s.nom || `Secteur ${k + 1}`, image: s.image || null, zone: s.zone || null, geo: s.geo || null }));
     return [{ id: "sec-1", nom: "Secteur 1", image: (initialTerrain && initialTerrain.planImage) || null }];
   });
   const [planChasse, setPlanChasse] = useState(normPlan(initialTerrain?.planChasse));
@@ -1196,8 +1235,43 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
   const [consignesCommunes, setConsignesCommunes] = useState(initialTerrain?.consignesCommunes || []);
   const firstRun = useRef(true);
   // Auto-enregistrement en direct : dès qu'on change photo / traque / mirador, on l'enregistre sans attendre le bouton
-  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", vueEnsemble, secteurs, tracks, planChasse, consignesCommunes }); }, [name, vueEnsemble, secteurs, tracks, planChasse, consignesCommunes]);
+  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } onLiveCommit && onLiveCommit({ id: tid, name: name.trim() || "Territoire", vueEnsemble, vueGeo, secteurs, tracks, planChasse, consignesCommunes }); }, [name, vueEnsemble, vueGeo, secteurs, tracks, planChasse, consignesCommunes]);
   const updateTrack = (id, patch) => setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  // Un morceau du puzzle = une portion de la vue d'ensemble. Comme on connait ses bornes
+  // geographiques, on redemande cette portion a l'IGN en pleine resolution.
+  const decouperSecteur = async (id, fonds) => {
+    if (!vueGeo) return;
+    const sec = secteurs.find((x) => x.id === id); if (!sec || !sec.zone) return;
+    const nbPostes = tracks.filter((t) => t.secteurId === id).reduce((n, t) => n + (t.miradors || []).length, 0);
+    // Sans les bornes de l'ancienne carte, on ne sait pas ou etaient les postes : on previent.
+    if (sec.image && nbPostes > 0 && !sec.geo && !window.confirm(`« ${sec.nom} » a déjà une carte avec ${nbPostes} poste(s) placé(s), mais l'app ne connaît pas la position de cette ancienne carte : les postes ne pourront pas être reportés et seront à replacer. Continuer ?`)) return;
+    const z = sec.zone;
+    const LX = vueGeo.x2 - vueGeo.x1, LY = vueGeo.y2 - vueGeo.y1;
+    // En image, y descend ; en coordonnees projetees, y monte.
+    const sw = { x: vueGeo.x1 + (z.x / 100) * LX, y: vueGeo.y2 - ((z.y + z.h) / 100) * LY };
+    const ne = { x: vueGeo.x1 + ((z.x + z.w) / 100) * LX, y: vueGeo.y2 - (z.y / 100) * LY };
+    setDecoupe(`Découpe de « ${sec.nom} » en cours…`);
+    try {
+      const data = await composeIgn(sw, ne, fonds || fondSec);
+      const B = { x1: sw.x, y1: sw.y, x2: ne.x, y2: ne.y };
+      setSecteurs((prev) => prev.map((x) => x.id === id ? { ...x, image: data, geo: B } : x));
+      if (sec.geo && nbPostes > 0) {
+        let perdus = 0;
+        setTracks((prev) => prev.map((t) => {
+          if (t.secteurId !== id) return t;
+          const r = reporterTraque(t, sec.geo, B); perdus += r.perdus; return r.tr;
+        }));
+        setDecoupe(perdus > 0
+          ? `« ${sec.nom} » mis à jour. ${nbPostes - perdus} poste(s) reporté(s), ${perdus} hors du nouveau cadrage — élargis le morceau pour les récupérer.`
+          : `« ${sec.nom} » mis à jour. Les ${nbPostes} poste(s) ont suivi, rien à replacer.`);
+      } else {
+        setDecoupe(`« ${sec.nom} » mis à jour depuis l'IGN.`);
+      }
+    } catch (e) {
+      setDecoupe("Découpe impossible : " + (e.message || e));
+    }
+  };
+
   const addTrack = () => { const id = `trk-${Date.now()}`; setTracks((prev) => [...prev, { id, name: `Traque ${prev.length + 1}`, secteurId: (secteurs[0] || {}).id || "sec-1", color: PALETTE[prev.length % PALETTE.length], crop: { ...DEFAULT_CROP }, miradors: [] }]); setTab(id); };
   const deleteTrack = (id) => { if (tracks.length === 1) { alert("Il faut au moins une traque."); return; } if (!window.confirm("Supprimer cette traque ?")) return; setTracks((prev) => { const next = prev.filter((t) => t.id !== id); if (tab === id) setTab("plan"); return next; }); };
   const current = tracks.find((t) => t.id === tab);
@@ -1217,11 +1291,22 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
       <div className="border border-stone-200 rounded-lg p-2.5 bg-stone-50 space-y-2">
         <p className="text-[10px] uppercase tracking-wide text-stone-400">🧩 Vue d'ensemble</p>
         <p className="text-[11px] text-stone-500">Charge une capture large de tout le territoire, puis pose chaque secteur dessus. Touche un morceau pour ouvrir son secteur.</p>
-        <PlanImagePicker image={vueEnsemble} onChange={setVueEnsemble} />
+        <PlanImagePicker image={vueEnsemble} onChange={(img, geo) => { setVueEnsemble(img); setVueGeo(geo || null); }} />
+        {vueEnsemble && !vueGeo && (<p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">Cette vue a été importée, pas prise sur la carte IGN : l'app ne connaît pas sa position, elle ne peut donc pas découper les secteurs toute seule. Reprends-la depuis « Choisir sur la carte IGN » pour en profiter.</p>)}
         {vueEnsemble && (<>
           <PuzzleBox image={vueEnsemble} secteurs={secteurs} actifId={secActif}
             onSelect={(id) => setSecActif(id)}
-            onZone={(id, z) => setSecteurs((prev) => prev.map((x) => x.id === id ? { ...x, zone: z } : x))} />
+            onZone={(id, z) => setSecteurs((prev) => prev.map((x) => x.id === id ? { ...x, zone: z } : x))}
+            onZoneFin={(id) => decouperSecteur(id, fondSec)} />
+          {vueGeo && (<div className="bg-white border border-stone-200 rounded-lg p-2 space-y-1.5">
+            <p className="text-[11px] text-stone-500">Dès que tu lâches un morceau, sa carte est découpée à ce cadrage et chargée en pleine résolution.</p>
+            <div className="flex gap-1.5">
+              {[["🛰️ Satellite", { ortho: 100, plan: 0 }], ["Sat + Plan", { ortho: 100, plan: 55 }], ["🗺️ Plan IGN", { ortho: 0, plan: 100 }]].map(([lbl, v]) => (
+                <button key={lbl} onClick={() => { setFondSec(v); if (secActif) decouperSecteur(secActif, v); }}
+                  className={`flex-1 text-[11.5px] font-medium rounded-md py-2 border ${fondSec.ortho === v.ortho && fondSec.plan === v.plan ? "bg-stone-800 text-stone-50 border-stone-800" : "bg-white text-stone-600 border-stone-300"}`}>{lbl}</button>))}
+            </div>
+            {decoupe && <p className="text-[11px] text-stone-500 text-center">{decoupe}</p>}
+          </div>)}
           {secteurs.filter((s) => !s.zone).length > 0 && (<div className="flex flex-wrap gap-2">
             {secteurs.filter((s) => !s.zone).map((s, k) => (<button key={s.id} onClick={() => {
               setSecteurs((prev) => prev.map((x) => x.id === s.id ? { ...x, zone: { x: 10 + (k % 3) * 12, y: 10 + (k % 3) * 12, w: 30, h: 30 } } : x));
@@ -1244,7 +1329,16 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
               setSecteurs((prev) => prev.filter((x) => x.id !== s.id));
             }} className="text-red-700 shrink-0 px-1.5" title="Supprimer ce secteur"><Trash2 size={15} /></button>)}
           </div>
-          <PlanImagePicker image={s.image} onChange={(img) => setSecteurs((prev) => prev.map((x) => x.id === s.id ? { ...x, image: img } : x))} />
+          <PlanImagePicker image={s.image} onChange={(img, geo) => {
+            const B = geo ? { x1: geo.x1, y1: geo.y1, x2: geo.x2, y2: geo.y2 } : null;
+            const nb = tracks.filter((t) => t.secteurId === s.id).reduce((n, t) => n + (t.miradors || []).length, 0);
+            if (s.geo && B && nb > 0) {
+              let perdus = 0;
+              setTracks((prev) => prev.map((t) => { if (t.secteurId !== s.id) return t; const r = reporterTraque(t, s.geo, B); perdus += r.perdus; return r.tr; }));
+              setDecoupe(perdus > 0 ? `${nb - perdus} poste(s) reporté(s), ${perdus} hors cadrage.` : `Les ${nb} poste(s) ont suivi.`);
+            }
+            setSecteurs((prev) => prev.map((x) => x.id === s.id ? { ...x, image: img, geo: B } : x));
+          }} />
           <p className="text-[10px] text-stone-400">{nbTraques === 0 ? "Aucune traque sur ce secteur." : `${nbTraques} traque(s) sur ce secteur.`}</p>
         </div>);
       })}
@@ -1253,7 +1347,7 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
     </div>)
       : tab === "chasse" ? (<PlanChasseEditor planChasse={planChasse} setPlanChasse={setPlanChasse} journees={journees} tid={tid} />)
       : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={(secteurs.find((s) => s.id === current.secteurId) || secteurs[0] || {}).image || null} secteurs={secteurs} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} suggDep={suggDep} /></div>) : null}
-    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", vueEnsemble, secteurs, tracks, planChasse, consignesCommunes })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
+    <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", vueEnsemble, vueGeo, secteurs, tracks, planChasse, consignesCommunes })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
   </SectionCard>);
 }
 
@@ -1269,6 +1363,7 @@ function copierTerritoire(t) {
     id: nouvelId("t"),
     name: (t.name || "Territoire") + " (copie)",
     vueEnsemble: t.vueEnsemble || null,
+    vueGeo: t.vueGeo || null,
     secteurs: (t.secteurs || []).map((s) => ({ ...s })),
     consignesCommunes: (t.consignesCommunes || []).map((c) => ({ id: nouvelId("cc"), text: c.text || "", miradorIds: [] })),
     planChasse: t.planChasse || {},
@@ -2536,10 +2631,12 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 
 const SHARED_TAIL = `;
 var AR=1.5, me=null;
+/* La carte d une traque vit dans DATA.images, rangee par secteur. */
+function imgDe(t){ return (t&&t.sec&&DATA.images&&DATA.images[t.sec])||DATA.image||""; }
 /* Chaque secteur a sa propre capture : on mesure les proportions de chacune. */
 var ARS={};
 function arDe(t){
-  var src=(t&&t.image)||DATA.image;if(!src)return AR;
+  var src=imgDe(t);if(!src)return AR;
   if(ARS[src])return ARS[src];
   ARS[src]=AR;
   var im2=new Image();
@@ -2558,7 +2655,7 @@ function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s;}
 function fmtDate(d){try{return cap(new Date(d).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));}catch(e){return d;}}
 function myMir(ti){if(!me)return null;for(var k=0;k<me.posts.length;k++){if(me.posts[k].traqueIndex===ti)return me.posts[k].miradorId;}return null;}
 var MAP_I=0;
-function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+(t.image||DATA.image)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();(function(){var dep=t.deposes||[],dpt=t.departs||[],tr=t.transport||{};var utilises={};for(var q in tr){if(tr[q]&&tr[q].departId)utilises[tr[q].departId]=1;}function poser(d,couleur,icone){if(!isFinite(d.gx)||!isFinite(d.gy))return;var lx=(d.gx-c.x)/c.w*100,ly=(d.gy-c.y)/c.h*100;if(lx<-5||lx>105||ly<-5||ly>105)return;var el=document.createElement('div');el.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;z-index:2';el.innerHTML="<span style='width:13px;height:13px;border-radius:50%;background:"+couleur+";border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)'></span>"+"<span style='font-size:9px;line-height:1.1;background:rgba(255,255,255,.85);color:#1c1917;padding:1px 4px;border-radius:4px;white-space:nowrap'>"+icone+" "+d.nom+"</span>";map.appendChild(el);}if(SHOW_DEPOSE&&typeof me!=='undefined'&&me&&me.id){var moi=me.id,maV=null,vv=t.voitures||[];for(var w=0;w<vv.length;w++){if(vv[w].conducteurId===moi){maV=vv[w];break;}var pz=vv[w].passagers||[];for(var y=0;y<pz.length;y++){if(pz[y].id===moi){maV=vv[w];break;}}if(maV)break;}var ptDe=function(id){if(!id)return null;for(var i=0;i<dep.length;i++){if(dep[i].id===id)return dep[i];}return null;};var trouve=ptDe((tr[moi]||{}).deposeId)||ptDe(maV&&maV.deposeId);if(trouve)poser(trouve,'#1c1917','\u{1F17F}\u{FE0F}');}if(SHOW_DEPART)for(var j2=0;j2<dpt.length;j2++)poser(dpt[j2],'#166534','\u{1F6A9}');})();(function(){if(!SHOW_ZONE)return;var z=t.zone||[];if(z.length<2)return;var pts=z.map(function(q){return ((q.gx-c.x)/c.w*100)+' '+((q.gy-c.y)/c.h*100);});var d='M '+pts.join(' L ')+((t.zoneFermee&&z.length>=3)?' Z':'');var NSZ='http://www.w3.org/2000/svg';var sv=document.createElementNS(NSZ,'svg');sv.setAttribute('viewBox','0 0 100 100');sv.setAttribute('preserveAspectRatio','none');sv.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';var col=t.color||'#dc2626';function trait(couleur,ep,op){var pa=document.createElementNS(NSZ,'path');pa.setAttribute('d',d);pa.setAttribute('fill','none');pa.setAttribute('stroke',couleur);pa.setAttribute('stroke-width',ep);pa.setAttribute('stroke-linejoin','round');pa.setAttribute('stroke-linecap','round');pa.setAttribute('opacity',op);pa.setAttribute('vector-effect','non-scaling-stroke');return pa;}sv.appendChild(trait('#ffffff','5','.55'));sv.appendChild(trait(col,'3.5','.85'));map.appendChild(sv);})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}(function(){var tr2=t.transport||{},moi=(me&&me.id)||"",dep2=t.deposes||[],maV2=null,vv2=t.voitures||[];for(var w1=0;w1<vv2.length;w1++){if(vv2[w1].conducteurId===moi){maV2=vv2[w1];break;}var pz2=vv2[w1].passagers||[];for(var y1=0;y1<pz2.length;y1++){if(pz2[y1].id===moi){maV2=vv2[w1];break;}}if(maV2)break;}var idDep=((tr2[moi]||{}).deposeId)||(maV2&&maV2.deposeId)||"",okDep=false;for(var i2=0;i2<dep2.length;i2++){if(dep2[i2].id===idDep)okDep=true;}var okDepart=(t.departs||[]).length>0;var mid2=myMir(index),okCone=false;(t.miradors||[]).forEach(function(m){if(m.id===mid2&&m.tir&&m.tir.zones&&m.tir.zones.length)okCone=true;});var okZone=((t.zone||[]).length>=2),okRdv=false;(function(){var mine=null,ps=(me&&me.posts)||[];for(var q2=0;q2<ps.length;q2++){if(ps[q2].traqueIndex===index){mine=ps[q2];break;}}var wanted=(mine&&mine.chefId)||"",lst=t.rdv||[];if(!wanted&&((me&&me.chefMids)||[]).length){for(var z2=0;z2<lst.length;z2++){if(me&&me.name&&lst[z2].chefName===me.name){wanted=lst[z2].chefId;break;}}}if(!wanted)return;for(var w2=0;w2<lst.length;w2++){if(lst[w2].chefId===wanted)okRdv=true;}})();function majCase(id,ok,val){var el=$(id);if(!el)return;el.disabled=!ok;el.checked=!!(ok&&val);var lb=el.parentElement;if(lb)lb.className="conetoggle"+(ok?"":" off");}majCase("deposeToggle",okDep,SHOW_DEPOSE);majCase("departToggle",okDepart,SHOW_DEPART);majCase("coneToggle",okCone,SHOW_CONES);majCase("rdvToggle",okRdv,SHOW_RDV);majCase("zoneToggle",okZone,SHOW_ZONE);})();activerZoom(map);}
+function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+imgDe(t)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();(function(){var dep=t.deposes||[],dpt=t.departs||[],tr=t.transport||{};var utilises={};for(var q in tr){if(tr[q]&&tr[q].departId)utilises[tr[q].departId]=1;}function poser(d,couleur,icone){if(!isFinite(d.gx)||!isFinite(d.gy))return;var lx=(d.gx-c.x)/c.w*100,ly=(d.gy-c.y)/c.h*100;if(lx<-5||lx>105||ly<-5||ly>105)return;var el=document.createElement('div');el.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;z-index:2';el.innerHTML="<span style='width:13px;height:13px;border-radius:50%;background:"+couleur+";border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)'></span>"+"<span style='font-size:9px;line-height:1.1;background:rgba(255,255,255,.85);color:#1c1917;padding:1px 4px;border-radius:4px;white-space:nowrap'>"+icone+" "+d.nom+"</span>";map.appendChild(el);}if(SHOW_DEPOSE&&typeof me!=='undefined'&&me&&me.id){var moi=me.id,maV=null,vv=t.voitures||[];for(var w=0;w<vv.length;w++){if(vv[w].conducteurId===moi){maV=vv[w];break;}var pz=vv[w].passagers||[];for(var y=0;y<pz.length;y++){if(pz[y].id===moi){maV=vv[w];break;}}if(maV)break;}var ptDe=function(id){if(!id)return null;for(var i=0;i<dep.length;i++){if(dep[i].id===id)return dep[i];}return null;};var trouve=ptDe((tr[moi]||{}).deposeId)||ptDe(maV&&maV.deposeId);if(trouve)poser(trouve,'#1c1917','\u{1F17F}\u{FE0F}');}if(SHOW_DEPART)for(var j2=0;j2<dpt.length;j2++)poser(dpt[j2],'#166534','\u{1F6A9}');})();(function(){if(!SHOW_ZONE)return;var z=t.zone||[];if(z.length<2)return;var pts=z.map(function(q){return ((q.gx-c.x)/c.w*100)+' '+((q.gy-c.y)/c.h*100);});var d='M '+pts.join(' L ')+((t.zoneFermee&&z.length>=3)?' Z':'');var NSZ='http://www.w3.org/2000/svg';var sv=document.createElementNS(NSZ,'svg');sv.setAttribute('viewBox','0 0 100 100');sv.setAttribute('preserveAspectRatio','none');sv.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';var col=t.color||'#dc2626';function trait(couleur,ep,op){var pa=document.createElementNS(NSZ,'path');pa.setAttribute('d',d);pa.setAttribute('fill','none');pa.setAttribute('stroke',couleur);pa.setAttribute('stroke-width',ep);pa.setAttribute('stroke-linejoin','round');pa.setAttribute('stroke-linecap','round');pa.setAttribute('opacity',op);pa.setAttribute('vector-effect','non-scaling-stroke');return pa;}sv.appendChild(trait('#ffffff','5','.55'));sv.appendChild(trait(col,'3.5','.85'));map.appendChild(sv);})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}(function(){var tr2=t.transport||{},moi=(me&&me.id)||"",dep2=t.deposes||[],maV2=null,vv2=t.voitures||[];for(var w1=0;w1<vv2.length;w1++){if(vv2[w1].conducteurId===moi){maV2=vv2[w1];break;}var pz2=vv2[w1].passagers||[];for(var y1=0;y1<pz2.length;y1++){if(pz2[y1].id===moi){maV2=vv2[w1];break;}}if(maV2)break;}var idDep=((tr2[moi]||{}).deposeId)||(maV2&&maV2.deposeId)||"",okDep=false;for(var i2=0;i2<dep2.length;i2++){if(dep2[i2].id===idDep)okDep=true;}var okDepart=(t.departs||[]).length>0;var mid2=myMir(index),okCone=false;(t.miradors||[]).forEach(function(m){if(m.id===mid2&&m.tir&&m.tir.zones&&m.tir.zones.length)okCone=true;});var okZone=((t.zone||[]).length>=2),okRdv=false;(function(){var mine=null,ps=(me&&me.posts)||[];for(var q2=0;q2<ps.length;q2++){if(ps[q2].traqueIndex===index){mine=ps[q2];break;}}var wanted=(mine&&mine.chefId)||"",lst=t.rdv||[];if(!wanted&&((me&&me.chefMids)||[]).length){for(var z2=0;z2<lst.length;z2++){if(me&&me.name&&lst[z2].chefName===me.name){wanted=lst[z2].chefId;break;}}}if(!wanted)return;for(var w2=0;w2<lst.length;w2++){if(lst[w2].chefId===wanted)okRdv=true;}})();function majCase(id,ok,val){var el=$(id);if(!el)return;el.disabled=!ok;el.checked=!!(ok&&val);var lb=el.parentElement;if(lb)lb.className="conetoggle"+(ok?"":" off");}majCase("deposeToggle",okDep,SHOW_DEPOSE);majCase("departToggle",okDepart,SHOW_DEPART);majCase("coneToggle",okCone,SHOW_CONES);majCase("rdvToggle",okRdv,SHOW_RDV);majCase("zoneToggle",okZone,SHOW_ZONE);})();activerZoom(map);}
 function selectTraque(i){["tabs","mapTabs","postTabs"].forEach(function(id){var c=$(id);if(!c)return;var ks=c.children;for(var k=0;k<ks.length;k++)ks[k].classList.toggle("active",k===i);});renderMap(i);renderPostInfo(i);setHeroFor(i);}
 function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
 function setHeroFor(index){var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
@@ -2989,7 +3086,7 @@ function renderPostInfo(index){var card=$("postInfoCard");if(!card)return;if(!me
 function renderHero(){var hc=document.querySelector("#appview .hero");try{remplirVoiture(me&&me.id);}catch(e){}if(hc)hc.style.display="";var mh=document.querySelector(".maphint");if(mh)mh.textContent="Ton poste est surligné en orange · lecture seule";var p=me.posts[0];$("myTraque").textContent=p?p.traqueName:"—";$("myPost").textContent=p?p.label:"—";$("myName").textContent="🦌 "+me.name;var hchef=$("myHeroChef");if(hchef)hchef.style.display="none";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var ex=$("extra");ex.innerHTML="";me.posts.forEach(function(pp){var d=document.createElement("div");d.style.cssText="margin-top:7px;font-size:15px;line-height:1.35";d.innerHTML="• <b>"+aesc(pp.traqueName)+"</b> → "+aesc(pp.label)+(pp.chef?" <span style='color:#166534;font-weight:600'>· 👨‍✈️ "+aesc(pp.chef)+"</span>":"")+(typeof monTrajet==="function"?monTrajet(pp):"");ex.appendChild(d);});setupFeedback();renderAttribs();renderChef();}
 function renderChef(){var card=$("chefCard");var box=$("chefPosts");if(!card||!box)return;var list=(me&&me.chefPosts)||[];if(!list.length){card.style.display="none";return;}card.style.display="block";box.innerHTML="";var grp={};var ord=[];list.forEach(function(pp){if(!grp[pp.traqueName]){grp[pp.traqueName]=[];ord.push(pp.traqueName);}grp[pp.traqueName].push(pp);});ord.forEach(function(tn){var h=document.createElement("div");h.textContent=tn;h.style.cssText="font-weight:700;color:#166534;margin:10px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.03em";box.appendChild(h);grp[tn].forEach(function(pp){var d=document.createElement("div");d.style.cssText="display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:8px;margin-bottom:4px;background:#f5f5f4;font-size:14px";d.innerHTML="<span style='font-weight:600;color:#1c1917'>"+aesc(pp.label)+"</span><span style='color:#57534e'>"+aesc(pp.hunter||"libre")+"</span>";box.appendChild(d);});});var mids=(me&&me.chefMids)||[];var tabsEl=$("chefTabs");var mapEl=$("chefMap");if(!tabsEl||!mapEl)return;tabsEl.innerHTML="";var rel=[];DATA.traques.forEach(function(t,i){if((t.placed||[]).some(function(pp){return mids.indexOf(pp.mid)>=0;}))rel.push(i);});if(!rel.length){mapEl.style.display="none";return;}mapEl.style.display="block";rel.forEach(function(idx,k){var b=document.createElement("button");b.className="tab"+(k===0?" active":"");b.textContent=DATA.traques[idx].name;b.onclick=function(){var ch=tabsEl.children;for(var j=0;j<ch.length;j++)ch[j].className="tab";b.className="tab active";renderChefMap(idx);};tabsEl.appendChild(b);});renderChefMap(rel[0]);}
 var CHEF_I=0;
-function renderChefMap(index){CHEF_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("chefMap");if(!map)return;map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+(t.image||DATA.image)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);var mids=(me&&me.chefMids)||[];(t.placed||[]).forEach(function(pp){var lx=(pp.gx-c.x)/c.w*100,ly=(pp.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var isChef=mids.indexOf(pp.mid)>=0;var el=document.createElement("div");el.className="marker"+(isChef?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(isChef?"★ ":"")+aesc(pp.hunter||"")+"</span>";map.appendChild(el);});activerZoom(map);}
+function renderChefMap(index){CHEF_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("chefMap");if(!map)return;map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+imgDe(t)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);var mids=(me&&me.chefMids)||[];(t.placed||[]).forEach(function(pp){var lx=(pp.gx-c.x)/c.w*100,ly=(pp.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var isChef=mids.indexOf(pp.mid)>=0;var el=document.createElement("div");el.className="marker"+(isChef?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(isChef?"★ ":"")+aesc(pp.hunter||"")+"</span>";map.appendChild(el);});activerZoom(map);}
 var FB_SENT=true, FB_B=[], FB_S=[], FB_A=[];
 function fbHasData(){for(var i=0;i<FB_B.length;i++){if((FB_B[i]||0)>0)return true;if(FB_S[i])return true;var c=$("fbC"+i);if(c&&c.value)return true;if(FB_A[i]){for(var k in FB_A[i]){if(FB_A[i][k]>0)return true;}}}return false;}
 window.addEventListener("beforeunload",function(e){if(!FB_SENT&&fbHasData()){e.preventDefault();e.returnValue="";return "";}});
@@ -3072,7 +3169,13 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
     Object.keys(ids).forEach((id) => { const p = participants.find((x) => x.id === id); if (p) gens[id] = { n: p.name || "", t: String(p.phone || "").trim() }; });
     return { respId: journee.responsableId || "", gens: gens };
   })();
-  const DATA = { date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "", traques: (terrain.tracks || []).map((t) => ({ name: t.name, image: imageDe(terrain, t) || "", color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, deposes: [].concat((t.deposes || []), (((journee.deposesJourParTraque || {})[t.id]) || [])).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), departs: (t.departs || []).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), voitures: (((journee.voitures || {})[t.id]) || []).map((v) => { const c = participants.find((x) => x.id === v.conducteurId); const tp = ((journee.transport || {})[t.id]) || {}; const mes = Object.keys(tp).filter((id) => (tp[id] || {}).voitureId === v.id); return { id: v.id, conducteurId: v.conducteurId, deposeId: v.deposeId || "", vehicule: v.vehicule || "", conducteur: c ? c.name : "", passagers: mes.map((id) => { const q = participants.find((x) => x.id === id); return { id: id, nom: q ? q.name : "" }; }) }; }), transport: ((journee.transport || {})[t.id]) || {}, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
+  const DATA = { date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "",
+    images: (function () {
+      // Une carte peut servir a dix traques : on ne l'envoie qu'une fois.
+      const utiles = {}; (terrain.tracks || []).forEach((t) => { if (t.secteurId) utiles[t.secteurId] = true; });
+      const o = {}; (terrain.secteurs || []).forEach((s) => { if (s && s.image && utiles[s.id]) o[s.id] = s.image; });
+      return o;
+    })(), traques: (terrain.tracks || []).map((t) => ({ name: t.name, sec: t.secteurId || "", color: t.color, crop: t.crop || FULL_CROP, zone: Array.isArray(t.zone) ? t.zone : [], zoneFermee: !!t.zoneFermee, deposes: [].concat((t.deposes || []), (((journee.deposesJourParTraque || {})[t.id]) || [])).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), departs: (t.departs || []).map((d) => ({ id: d.id, nom: d.nom, gx: d.gx, gy: d.gy })), voitures: (((journee.voitures || {})[t.id]) || []).map((v) => { const c = participants.find((x) => x.id === v.conducteurId); const tp = ((journee.transport || {})[t.id]) || {}; const mes = Object.keys(tp).filter((id) => (tp[id] || {}).voitureId === v.id); return { id: v.id, conducteurId: v.conducteurId, deposeId: v.deposeId || "", vehicule: v.vehicule || "", conducteur: c ? c.name : "", passagers: mes.map((id) => { const q = participants.find((x) => x.id === id); return { id: id, nom: q ? q.name : "" }; }) }; }), transport: ((journee.transport || {})[t.id]) || {}, miradors: (t.miradors || []).map((m) => ({ id: m.id, label: m.label, gx: m.gx, gy: m.gy, tir: m.tir || null })), rdv: Object.entries((journee.rdv || {})[t.id] || {}).map(([cid, pos]) => { const c = participants.find((x) => x.id === cid); return c && pos ? { chefId: cid, chefName: c.name, gx: pos.gx, gy: pos.gy } : null; }).filter(Boolean), placed: Object.entries(journee.placements[t.id] || {}).map(([hid, mid]) => { const mm = (t.miradors || []).find((x) => x.id === mid); const pp = participants.find((x) => x.id === hid); return mm ? { mid: mid, gx: mm.gx, gy: mm.gy, hunter: pp ? pp.name : "" } : null; }).filter(Boolean), arrows: (journee.arrows && journee.arrows[t.id]) || [] })), chasseurs, rabatteurs: participants.filter((p) => p.role === "rabatteur" && (journee.presence || {})[p.id] && (journee.presence || {})[p.id].statut === "present").map((p) => p.name || "Rabatteur").sort((a, b) => byNom(a, b)), sonneries: safety.sonneries, consignes: safety.consignes, especes: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => ({ key: e.key, label: e.label, emoji: e.emoji })), attributions: ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => { const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" }; return { label: e.label, emoji: e.emoji, mode: a.mode || "libre", count: Number(a.count) || 0, note: (a.note || "").trim() }; }) };
   // Source unique : le calcul des cônes de la page chasseurs est généré à partir
   // de tirRender, la fonction utilisée côté organisateur. Impossible qu'elles divergent.
   const tail = SHARED_TAIL.replace("/*__TIRRENDER__*/", String(tirRender).replace(/^function\s+tirRender/, "function tirRenderJS"));
