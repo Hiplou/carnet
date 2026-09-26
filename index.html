@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v3.3";
+const APP_VERSION = "v3.4";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -4066,6 +4066,7 @@ function StepGroup({ label, children }) {
 
 function JourneesView({ journees, setJournees, terrains, setTerrains, participants, safety, github, setGithub, openSettings, userId, orgEmail }) {
   const [openJournee, setOpenJournee] = useState(null);
+  const [voirArchives, setVoirArchives] = useState(false);
   const majJournee = (jid, patch) => setJournees((prev) => prev.map((j) => j.id === jid ? { ...j, ...patch } : j));
   const majPoints = (jid, terrId, trackId, type, action, data) => {
     if (type === "jour") {
@@ -4168,7 +4169,34 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     setPostesPrint(buildPrintHtml(journee, terrain, participants, safety));
   };
   const addJournee = () => { const id = `j-${Date.now()}`; setJournees((prev) => [...prev, normJournee({ id, pubV: 2, date: new Date().toISOString().slice(0, 10), terrainId: terrains[0]?.id || null })]); setOpenJournee(id); };
-  const removeJournee = (id) => { if (window.confirm("Supprimer cette journée ?")) setJournees((prev) => prev.filter((j) => j.id !== id)); };
+  // Archiver ne perd rien : la journee disparait seulement de la liste. Elle continue de
+  // nourrir les propositions (chauffeurs, deposes, chefs de ligne).
+  const archiverJournee = (id) => {
+    if (!window.confirm("Archiver cette journée ?\n\nElle disparaît de la liste, mais rien n'est perdu : tu la retrouves dans les Archives, en bas de la page.")) return;
+    setJournees((prev) => prev.map((j) => j.id === id ? { ...j, archivee: true } : j));
+    setOpenJournee(null);
+  };
+  const desarchiverJournee = (id) => setJournees((prev) => prev.map((j) => j.id === id ? { ...j, archivee: false } : j));
+  // La suppression definitive n'est possible que depuis les archives, et retire aussi la page en ligne.
+  const supprimerDefinitivement = async (j) => {
+    const quand = new Date(j.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+    const t = window.prompt("SUPPRESSION DÉFINITIVE de la journée du " + quand + ".\n\nTu perdras son tableau de chasse, les placements, les voitures et les retours des chasseurs. Le lien envoyé aux chasseurs cessera de fonctionner, et cette journée ne servira plus aux propositions.\n\nRien ne pourra être récupéré. Pour confirmer, tape SUPPRIMER :");
+    if (String(t || "").trim().toUpperCase() !== "SUPPRIMER") return;
+    let avert = "";
+    try {
+      const fn = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
+      let sess = null; try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
+      if (!sess || !sess.access_token) throw new Error("session expirée");
+      const ancien = pubSlug + "-" + String(j.id || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 10);
+      const slugs = Array.from(new Set([slugJournee(j), ancien].filter(Boolean)));
+      const r = await fetch(fn + "/unpublish", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token }, body: JSON.stringify({ slugs }) });
+      if (!r.ok) throw new Error("réponse " + r.status);
+    } catch (e) {
+      avert = "La journée est supprimée, mais la page en ligne n'a pas pu être retirée (" + ((e && e.message) || e) + "). Le lien envoyé aux chasseurs peut encore fonctionner.";
+    }
+    setJournees((prev) => prev.filter((x) => x.id !== j.id));
+    if (avert) window.alert(avert);
+  };
   const setJourneeDate = (id, date) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, date } : j)));
   const setJourneeTerrain = (id, terrainId) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, terrainId, placements: {} } : j)));
   const toggleInvite = (jid, mid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const inv = j.invites || []; return { ...j, invites: inv.includes(mid) ? inv.filter((x) => x !== mid) : [...inv, mid] }; }));
@@ -4236,7 +4264,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   return (<div className="space-y-3">
     {postesPrint && <PrintOverlay html={postesPrint} onClose={() => setPostesPrint(null)} />}
     <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Journées de chasse</h2><button onClick={addJournee} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouvelle journée</button></div>
-    {journees.map((j) => { const isOpen = openJournee === j.id; const terrain = terrains.find((t) => t.id === j.terrainId);
+    {[...journees].filter((j) => !j.archivee).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).map((j) => { const isOpen = openJournee === j.id; const terrain = terrains.find((t) => t.id === j.terrainId);
       const dateFr = new Date(j.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
       // ---- Résumés et avancement de chaque étape ----
@@ -4308,7 +4336,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                     <input type="date" value={j.date} onChange={(e) => setJourneeDate(j.id, e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1 text-sm bg-white" /></div>
                   <div><label className="text-[11px] uppercase tracking-wide text-stone-400">Territoire</label>
                     <select value={terrains.some((t) => t.id === j.terrainId) ? j.terrainId : ""} onChange={(e) => setJourneeTerrain(j.id, e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1 text-sm bg-white"><option value="" disabled>Choisir…</option>{[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-                  <button onClick={() => removeJournee(j.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette journée</button>
+                  <button onClick={() => archiverJournee(j.id)} className="flex items-center gap-1 text-xs text-stone-600 hover:text-stone-900">📦 Archiver cette journée</button>
                 </div>
               </StepPanel>
             </StepGroup>
@@ -4433,6 +4461,28 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
           </div>
         </div>)}
       </SectionCard>); })}
+    {journees.some((j) => j.archivee) && (<div className="pt-2">
+      <button onClick={() => setVoirArchives((v) => !v)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-stone-100 border border-stone-200 text-sm text-stone-600">
+        <span className="flex items-center gap-2">{voirArchives ? <ChevronDown size={15} /> : <ChevronRight size={15} />} 📦 Archives</span>
+        <span className="text-xs text-stone-400">{journees.filter((j) => j.archivee).length} journée(s)</span>
+      </button>
+      {voirArchives && (<div className="mt-2 space-y-1.5">
+        <p className="text-[11px] text-stone-400 px-1">Les journées archivées restent complètes et continuent de servir aux propositions. Tu peux les ramener dans la liste, ou les supprimer définitivement.</p>
+        {[...journees].filter((j) => j.archivee).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).map((j) => {
+          const t = terrains.find((x) => x.id === j.terrainId);
+          return (<div key={j.id} className="bg-white border border-stone-200 rounded-lg px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm text-stone-700 truncate">{new Date(j.date).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long", year: "numeric" })}</span>
+              <span className="text-xs text-stone-400 shrink-0">{t ? t.name : ""}</span>
+            </div>
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => desarchiverJournee(j.id)} className="flex-1 text-[12px] font-medium text-stone-700 bg-white border border-stone-300 rounded-md py-1.5">↩ Ramener dans la liste</button>
+              <button onClick={() => supprimerDefinitivement(j)} className="flex-1 text-[12px] font-medium text-red-700 bg-white border border-red-200 rounded-md py-1.5 flex items-center justify-center gap-1"><Trash2 size={12} /> Supprimer</button>
+            </div>
+          </div>);
+        })}
+      </div>)}
+    </div>)}
   </div>);
 }
 
