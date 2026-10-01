@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v3.6";
+const APP_VERSION = "v3.8";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -548,8 +548,11 @@ function reporterTraque(tr, A, B) {
   if (tr.crop) {
     const a = reporterPoint(tr.crop.x, tr.crop.y, A, B);
     const b = reporterPoint(tr.crop.x + tr.crop.w, tr.crop.y + tr.crop.h, A, B);
-    const x = Math.max(0, Math.min(100, a.gx)), y = Math.max(0, Math.min(100, a.gy));
-    out.crop = { x, y, w: Math.max(5, Math.min(100 - x, b.gx - a.gx)), h: Math.max(5, Math.min(100 - y, b.gy - a.gy)) };
+    // On borne chaque coin a la nouvelle carte : si le haut depasse, la hauteur
+    // raccourcit d'autant au lieu de faire glisser tout le cadrage vers le bas.
+    const bn = (v) => Math.max(0, Math.min(100, v));
+    const x = bn(a.gx), y = bn(a.gy), x2 = bn(b.gx), y2 = bn(b.gy);
+    out.crop = { x, y, w: Math.max(5, x2 - x), h: Math.max(5, y2 - y) };
   }
   return { tr: out, perdus };
 }
@@ -980,6 +983,13 @@ function TrackEditor({ image, secteurs, track, updateTrack, consignesCommunes, s
       <p className="text-[10px] text-stone-400 mt-1">{(track.miradors || []).length > 0
         ? "Verrouillé : des postes sont déjà placés sur cette carte. Supprime-les pour changer de secteur."
         : "La carte sur laquelle cette traque est dessinée."}</p></div>)}
+    {(() => {
+      const hors = (track.miradors || []).filter((m) => !(m.gx >= -2 && m.gx <= 102 && m.gy >= -2 && m.gy <= 102));
+      if (!hors.length) return null;
+      return (<p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+        ⚠️ {hors.length} poste(s) hors de la carte de ce secteur : {hors.map((m) => m.label || "?").join(", ")}. Ils ne sont pas perdus — élargis le morceau de ce secteur sur la vue d'ensemble (onglet Cartes) pour les faire réapparaître.
+      </p>);
+    })()}
     <div><label className="text-xs uppercase tracking-wide text-stone-400 block mb-1.5">Couleur des pastilles</label><ColorPicker value={track.color || "#dc2626"} onChange={(c) => updateTrack({ color: c })} /></div>
     <button onClick={() => setShowCrop((s) => !s)} className="flex items-center gap-2 bg-stone-700 hover:bg-stone-800 text-stone-50 text-sm font-medium px-3 py-2 rounded-md"><Crop size={15} /> {showCrop ? "Terminer le cadrage" : "Choisir le cadrage de la traque"}</button>
     {showCrop && (<div className="space-y-1.5"><p className="text-xs text-stone-500">Déplace le rectangle (au centre) et tire ses 4 coins pour délimiter la zone de cette traque.</p><CropBox image={image} crop={crop} setCrop={(c) => updateTrack({ crop: c })} /></div>)}
@@ -1308,8 +1318,9 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
               if (!s.zone) return s;
               const a = reporterPoint(s.zone.x, s.zone.y, A, B);
               const b = reporterPoint(s.zone.x + s.zone.w, s.zone.y + s.zone.h, A, B);
-              const x = Math.max(0, Math.min(96, a.gx)), y = Math.max(0, Math.min(96, a.gy));
-              return { ...s, zone: { x, y, w: Math.max(4, Math.min(100 - x, b.gx - a.gx)), h: Math.max(4, Math.min(100 - y, b.gy - a.gy)) } };
+              const bn = (v) => Math.max(0, Math.min(100, v));
+              const x = Math.min(96, bn(a.gx)), y = Math.min(96, bn(a.gy)), x2 = bn(b.gx), y2 = bn(b.gy);
+              return { ...s, zone: { x, y, w: Math.max(4, x2 - x), h: Math.max(4, y2 - y) } };
             }));
           }
           setVueEnsemble(img); setVueGeo(geo || null);
@@ -3935,20 +3946,24 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
   };
   const copyEmails = () => { const emails = invitedEmails(); if (!emails.length) { window.alert("Aucun invité avec email."); return; } const txt = emails.join(", "); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Emails copiés ✓ Colle-les dans le champ Cci.")); else window.prompt("Copie les emails :", txt); };
   const copyMsg = () => { const txt = subject + "\n\n" + body; if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => window.alert("Message copié ✓")); else window.prompt("Copie le message :", txt); };
-  const exportDinerExcel = () => {
+  const exportDinerExcel = () => exportRepasExcel("diner");
+  const exportRepasExcel = (repas) => {
+    const RP = REPAS[repas] || REPAS.diner;
     try {
-      const list = invited.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => byNom(a.name || "", b.name || ""));
-      const rows = list.map((p) => { const sup = Number((pres[p.id] || {}).invitesSup) || 0; return { Nom: p.name || "", "Invités supplémentaires": sup, Convives: 1 + sup }; });
+      const list = invited.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr[RP.cle]; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+      const rows = list.map((p) => { const sup = Number((pres[p.id] || {})[RP.inv]) || 0; return { Nom: p.name || "", "Invités supplémentaires": sup, Convives: 1 + sup }; });
       const total = rows.reduce((s, r) => s + r.Convives, 0);
       rows.push({ Nom: "TOTAL", "Invités supplémentaires": "", Convives: total });
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Nom: "" }]), "Dîner");
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Nom: "" }]), RP.onglet);
       const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }); const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const fn = "diner-" + (journee.date || "") + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
+      const fn = RP.fichier + "-" + (journee.date || "") + ".xlsx"; const file = new File([blob], fn, { type: blob.type });
       if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: fn }).catch(() => {}); } else { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
     } catch (e) { window.alert("Export impossible : " + (e.message || e)); }
   };
   const nbPres = invited.filter((p) => (pres[p.id] || {}).statut === "present").length;
   const nbDiner = invited.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).diner).length;
+  const nbDej = invited.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).dej).length;
+  const nbDejSup = invited.reduce((s, p) => s + (((pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).dej) ? (Number((pres[p.id] || {}).dejInvites) || 0) : 0), 0);
   const nbSup = invited.reduce((s, p) => s + (((pres[p.id] || {}).statut === "present") ? (Number((pres[p.id] || {}).invitesSup) || 0) : 0), 0);
   return (<SecWrap bare={bare}>
     {!bare && <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between">
@@ -4018,9 +4033,11 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
       {showPresence && invited.length > 0 && (<div>
         {emarg && <PrintOverlay html={emarg} onClose={() => setEmarg(null)} />}
         <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
-          <button onClick={() => setShowPres((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Présences · {nbPres}/{invited.length} présents · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + " invités)" : ""} {showPres ? "▲" : "▼"}</button>
+          <button onClick={() => setShowPres((v) => !v)} className="text-xs uppercase tracking-wide text-stone-400 flex items-center gap-1">Présences · {nbPres}/{invited.length} présents · 🥪 {nbDej}{nbDejSup ? " (+" + nbDejSup + ")" : ""} · 🍽️ {nbDiner}{nbSup ? " (+" + nbSup + ")" : ""} {showPres ? "▲" : "▼"}</button>
           <div className="flex gap-1.5 flex-wrap">
             <button onClick={() => { if (!nbPres) { window.alert("Coche au moins un présent."); return; } setEmarg(buildEmargementHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-emerald-700 hover:bg-emerald-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Émargement</button>
+            <button onClick={() => { if (!nbDej) { window.alert("Personne n'est inscrit au déjeuner."); return; } setEmarg(buildDejeunerHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Déjeuner PDF</button>
+            <button onClick={() => exportRepasExcel("dejeuner")} className="flex items-center gap-1 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 rounded shrink-0"><Download size={13} /> Déjeuner Excel</button>
             <button onClick={() => { if (!nbDiner) { window.alert("Personne n'est inscrit au dîner."); return; } setEmarg(buildDinerHtml(journee, terrain, participants)); }} className="flex items-center gap-1 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white px-2 py-1 rounded shrink-0"><FileText size={13} /> Dîner PDF</button>
             <button onClick={exportDinerExcel} className="flex items-center gap-1 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white px-2 py-1 rounded shrink-0"><Download size={13} /> Dîner Excel</button>
           </div>
@@ -4036,7 +4053,10 @@ function InvitationsSection({ journee, terrain, participants, orgEmail, onToggle
                   <button onClick={() => onSetPresence(journee.id, p.id, { statut: pr.statut === "absent" ? null : "absent" })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.statut === "absent" ? "bg-red-700 text-white border-red-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>Absent</button>
                 </div>
               </div>
-              {pr.statut === "present" && (<div className="flex items-center gap-3 mt-2 pt-2 border-t border-stone-100">
+              {pr.statut === "present" && (<div className="flex items-center gap-3 mt-2 pt-2 border-t border-stone-100 flex-wrap">
+                <button onClick={() => onSetPresence(journee.id, p.id, { dej: !pr.dej })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.dej ? "bg-amber-600 text-white border-amber-600" : "bg-stone-100 text-stone-600 border-stone-200"}`}>🥪 Déjeuner</button>
+                {pr.dej && (<span className="flex items-center gap-1 text-xs text-stone-600">+ invités
+                  <input type="number" inputMode="numeric" value={pr.dejInvites || 0} onFocus={(e) => e.target.select()} onChange={(e) => onSetPresence(journee.id, p.id, { dejInvites: Math.max(0, parseInt(e.target.value || "0", 10) || 0) })} className="w-14 border border-stone-300 rounded px-2 py-1 bg-white" /></span>)}
                 <button onClick={() => onSetPresence(journee.id, p.id, { diner: !pr.diner })} className={`px-2 py-1 rounded text-xs font-medium border ${pr.diner ? "bg-amber-700 text-white border-amber-700" : "bg-stone-100 text-stone-600 border-stone-200"}`}>🍽️ Dîner</button>
                 {pr.diner && (<span className="flex items-center gap-1 text-xs text-stone-600">+ invités
                   <input type="number" inputMode="numeric" value={pr.invitesSup || 0} onFocus={(e) => e.target.select()} onChange={(e) => onSetPresence(journee.id, p.id, { invitesSup: Math.max(0, parseInt(e.target.value || "0", 10) || 0) })} className="w-14 border border-stone-300 rounded px-2 py-1 bg-white" /></span>)}
@@ -4294,6 +4314,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
       const invited = j.invites || [];
       const nbPres = participants.filter((p) => (pres[p.id] || {}).statut === "present").length;
       const nbDiner = participants.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).diner).length;
+      const nbDej = participants.filter((p) => (pres[p.id] || {}).statut === "present" && (pres[p.id] || {}).dej).length;
       const nbSup = participants.reduce((n, p) => n + (((pres[p.id] || {}).statut === "present") ? (Number((pres[p.id] || {}).invitesSup) || 0) : 0), 0);
       const tracks = terrain ? (terrain.tracks || []) : [];
       const totalPostes = tracks.reduce((n, t) => n + (t.miradors || []).length, 0);
@@ -4370,7 +4391,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                   <InvitationsSection bare part="invite" journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
                 </StepPanel>
 
-                <StepTile id="pres" num={2} emoji="✅" title="Présences" sub={invited.length ? nbPres + " présent" + (nbPres > 1 ? "s" : "") + " · " + nbDiner + " au dîner" + (nbSup ? " (+" + nbSup + ")" : "") : "invite d'abord des membres"} state={stPres} open={step} onToggle={setStep} />
+                <StepTile id="pres" num={2} emoji="✅" title="Présences" sub={invited.length ? nbPres + " présent" + (nbPres > 1 ? "s" : "") + " · " + nbDej + " au déj. · " + nbDiner + " au dîner" + (nbSup ? " (+" + nbSup + ")" : "") : "invite d'abord des membres"} state={stPres} open={step} onToggle={setStep} />
                 <StepPanel id="pres" open={step}>
                   <InvitationsSection bare part="presence" journee={j} terrain={terrain} participants={participants} orgEmail={orgEmail} onToggleInvite={toggleInvite} onSetPresence={setPresence} onSetMsg={setInviteMsg} />
                 </StepPanel>
@@ -4409,12 +4430,13 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
             <StepGroup label="Prêt à partir">
               <div className="grid grid-cols-2 gap-2.5">
                 <GridTile id="partage" emoji="📤" title="Envoyer les postes" sub={(pub.status === "live" || pub.status === "ok") ? "● En ligne" : "pas encore envoyé"} subCls={(pub.status === "live" || pub.status === "ok") ? "text-emerald-700" : "text-stone-400"} open={step} onToggle={setStep} />
-                <GridTile id="docs" emoji="🖨️" title="Documents" sub="Postes, émargement, dîner" open={step} onToggle={setStep} />
+                <GridTile id="docs" emoji="🖨️" title="Documents" sub="Postes, émargement, repas" open={step} onToggle={setStep} />
               </div>
               <StepPanel id="docs" open={step}>
                 {terrain ? (<div className="space-y-2">
                   <button onClick={() => printPostes(j)} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">📄 Imprimer les postes</button>
                   <button onClick={() => { if (!nbPres) { window.alert("Coche d'abord des présents à l'étape Présences."); return; } setPostesPrint(buildEmargementHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">✍️ Feuille d'émargement</button>
+                  <button onClick={() => { if (!nbDej) { window.alert("Personne n'est inscrit au déjeuner."); return; } setPostesPrint(buildDejeunerHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">🥪 Liste du déjeuner (PDF)</button>
                   <button onClick={() => { if (!nbDiner) { window.alert("Personne n'est inscrit au dîner."); return; } setPostesPrint(buildDinerHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">🍽️ Liste du dîner (PDF)</button>
                 </div>) : <p className="text-sm text-stone-500 italic">Choisis d'abord un territoire.</p>}
               </StepPanel>
@@ -4525,14 +4547,22 @@ function computeStats(inSeason, terrains, participants) {
   return { totalAnimals, totalBullets, ratio: totalAnimals ? totalBullets / totalAnimals : 0, bySpecies, byShooter, byPost, perJournee };
 }
 const STATS_CSS = "@page{margin:14mm}body{font-family:Georgia,serif;color:#1c1917;margin:0}header{border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}h2{font-size:16px;margin:18px 0 6px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:12px;margin-bottom:8px}th{text-align:left;color:#78716c;font-size:10px;text-transform:uppercase;border-bottom:1px solid #e7e5e4;padding:4px}td{padding:4px;border-bottom:1px solid #f0efee}.c{text-align:center}.tot{display:flex;gap:20px;margin-bottom:6px}.tot b{font-size:22px;color:#166534}";
-function buildDinerHtml(journee, terrain, participants) {
+// Deux repas, un seul gabarit. Chacun a sa case et son propre compteur d'invites.
+const REPAS = {
+  dejeuner: { cle: "dej", inv: "dejInvites", titre: "Liste du déjeuner", court: "déjeuner", emo: "🥪", onglet: "Déjeuner", fichier: "dejeuner" },
+  diner: { cle: "diner", inv: "invitesSup", titre: "Liste du dîner", court: "dîner", emo: "🍽️", onglet: "Dîner", fichier: "diner" }
+};
+function buildDinerHtml(journee, terrain, participants) { return buildRepasHtml(journee, terrain, participants, "diner"); }
+function buildDejeunerHtml(journee, terrain, participants) { return buildRepasHtml(journee, terrain, participants, "dejeuner"); }
+function buildRepasHtml(journee, terrain, participants, repas) {
+  const RP = REPAS[repas] || REPAS.diner;
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const df = (d) => { try { return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { return d; } };
   const pres = journee.presence || {};
-  const list = participants.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr.diner; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const list = participants.filter((p) => { const pr = pres[p.id] || {}; return pr.statut === "present" && pr[RP.cle]; }).sort((a, b) => byNom(a.name || "", b.name || ""));
   let total = 0;
-  let rows = list.map((p, i) => { const sup = Number((pres[p.id] || {}).invitesSup) || 0; const conv = 1 + sup; total += conv; return "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td class='c'>" + sup + "</td><td class='c'>" + conv + "</td></tr>"; }).join("");
-  if (!rows) rows = "<tr><td colspan='4' style='text-align:center;color:#999;padding:14px'>Personne n'est encore inscrit au dîner.</td></tr>";
+  let rows = list.map((p, i) => { const sup = Number((pres[p.id] || {})[RP.inv]) || 0; const conv = 1 + sup; total += conv; return "<tr><td class='num'>" + (i + 1) + "</td><td class='nom'>" + esc(p.name || "—") + "</td><td class='c'>" + sup + "</td><td class='c'>" + conv + "</td></tr>"; }).join("");
+  if (!rows) rows = "<tr><td colspan='4' style='text-align:center;color:#999;padding:14px'>Personne n'est encore inscrit au " + RP.court + ".</td></tr>";
   const css = "*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1c1917;margin:0;padding:28px 26px;background:#fff}"
     + ".head{border:2px solid #b45309;border-radius:12px;padding:16px 20px;margin-bottom:16px;background:#fffbeb}"
     + ".head h1{margin:0 0 4px;font-size:22px;color:#7c2d12}.head .sub{font-size:14px;color:#b45309;font-weight:600;text-transform:capitalize}"
@@ -4541,8 +4571,8 @@ function buildDinerHtml(journee, terrain, participants) {
     + "th,td{border:1px solid #e7e5e4;padding:9px 10px;text-align:left}th{background:#b45309;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.03em}"
     + "tbody tr:nth-child(even){background:#fafaf9}.num{width:26px;text-align:center;color:#78716c}.nom{font-weight:600}.c{text-align:center;width:120px}"
     + ".tot{margin-top:14px;font-size:16px;font-weight:700;color:#7c2d12;text-align:right}";
-  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Dîner</title><style>" + css + "</style></head><body>"
-    + "<div class='head'><h1>🍽️ Liste du dîner</h1><div class='sub'>" + esc(df(journee.date)) + "</div>"
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>" + RP.onglet + "</title><style>" + css + "</style></head><body>"
+    + "<div class='head'><h1>" + RP.emo + " " + RP.titre + "</h1><div class='sub'>" + esc(df(journee.date)) + "</div>"
     + "<div class='meta'><b>Territoire :</b> " + esc(terrain ? terrain.name : "—") + "</div></div>"
     + "<table><thead><tr><th class='num'>#</th><th>Prénom &amp; nom</th><th class='c'>Invités suppl.</th><th class='c'>Convives</th></tr></thead><tbody>" + rows + "</tbody></table>"
     + "<p class='tot'>Total : " + total + " convive" + (total > 1 ? "s" : "") + "</p>"
