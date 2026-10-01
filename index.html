@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v3.4";
+const APP_VERSION = "v3.5";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1292,7 +1292,7 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
         <p className="text-[10px] uppercase tracking-wide text-stone-400">🧩 Vue d'ensemble</p>
         <p className="text-[11px] text-stone-500">Charge une capture large de tout le territoire, puis pose chaque secteur dessus. Touche un morceau pour ouvrir son secteur.</p>
         <PlanImagePicker image={vueEnsemble} onChange={(img, geo) => { setVueEnsemble(img); setVueGeo(geo || null); }} />
-        {vueEnsemble && !vueGeo && (<p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">Cette vue a été importée, pas prise sur la carte IGN : l'app ne connaît pas sa position, elle ne peut donc pas découper les secteurs toute seule. Reprends-la depuis « Choisir sur la carte IGN » pour en profiter.</p>)}
+        {vueEnsemble && !vueGeo && (<p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">L'app ne connaît pas la position de cette vue sur le terrain : soit elle a été importée, soit elle a été prise avant la v3.0. Elle ne peut donc pas découper les secteurs. Reprends-la avec « Choisir sur la carte IGN », puis réajuste tes morceaux sur la nouvelle image.</p>)}
         {vueEnsemble && (<>
           <PuzzleBox image={vueEnsemble} secteurs={secteurs} actifId={secActif}
             onSelect={(id) => setSecActif(id)}
