@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v3.5";
+const APP_VERSION = "v3.6";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1117,7 +1117,7 @@ function IgnMapPicker({ onCapture, onCancel }) {
   </div>);
 }
 
-function PlanImagePicker({ image, onChange }) {
+function PlanImagePicker({ image, onChange, geo }) {
   const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [ign, setIgn] = useState(false);
   const [cropMode, setCropMode] = useState(false); const [crop, setCrop] = useState({ x: 0, y: 0, w: 100, h: 100 });
   const applyCrop = async () => {
@@ -1128,7 +1128,16 @@ function PlanImagePicker({ image, onChange }) {
       const sw = Math.max(1, Math.round(im.naturalWidth * crop.w / 100)), sh = Math.max(1, Math.round(im.naturalHeight * crop.h / 100));
       const cv = document.createElement("canvas"); cv.width = sw; cv.height = sh;
       cv.getContext("2d").drawImage(im, sx, sy, sw, sh, 0, 0, sw, sh);
-      onChange(cv.toDataURL("image/jpeg", 0.85));
+      // L'image rognee garde sa position sur le terrain : on recalcule les bornes
+      // de la portion conservee au lieu de les perdre.
+      let g2 = null;
+      if (geo && isFinite(geo.x1)) {
+        const LX = geo.x2 - geo.x1, LY = geo.y2 - geo.y1;
+        g2 = { ...geo,
+          x1: geo.x1 + (crop.x / 100) * LX, x2: geo.x1 + ((crop.x + crop.w) / 100) * LX,
+          y2: geo.y2 - (crop.y / 100) * LY, y1: geo.y2 - ((crop.y + crop.h) / 100) * LY };
+      }
+      onChange(cv.toDataURL("image/jpeg", 0.85), g2);
       setCrop({ x: 0, y: 0, w: 100, h: 100 }); setCropMode(false);
     } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
   };
@@ -1291,7 +1300,20 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
       <div className="border border-stone-200 rounded-lg p-2.5 bg-stone-50 space-y-2">
         <p className="text-[10px] uppercase tracking-wide text-stone-400">🧩 Vue d'ensemble</p>
         <p className="text-[11px] text-stone-500">Charge une capture large de tout le territoire, puis pose chaque secteur dessus. Touche un morceau pour ouvrir son secteur.</p>
-        <PlanImagePicker image={vueEnsemble} onChange={(img, geo) => { setVueEnsemble(img); setVueGeo(geo || null); }} />
+        <PlanImagePicker image={vueEnsemble} geo={vueGeo} onChange={(img, geo) => {
+          // Si l'ancienne et la nouvelle vue sont toutes deux situees, on reporte les morceaux du puzzle.
+          if (vueGeo && geo && isFinite(geo.x1)) {
+            const A = vueGeo, B = geo;
+            setSecteurs((prev) => prev.map((s) => {
+              if (!s.zone) return s;
+              const a = reporterPoint(s.zone.x, s.zone.y, A, B);
+              const b = reporterPoint(s.zone.x + s.zone.w, s.zone.y + s.zone.h, A, B);
+              const x = Math.max(0, Math.min(96, a.gx)), y = Math.max(0, Math.min(96, a.gy));
+              return { ...s, zone: { x, y, w: Math.max(4, Math.min(100 - x, b.gx - a.gx)), h: Math.max(4, Math.min(100 - y, b.gy - a.gy)) } };
+            }));
+          }
+          setVueEnsemble(img); setVueGeo(geo || null);
+        }} />
         {vueEnsemble && !vueGeo && (<p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">L'app ne connaît pas la position de cette vue sur le terrain : soit elle a été importée, soit elle a été prise avant la v3.0. Elle ne peut donc pas découper les secteurs. Reprends-la avec « Choisir sur la carte IGN », puis réajuste tes morceaux sur la nouvelle image.</p>)}
         {vueEnsemble && (<>
           <PuzzleBox image={vueEnsemble} secteurs={secteurs} actifId={secActif}
@@ -1329,7 +1351,7 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
               setSecteurs((prev) => prev.filter((x) => x.id !== s.id));
             }} className="text-red-700 shrink-0 px-1.5" title="Supprimer ce secteur"><Trash2 size={15} /></button>)}
           </div>
-          <PlanImagePicker image={s.image} onChange={(img, geo) => {
+          <PlanImagePicker image={s.image} geo={s.geo} onChange={(img, geo) => {
             const B = geo ? { x1: geo.x1, y1: geo.y1, x2: geo.x2, y2: geo.y2 } : null;
             const nb = tracks.filter((t) => t.secteurId === s.id).reduce((n, t) => n + (t.miradors || []).length, 0);
             if (s.geo && B && nb > 0) {
