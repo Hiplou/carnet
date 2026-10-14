@@ -284,7 +284,7 @@ function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc
   if (!secteurs.length) secteurs = [{ id: "sec-1", nom: "Secteur 1", image: t.planImage || null }];
   const idsSec = secteurs.map((s) => s.id);
   tracks.forEach((tr) => { if (idsSec.indexOf(tr.secteurId) < 0) tr.secteurId = secteurs[0].id; });
-  return { id: t.id, name: t.name || "Territoire", vueEnsemble: t.vueEnsemble || null, vueGeo: (t.vueGeo && isFinite(t.vueGeo.x1)) ? t.vueGeo : null, secteurs, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc }; }
+  return { id: t.id, name: t.name || "Territoire", vueEnsemble: t.vueEnsemble || null, vueGeo: (t.vueGeo && isFinite(t.vueGeo.x1)) ? t.vueGeo : null, secteurs, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc, imageCouverture: (typeof t.imageCouverture === "string" && t.imageCouverture.indexOf("data:image") === 0) ? t.imageCouverture : null }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
 function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
 function splitFullName(full) { const parts = (full || "").trim().split(/\s+/).filter(Boolean); if (!parts.length) return { prenom: "", nom: "" }; if (parts.length === 1) return { prenom: parts[0], nom: "" }; return { prenom: parts[0], nom: parts.slice(1).join(" ") }; }
@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.7";
+const APP_VERSION = "v4.8";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1625,7 +1625,7 @@ function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
 function TerrainsView({ terrains, setTerrains, journees, github }) {
   const [editorState, setEditorState] = useState(null);
   const [partage, setPartage] = useState(false);
-  const commitTerrain = (terrain) => setTerrains((prev) => { const exists = prev.some((t) => t.id === terrain.id); return exists ? prev.map((t) => (t.id === terrain.id ? terrain : t)) : [...prev, terrain]; });
+  const commitTerrain = (terrain) => setTerrains((prev) => { const exists = prev.some((t) => t.id === terrain.id); return exists ? prev.map((t) => (t.id === terrain.id ? { ...terrain, imageCouverture: terrain.imageCouverture !== undefined ? terrain.imageCouverture : (t.imageCouverture || null) } : t)) : [...prev, terrain]; });
   const saveTerrain = (terrain) => { commitTerrain(terrain); setEditorState(null); };
   const deleteTerrain = (id) => { if (window.confirm("Supprimer ce territoire ?")) { setTerrains((prev) => prev.filter((t) => t.id !== id)); setEditorState(null); } };
   if (partage) return <PartageTerritoire terrains={terrains} setTerrains={setTerrains} github={github} onClose={() => setPartage(false)} />;
@@ -4040,6 +4040,146 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
     + "<div class='grille' style='grid-template-columns:repeat(" + cols + ",minmax(0,1fr))'>" + cases + "</div></section>" : "";
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Résumé — " + esc(terrain.name) + "</title><style>" + RESUME_CSS + "</style></head><body>" + page1 + page2 + "</body></html>";
 }
+
+// ======================= Livret du chasseur =======================
+// Une feuille A4 paysage, recto-verso, pliee en deux : un livret A5 de 4 pages par chasseur.
+// Recto : [page 4 | page 1 (accueil)]   Verso : [page 2 (postes, plan de chasse, sonneries) | page 3 (cartes)]
+// Toutes les tailles sont en largeurs de feuille (cqw) : meme rendu sur iPhone et sur ordinateur.
+const LIVRET_CSS = "@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+  + "html,body{margin:0;padding:0;background:#fff;color:#1c1917;font-family:Helvetica,Arial,sans-serif}"
+  + ".feuille{width:100%;aspect-ratio:1/0.64;container-type:inline-size;overflow:hidden;display:flex;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}"
+  + ".feuille:last-child{break-after:auto;page-break-after:auto}.feuille.inv{transform:rotate(180deg)}"
+  + ".pg{width:50cqw;height:64cqw;overflow:hidden;position:relative;display:flex;flex-direction:column}"
+  + ".pg.g{padding:2.2cqw 3.2cqw 2.2cqw 2cqw;border-right:0.12cqw dashed #d6d3d1}.pg.d{padding:2.2cqw 2cqw 2.2cqw 3.2cqw}"
+  + ".cv{align-items:center;text-align:center}"
+  + ".cv .dom{font-family:Georgia,serif;font-weight:bold;line-height:1.1;margin-top:2cqw}"
+  + ".cv .date{color:#57534e;font-size:2cqw;margin-top:1cqw}"
+  + ".cv .filet{width:12cqw;height:0.35cqw;background:#166534;margin:2.2cqw auto}"
+  + ".cv .img{flex:1 1 auto;min-height:0;width:100%;display:flex;align-items:center;justify-content:center}"
+  + ".cv .img img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;border-radius:1cqw}"
+  + ".cv .qui{margin-top:2.4cqw;border-top:0.3cqw solid #1c1917;border-bottom:0.3cqw solid #1c1917;padding:1.4cqw 0;width:100%}"
+  + ".cv .qui small{display:block;font-size:1.4cqw;letter-spacing:.2em;text-transform:uppercase;color:#57534e}"
+  + ".cv .qui b{display:block;margin-top:0.6cqw;white-space:nowrap}"
+  + ".cv .pied{margin-top:1.6cqw;font-size:1.2cqw;color:#a8a29e;letter-spacing:.08em}"
+  + "h2{font-family:Georgia,serif;margin:0 0 .5em;border-bottom:0.25cqw solid #166534;padding-bottom:.2em;line-height:1.3}"
+  + ".sec{margin-bottom:1.1em}"
+  + ".tp{width:100%;border-collapse:collapse;table-layout:fixed}.tp td{border-bottom:0.12cqw solid #d6d3d1;padding:.35em .3em;vertical-align:middle}"
+  + ".tp .tq{border-left:0.8cqw solid var(--c);font-weight:bold;padding-left:.6em}.tp .n{font-weight:bold;text-align:center;font-size:1.5em}.tp .lb{color:#44403c}.tp .chef{display:block;font-size:.8em;color:#57534e;font-style:italic}"
+  + ".at{display:flex;justify-content:space-between;gap:1em;padding:.35em .6em;border-radius:.4em;margin-bottom:.3em}"
+  + ".so{display:flex;gap:.8em;padding:.25em 0;border-bottom:0.12cqw solid #e7e5e4}.so .ev{font-weight:bold;width:40%;flex:none}"
+  + ".carte{display:flex;flex-direction:column;min-height:0;min-width:0}"
+  + ".carte .t{height:4cqw;margin-bottom:0.6cqw;font-size:1.6cqw;line-height:1.25;font-weight:bold;border-left:0.8cqw solid var(--c);padding-left:.6em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}"
+  + ".carte .t span{display:block;font-weight:normal;color:#57534e;font-size:.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+  + ".carte .z{flex:1 1 auto;min-height:0;display:flex;align-items:flex-start;justify-content:center}"
+  + ".carte .w{position:relative;display:inline-block;line-height:0}"
+  + ".carte .w img{display:block;max-width:100%;width:auto;height:auto;border:0.15cqw solid #a8a29e;border-radius:0.6cqw}"
+  + ".moi{position:absolute;transform:translate(-50%,-50%);width:4cqw;height:4cqw;border-radius:50%;background:#facc15;border:0.45cqw solid #1c1917;box-shadow:0 0 0 0.7cqw rgba(250,204,21,.55);display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:1.8cqw;line-height:1;color:#1c1917}"
+  + ".moi i{position:absolute;top:100%;margin-top:0.9cqw;left:50%;transform:translateX(-50%);background:#1c1917;color:#facc15;font-style:normal;font-size:1.2cqw;padding:0.35cqw 0.7cqw;border-radius:0.5cqw;white-space:nowrap;line-height:1}"
+  + ".fin{margin:auto;text-align:center;color:#a8a29e;font-family:Georgia,serif;font-size:2.4cqw}.fin img{display:block;width:9cqw;margin:0 auto 1.4cqw;opacity:.85}";
+function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, opts) {
+  opts = opts || {};
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
+  const tracks = terrain.tracks || [];
+  const chefs = journee.chefLignes || {};
+  const nameOf = (hid) => { const p = participants.find((x) => x.id === hid); return p ? (p.name || "") : ""; };
+  const W = 50 - 2 - 3.2;                       // largeur utile d'une demi-page
+  const H = 64 - 4.4;                           // hauteur utile
+  const imgAccueil = opts.image || opts.logo || "";
+  // plan de chasse (attributions du jour)
+  const attribs = ESPECES.filter((e) => e.key !== "autre" && terrain.planChasse && terrain.planChasse[e.key] && terrain.planChasse[e.key].enabled).map((e) => {
+    const a = (journee.attributions || {})[e.key] || { mode: "libre", count: 1, note: "" };
+    const n = Number(a.count) || 0;
+    const txt = a.mode === "bracelets" ? n + " bracelet" + (n > 1 ? "s" : "") : a.mode === "interdit" ? "Interdit" : "Libre";
+    const st = a.mode === "bracelets" ? "background:#dcfce7;color:#166534" : a.mode === "interdit" ? "background:#fee2e2;color:#b91c1c" : "background:#f5f5f4;color:#44403c";
+    return { label: (e.emoji ? e.emoji + " " : "") + e.label, txt: txt + ((a.note || "").trim() ? " — " + a.note.trim() : ""), st };
+  });
+  const sonneries = (safety && safety.sonneries || []).filter((s) => (s.evenement || "").trim() || (s.signal || "").trim());
+  const feuilles = [];
+  ids.forEach((hid) => {
+    const p = participants.find((x) => x.id === hid); if (!p) return;
+    const postes = [];
+    tracks.forEach((trk) => {
+      const mid = (journee.placements[trk.id] || {})[hid]; if (!mid) return;
+      const i = (trk.miradors || []).findIndex((m) => m.id === mid); if (i < 0) return;
+      postes.push({ trk, m: trk.miradors[i], num: numeroPoste(trk.miradors[i], i), chef: chefs[mid] ? nameOf(chefs[mid]) : "" });
+    });
+    const nomComplet = ((p.prenom || "") + " " + (p.nom || "")).trim() || p.name || "";
+    // ---- page 1 : accueil ----
+    const fDom = Math.min(4.6, (W - 2) / Math.max(1, mesureTexte(terrain.name || "", true) * 1.05));
+    const fNom = Math.min(4, (W - 2) / Math.max(1, mesureTexte(nomComplet, true)));
+    const p1 = "<div class='pg d cv'><div class='dom' style='font-size:" + Math.max(2.4, fDom).toFixed(2) + "cqw'>" + esc(terrain.name) + "</div>"
+      + "<div class='date'>" + esc(d) + "</div><div class='filet'></div>"
+      + "<div class='img'>" + (imgAccueil ? "<img src='" + imgAccueil + "' alt='' />" : "") + "</div>"
+      + "<div class='qui'><small>Chasseur</small><b style='font-size:" + Math.max(2, fNom).toFixed(2) + "cqw'>" + esc(nomComplet) + "</b></div>"
+      + "<div class='pied'>Carnet de Chasse</div></div>";
+    // ---- page 2 : postes, plan de chasse, sonneries ----
+    // Hauteur du contenu pour une taille de texte donnee (memes regles que la feuille de style),
+    // puis on prend la plus grande taille qui tient dans la page.
+    const lh = 1.3;
+    const lignesDe = (txt, gras, larg, f) => Math.max(1, Math.ceil(mesureTexte(txt || "", gras) * f * 1.06 / Math.max(0.5, larg)));
+    const hauteur = (f) => {
+      const titre = f * 1.37 * 2.05 + 0.3 + f * 1.1;
+      let h = titre + postes.reduce((s, x) => s + Math.max(1.95, lignesDe(x.trk.name, true, W * 0.4 - 0.8 - f * 0.95, f) * lh,
+        lignesDe(x.m.label, false, W * 0.45 - f * 0.6, f) * lh + (x.chef ? lignesDe("Chef de ligne : " + x.chef, false, W * 0.45 - f * 0.6, f * 0.8) * 0.8 * lh : 0)) * f + 0.7 * f + 0.12, 0);
+      if (!postes.length) h += f * 2.5;
+      if (attribs.length) h += titre + attribs.reduce((s, a) => s + (Math.max(lignesDe(a.label, true, W * 0.5 - f * 1.2, f), lignesDe(a.txt, true, W * 0.5 - f * 1.2, f)) * lh + 1.0) * f, 0);
+      if (sonneries.length) h += titre + sonneries.reduce((s, x) => s + (Math.max(lignesDe(x.evenement, true, W * 0.4, f), lignesDe(x.signal, false, W * 0.6 - f * 0.8, f)) * lh + 0.5) * f + 0.12, 0);
+      return h;
+    };
+    let fsN = 2.0;
+    while (fsN > 0.85 && hauteur(fsN) > H - 0.8) fsN -= 0.05;
+    const k = fsN / 1.75;
+    const fs = fsN.toFixed(2);
+    const secPostes = "<div class='sec'><h2 style='font-size:" + (fsN * 1.37).toFixed(2) + "cqw'>Mes postes</h2>"
+      + (postes.length ? "<table class='tp'><colgroup><col style='width:40%'><col style='width:15%'><col></colgroup>"
+        + postes.map((x) => "<tr><td class='tq' style='--c:" + (x.trk.color || "#166534") + "'>" + esc(x.trk.name) + "</td><td class='n'>" + esc(x.num) + "</td><td class='lb'>" + esc(x.m.label) + (x.chef ? "<span class='chef'>Chef de ligne : " + esc(x.chef) + "</span>" : "") + "</td></tr>").join("")
+        + "</table>" : "<p style='color:#a8a29e;font-style:italic'>Pas de poste attribué.</p>") + "</div>";
+    const secPlan = attribs.length ? "<div class='sec'><h2 style='font-size:" + (fsN * 1.37).toFixed(2) + "cqw'>Plan de chasse</h2>"
+      + attribs.map((a) => "<div class='at' style='" + a.st + "'><b style='color:#1c1917'>" + esc(a.label) + "</b><b style='text-align:right'>" + esc(a.txt) + "</b></div>").join("") + "</div>" : "";
+    const secSon = sonneries.length ? "<div class='sec'><h2 style='font-size:" + (fsN * 1.37).toFixed(2) + "cqw'>Annonces</h2>"
+      + sonneries.map((x) => "<div class='so'><span class='ev'>" + esc(x.evenement) + "</span><span>" + esc(x.signal) + "</span></div>").join("") + "</div>" : "";
+    const p2 = "<div class='pg g' style='font-size:" + fs + "cqw;line-height:" + lh + "'>" + secPostes + secPlan + secSon + "</div>";
+    // ---- pages 3 et 4 : les cartes, poste du chasseur en jaune ----
+    const avecCarte = postes.filter((x) => cartes[x.trk.id]);
+    const moitie = Math.ceil(avecCarte.length / 2);
+    const lot3 = avecCarte.length <= 1 ? avecCarte : avecCarte.slice(0, moitie);
+    const lot4 = avecCarte.length <= 1 ? [] : avecCarte.slice(moitie);
+    const pageCartes = (lot, cote) => {
+      if (!lot.length) return "<div class='pg " + cote + "'><div class='fin'>" + (opts.logo ? "<img src='" + opts.logo + "' alt='' />" : "") + "Bonne chasse !</div></div>";
+      // On essaie une colonne puis deux, et on garde la disposition ou les cartes sont les plus grandes.
+      const GAP = 1.4, TITRE = 4.6;
+      const essai = (c) => {
+        const r = Math.ceil(lot.length / c), wC = (W - (c - 1) * GAP) / c, hC = (H - (r - 1) * GAP) / r - TITRE;
+        return { c, r, wC, hC, aire: lot.reduce((s, x) => { const a = cartes[x.trk.id].a || 1; const l = Math.min(wC, hC / a); return s + l * l * a; }, 0) };
+      };
+      const choix = lot.length > 1 && essai(2).aire > essai(1).aire * 1.1 ? essai(2) : essai(1);
+      const hBloc = choix.hC + TITRE;
+      return "<div class='pg " + cote + "'><div style='display:grid;grid-template-columns:repeat(" + choix.c + ",minmax(0,1fr));gap:" + GAP + "cqw'>" + lot.map((x) => {
+        const c = cartes[x.trk.id]; const crop = x.trk.crop || FULL_CROP;
+        const px = (x.m.gx - crop.x) / crop.w * 100, py = (x.m.gy - crop.y) / crop.h * 100;
+        const dedans = px >= 0 && px <= 100 && py >= 0 && py <= 100;
+        const hImg = Math.max(8, choix.hC);
+        return "<div class='carte' style='height:" + hBloc.toFixed(2) + "cqw'><div class='t' style='--c:" + (x.trk.color || "#166534") + "'>" + esc(x.trk.name) + "<span>Mon poste : " + esc(x.m.label) + "</span></div>"
+          + "<div class='z'><div class='w'><img src='" + c.src + "' alt='' style='max-height:" + hImg.toFixed(2) + "cqw' />"
+          + (dedans ? "<div class='moi' style='left:" + px.toFixed(2) + "%;top:" + py.toFixed(2) + "%'>" + esc(x.num) + "<i>Mon poste</i></div>" : "")
+          + "</div></div></div>";
+      }).join("") + "</div></div>";
+    };
+    const p3 = pageCartes(lot3, "d"), p4 = pageCartes(lot4, "g");
+    feuilles.push("<section class='feuille'>" + p4 + p1 + "</section>");
+    feuilles.push("<section class='feuille" + (opts.retourner ? " inv" : "") + "'>" + p2 + p3 + "</section>");
+  });
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Livrets — " + esc(terrain.name) + "</title><style>" + LIVRET_CSS + "</style></head><body>" + feuilles.join("") + "</body></html>";
+}
+async function logoDataUrl() {
+  try {
+    const r = await fetch("icon.png"); if (!r.ok) return "";
+    const b = await r.blob();
+    return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result || "")); fr.onerror = () => res(""); fr.readAsDataURL(b); });
+  } catch (e) { return ""; }
+}
 function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onRemoveKill, onSetShot, onSetState }) {
   const [sub, setSub] = useState("final");
   const shots = j.shots || {};
@@ -4479,6 +4619,39 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   const copyPubLink = () => { const link = (pub && pub.url) ? pub.url : pubUrl; if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => window.alert("Lien copié ✓ Colle-le dans ton groupe WhatsApp.")); else window.prompt("Copie le lien :", link); };
   const [postesPrint, setPostesPrint] = useState(null);
   const [choixPrint, setChoixPrint] = useState(null);
+  // Livrets : quelle journee, quels chasseurs coches, verso a retourner ou non.
+  const [livret, setLivret] = useState(null);
+  const chasseursPlaces = (j, terr) => {
+    if (!terr) return [];
+    const ids = {};
+    (terr.tracks || []).forEach((trk) => Object.keys((j.placements || {})[trk.id] || {}).forEach((hid) => { ids[hid] = true; }));
+    return participants.filter((p) => ids[p.id]).sort((a, b) => (a.nom || nomKey(a.name)).localeCompare(b.nom || nomKey(b.name), "fr", { sensitivity: "base" }) || (a.prenom || "").localeCompare(b.prenom || "", "fr", { sensitivity: "base" }));
+  };
+  const ouvrirLivrets = (j) => {
+    const terr = terrains.find((t) => t.id === j.terrainId);
+    if (!terr) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
+    const liste = chasseursPlaces(j, terr);
+    if (!liste.length) { window.alert("Aucun chasseur n'est encore placé sur un poste."); return; }
+    setLivret({ jid: j.id, sel: Object.fromEntries(liste.map((p) => [p.id, true])), retourner: false });
+  };
+  const choisirCouverture = async (terrId, file) => {
+    try { const url = await downscaleImage(file, 1000, 0.75); setTerrains((prev) => prev.map((t) => (t.id === terrId ? { ...t, imageCouverture: url } : t))); }
+    catch (e) { window.alert(e.message || "Image illisible."); }
+  };
+  const printLivrets = async (j) => {
+    const terr = terrains.find((t) => t.id === j.terrainId); if (!terr || !livret) return;
+    const ids = chasseursPlaces(j, terr).filter((p) => livret.sel[p.id]).map((p) => p.id);
+    if (!ids.length) return;
+    // Une seule carte par traque pour tout le monde : le poste de chacun est surligne par-dessus.
+    const cartes = {};
+    for (const trk of (terr.tracks || [])) {
+      const im = imageDe(terr, trk);
+      if (im) { try { const src = await carteResumeImpression(im, trk); const el = await loadImg(src); cartes[trk.id] = { src, a: el.naturalHeight / Math.max(1, el.naturalWidth) }; } catch (e) {} }
+    }
+    const logo = await logoDataUrl();
+    setLivret(null);
+    setPostesPrint(buildLivretsHtml(j, terr, participants, safety, ids, cartes, { image: terr.imageCouverture || "", logo, retourner: !!livret.retourner }));
+  };
   // Resume de la journee : un tableau general puis toutes les cartes sur une page.
   const printResume = async (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
@@ -4735,7 +4908,42 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                       <span className="block text-sm font-semibold text-stone-800">Résumé de la journée</span>
                       <span className="block text-xs text-stone-500 mt-0.5">Tableau de tout le monde, puis toutes les cartes</span>
                     </button>
+                    <button onClick={() => { setChoixPrint(null); ouvrirLivrets(j); }} className="col-span-2 text-left bg-white border-2 border-emerald-700 rounded-lg px-3 py-2">
+                      <span className="block text-sm font-semibold text-stone-800">📖 Livret par chasseur</span>
+                      <span className="block text-xs text-stone-500 mt-0.5">A4 paysage recto-verso, plié en deux : accueil, ses postes, plan de chasse, annonces et ses cartes</span>
+                    </button>
                   </div>}
+                  {livret && livret.jid === j.id && (() => {
+                    const terr = terrains.find((t) => t.id === j.terrainId);
+                    const liste = chasseursPlaces(j, terr);
+                    const nbSel = liste.filter((p) => livret.sel[p.id]).length;
+                    return (<div className="bg-stone-50 border border-stone-200 rounded-lg p-3 space-y-3">
+                      <div className="flex items-center justify-between"><span className="text-sm font-semibold text-stone-800">📖 Livrets à imprimer</span><button onClick={() => setLivret(null)} className="text-xs text-stone-500 px-2 py-1">Fermer</button></div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-16 h-16 rounded-md border border-stone-200 bg-white flex items-center justify-center overflow-hidden shrink-0">
+                          {terr && terr.imageCouverture ? <img src={terr.imageCouverture} alt="" className="max-w-full max-h-full" /> : <img src="icon.png" alt="" className="w-10 h-10 opacity-70" />}
+                        </div>
+                        <div className="text-xs text-stone-500 flex-1">Image de la page d'accueil, pour ce territoire. {terr && terr.imageCouverture ? "" : "À défaut, le logo Carnet de Chasse."}
+                          <div className="flex gap-2 mt-1.5">
+                            <label className="text-xs font-medium text-emerald-800 bg-white border border-emerald-700 rounded px-2 py-1 cursor-pointer">Choisir une image<input type="file" accept="image/*" className="hidden" onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ""; if (f && terr) choisirCouverture(terr.id, f); }} /></label>
+                            {terr && terr.imageCouverture && <button onClick={() => setTerrains((prev) => prev.map((t) => (t.id === terr.id ? { ...t, imageCouverture: null } : t)))} className="text-xs text-stone-500 px-2 py-1">Retirer</button>}
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1"><span className="text-xs text-stone-500">{nbSel} / {liste.length} chasseur(s)</span>
+                          <span className="flex gap-2"><button onClick={() => setLivret({ ...livret, sel: Object.fromEntries(liste.map((p) => [p.id, true])) })} className="text-xs text-emerald-800 px-1">Tous</button><button onClick={() => setLivret({ ...livret, sel: {} })} className="text-xs text-stone-500 px-1">Aucun</button></span></div>
+                        <div className="max-h-64 overflow-auto bg-white border border-stone-200 rounded-md divide-y divide-stone-100">
+                          {liste.map((p) => (<label key={p.id} className="flex items-center gap-2 px-2.5 py-2 text-sm text-stone-800">
+                            <input type="checkbox" checked={!!livret.sel[p.id]} onChange={() => setLivret({ ...livret, sel: { ...livret.sel, [p.id]: !livret.sel[p.id] } })} className="w-4 h-4 accent-emerald-700" />{p.name}</label>))}
+                          {!liste.length && <p className="text-xs text-stone-400 p-2.5">Aucun chasseur placé pour l'instant.</p>}
+                        </div>
+                      </div>
+                      <label className="flex items-start gap-2 text-xs text-stone-600"><input type="checkbox" checked={!!livret.retourner} onChange={() => setLivret({ ...livret, retourner: !livret.retourner })} className="w-4 h-4 mt-0.5 accent-emerald-700" /><span>Le verso sort à l'envers ? Coche ici pour le retourner.</span></label>
+                      <p className="text-[11px] text-stone-400">À l'impression : paysage, recto-verso, retournement sur le bord court. Une feuille par chasseur.</p>
+                      <button disabled={!nbSel} onClick={() => printLivrets(j)} className="w-full bg-emerald-800 disabled:bg-stone-300 text-white text-sm font-semibold rounded-lg py-2.5">Imprimer {nbSel} livret{nbSel > 1 ? "s" : ""}</button>
+                    </div>);
+                  })()}
                   <button onClick={() => { if (!nbPres) { window.alert("Coche d'abord des présents à l'étape Présences."); return; } setPostesPrint(buildEmargementHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">✍️ Feuille d'émargement</button>
                   <button onClick={() => { if (!nbDej) { window.alert("Personne n'est inscrit au déjeuner."); return; } setPostesPrint(buildDejeunerHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">🥪 Liste du déjeuner (PDF)</button>
                   <button onClick={() => { if (!nbDiner) { window.alert("Personne n'est inscrit au dîner."); return; } setPostesPrint(buildDinerHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">🍽️ Liste du dîner (PDF)</button>
