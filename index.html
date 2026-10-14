@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.8";
+const APP_VERSION = "v4.10";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3802,8 +3802,9 @@ const PRINT_CSS = "@page{margin:14mm}*{box-sizing:border-box;-webkit-print-color
 // Une page fait 1,30 fois sa largeur : cela tient en A4 comme en format americain, marges comprises.
 const POSTES_CSS = "@page{margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
   + "html,body{margin:0;padding:0;background:#fff;color:#1c1917;font-family:Helvetica,Arial,sans-serif}"
-  + ".page{width:100%;aspect-ratio:1/1.3;container-type:inline-size;overflow:hidden;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}"
+  + ".page{position:relative;width:100%;aspect-ratio:1/1.3;container-type:inline-size;overflow:hidden;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}"
   + ".page:last-child{break-after:auto;page-break-after:auto}"
+  + ".cdc{position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:1.3cqw;color:#a8a29e;letter-spacing:.05em}"
   + ".tete{height:10.5cqw;border-bottom:0.6cqw solid #166534;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:1cqw}"
   + ".tete .l1{display:flex;align-items:baseline;justify-content:space-between;gap:2cqw}"
   + ".tete h1{margin:0;font-family:Georgia,serif;font-size:4.4cqw;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:1.3cqw solid #166534;padding-left:1.6cqw}"
@@ -3830,6 +3831,8 @@ function mesureTexte(txt, gras) {
     return _ctxMesure.measureText(String(txt)).width / 100 * 1.08;
   } catch (e) { return String(txt).length * (gras ? 0.66 : 0.6); }
 }
+// Petite signature en bas des impressions, pour faire connaitre l'application.
+const PIED_IMPRESSION = "<div style='margin-top:18px;text-align:center;font:10px Helvetica,Arial,sans-serif;color:#a8a29e;letter-spacing:.05em'>carnetdechasse.fr</div>";
 function buildPrintHtml(journee, terrain, participants, safety, cartes) {
   const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
@@ -3837,7 +3840,7 @@ function buildPrintHtml(journee, terrain, participants, safety, cartes) {
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const chefs = journee.chefLignes || {};
   // En largeurs de feuille (100 = toute la largeur)
-  const HAUT = 130, TETE = 10.5, ECARTS = 2 + 2, ENTETE = 3.2, MARGE = 1.5;
+  const HAUT = 130, TETE = 10.5, ECARTS = 2 + 2, ENTETE = 3.2, MARGE = 4;
   let pages = "";
   (terrain.tracks || []).forEach((trk) => {
     const pl = journee.placements[trk.id] || {}; const byMir = {}; Object.entries(pl).forEach(([hid, mid]) => { byMir[mid] = hid; });
@@ -3906,7 +3909,7 @@ function buildPrintHtml(journee, terrain, participants, safety, cartes) {
       + "<div class='terr'>" + esc(terrain.name) + "</div></div>"
       + tables
       + "<div class='zone' style='height:" + hCarte.toFixed(1) + "cqw'>" + (carte ? "<img src='" + carte + "' alt='Carte de la traque' />" : "<span class='vide'>Pas de carte pour cette traque.</span>") + "</div>"
-      + "</section>";
+      + "<div class='cdc'>carnetdechasse.fr</div></section>";
   });
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Postes — " + esc(terrain.name) + "</title><style>" + POSTES_CSS + "</style></head><body>" + pages + "</body></html>";
 }
@@ -3949,8 +3952,9 @@ async function carteResumeImpression(planImage, track) {
 // le numero de poste dans la case ; M pour les marcheurs), page 2 toutes les cartes.
 const RESUME_CSS = "@page{margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
   + "html,body{margin:0;padding:0;background:#fff;color:#1c1917;font-family:Helvetica,Arial,sans-serif}"
-  + ".page{width:100%;aspect-ratio:1/1.3;container-type:inline-size;overflow:hidden;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}"
+  + ".page{position:relative;width:100%;aspect-ratio:1/1.3;container-type:inline-size;overflow:hidden;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}"
   + ".page:last-child{break-after:auto;page-break-after:auto}"
+  + ".cdc{position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:1.3cqw;color:#a8a29e;letter-spacing:.05em}"
   + ".tete{height:9cqw;border-bottom:0.6cqw solid #166534;display:flex;align-items:flex-end;justify-content:space-between;gap:2cqw;padding-bottom:1cqw}"
   + ".tete h1{margin:0;font-family:Georgia,serif;font-size:4cqw;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
   + ".tete .date{color:#57534e;font-size:2.1cqw;white-space:nowrap}"
@@ -4010,7 +4014,7 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
   const lt = Math.max(1, ...tracks.map((t) => nbLignes(t.name)));
   const hTq = lt * fT * 1.15 + 1.6;
   // 3) la hauteur des lignes du tableau tient compte de cet en-tete
-  const dispo = 130 - 9 - 2 - 3.4 - hTq - 1.1 - 1.5;
+  const dispo = 130 - 9 - 2 - 3.4 - hTq - 1.1 - 4;
   const rh = Math.max(2.2, Math.min(6.4, dispo / Math.max(1, lignes)));
   const fs = Math.min(2.6, rh * 0.5);
   const echelle = (txts, gras, w) => Math.max(0.7, Math.min(1, ...txts.map((t) => (w - 2.2) / Math.max(0.01, mesureTexte(t, gras) * fs))));
@@ -4024,12 +4028,12 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
     + "<table><colgroup><col style='width:" + (nomW / 99.4 * 100).toFixed(2) + "%'><col style='width:" + (preW / 99.4 * 100).toFixed(2) + "%'>" + tracks.map(() => "<col style='width:" + (tqW / 99.4 * 100).toFixed(2) + "%'>").join("") + "</colgroup>"
     + "<thead><tr><th rowspan='2'>NOM</th><th rowspan='2'>Prénom</th><th class='grp' colspan='" + nT + "' style='text-align:center'>Poste</th></tr>"
     + "<tr>" + tracks.map((trk) => "<th class='tq' style='--c:" + (trk.color || "#166534") + ";height:" + hTq.toFixed(2) + "cqw;font-size:" + fT.toFixed(2) + "cqw'>" + esc(trk.name) + "</th>").join("") + "</tr></thead>"
-    + "<tbody>" + (corps || "<tr><td colspan='" + (2 + nT) + "' class='vide'>Personne n'est encore coché présent pour cette journée.</td></tr>") + "</tbody></table></section>";
+    + "<tbody>" + (corps || "<tr><td colspan='" + (2 + nT) + "' class='vide'>Personne n'est encore coché présent pour cette journée.</td></tr>") + "</tbody></table><div class='cdc'>carnetdechasse.fr</div></section>";
   // ---- page 2 : toutes les cartes ----
   const n = tracks.length;
   const cols = n <= 1 ? 1 : n <= 6 ? 2 : 3;
   const rangs = Math.max(1, Math.ceil(n / cols));
-  const hauteur = 130 - 9 - 2 - 1.5;
+  const hauteur = 130 - 9 - 2 - 4;
   const hCase = (hauteur - (rangs - 1) * 1.6) / rangs;
   const cases = tracks.map((trk, k) => {
     const c = trk.color || "#166534"; const im = (cartes || {})[trk.id];
@@ -4037,7 +4041,7 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
       + "<div class='im' style='height:" + (hCase - 0.8 - 3.6).toFixed(2) + "cqw'>" + (im ? "<img src='" + im + "' alt='' />" : "<span class='vide'>Pas de carte</span>") + "</div></div>";
   }).join("");
   const page2 = n ? "<section class='page'><div class='tete'><h1>Cartes des traques</h1><span class='date'>" + esc(terrain.name) + " · " + esc(d) + "</span></div>"
-    + "<div class='grille' style='grid-template-columns:repeat(" + cols + ",minmax(0,1fr))'>" + cases + "</div></section>" : "";
+    + "<div class='grille' style='grid-template-columns:repeat(" + cols + ",minmax(0,1fr))'>" + cases + "</div><div class='cdc'>carnetdechasse.fr</div></section>" : "";
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Résumé — " + esc(terrain.name) + "</title><style>" + RESUME_CSS + "</style></head><body>" + page1 + page2 + "</body></html>";
 }
 
@@ -4075,6 +4079,7 @@ const LIVRET_CSS = "@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;
   + ".carte .w img{display:block;max-width:100%;width:auto;height:auto;border:0.15cqw solid #a8a29e;border-radius:0.6cqw}"
   + ".moi{position:absolute;transform:translate(-50%,-50%);width:4cqw;height:4cqw;border-radius:50%;background:#facc15;border:0.45cqw solid #1c1917;box-shadow:0 0 0 0.7cqw rgba(250,204,21,.55);display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:1.8cqw;line-height:1;color:#1c1917}"
   + ".moi i{position:absolute;top:100%;margin-top:0.9cqw;left:50%;transform:translateX(-50%);background:#1c1917;color:#facc15;font-style:normal;font-size:1.2cqw;padding:0.35cqw 0.7cqw;border-radius:0.5cqw;white-space:nowrap;line-height:1}"
+  + ".pg .cdc{position:absolute;left:0;right:0;bottom:1.2cqw;text-align:center;font-size:1.2cqw;color:#a8a29e;letter-spacing:.05em}"
   + ".fin{margin:auto;text-align:center;color:#a8a29e;font-family:Georgia,serif;font-size:2.4cqw}.fin img{display:block;width:9cqw;margin:0 auto 1.4cqw;opacity:.85}";
 function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, opts) {
   opts = opts || {};
@@ -4113,7 +4118,7 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
       + "<div class='date'>" + esc(d) + "</div><div class='filet'></div>"
       + "<div class='img'>" + (imgAccueil ? "<img src='" + imgAccueil + "' alt='' />" : "") + "</div>"
       + "<div class='qui'><small>Chasseur</small><b style='font-size:" + Math.max(2, fNom).toFixed(2) + "cqw'>" + esc(nomComplet) + "</b></div>"
-      + "<div class='pied'>Carnet de Chasse</div></div>";
+      + "<div class='pied'>carnetdechasse.fr</div></div>";
     // ---- page 2 : postes, plan de chasse, sonneries ----
     // Hauteur du contenu pour une taille de texte donnee (memes regles que la feuille de style),
     // puis on prend la plus grande taille qui tient dans la page.
@@ -4147,11 +4152,13 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
     const lot3 = avecCarte.length <= 1 ? avecCarte : avecCarte.slice(0, moitie);
     const lot4 = avecCarte.length <= 1 ? [] : avecCarte.slice(moitie);
     const pageCartes = (lot, cote) => {
-      if (!lot.length) return "<div class='pg " + cote + "'><div class='fin'>" + (opts.logo ? "<img src='" + opts.logo + "' alt='' />" : "") + "Bonne chasse !</div></div>";
+      // Au dos du livret (page 4), on garde une ligne en bas pour la signature.
+      const dos = cote === "g", H2 = dos ? H - 2.6 : H, sig = dos ? "<div class='cdc'>carnetdechasse.fr</div>" : "";
+      if (!lot.length) return "<div class='pg " + cote + "'><div class='fin'>" + (opts.logo ? "<img src='" + opts.logo + "' alt='' />" : "") + "Bonne chasse !</div>" + sig + "</div>";
       // On essaie une colonne puis deux, et on garde la disposition ou les cartes sont les plus grandes.
       const GAP = 1.4, TITRE = 4.6;
       const essai = (c) => {
-        const r = Math.ceil(lot.length / c), wC = (W - (c - 1) * GAP) / c, hC = (H - (r - 1) * GAP) / r - TITRE;
+        const r = Math.ceil(lot.length / c), wC = (W - (c - 1) * GAP) / c, hC = (H2 - (r - 1) * GAP) / r - TITRE;
         return { c, r, wC, hC, aire: lot.reduce((s, x) => { const a = cartes[x.trk.id].a || 1; const l = Math.min(wC, hC / a); return s + l * l * a; }, 0) };
       };
       const choix = lot.length > 1 && essai(2).aire > essai(1).aire * 1.1 ? essai(2) : essai(1);
@@ -4165,7 +4172,7 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
           + "<div class='z'><div class='w'><img src='" + c.src + "' alt='' style='max-height:" + hImg.toFixed(2) + "cqw' />"
           + (dedans ? "<div class='moi' style='left:" + px.toFixed(2) + "%;top:" + py.toFixed(2) + "%'>" + esc(x.num) + "<i>Mon poste</i></div>" : "")
           + "</div></div></div>";
-      }).join("") + "</div></div>";
+      }).join("") + "</div>" + sig + "</div>";
     };
     const p3 = pageCartes(lot3, "d"), p4 = pageCartes(lot4, "g");
     feuilles.push("<section class='feuille'>" + p4 + p1 + "</section>");
@@ -5085,7 +5092,7 @@ function buildRepasHtml(journee, terrain, participants, repas) {
     + "<div class='meta'><b>Territoire :</b> " + esc(terrain ? terrain.name : "—") + "</div></div>"
     + "<table><thead><tr><th class='num'>#</th><th>Prénom &amp; nom</th><th class='c'>Invités suppl.</th><th class='c'>Convives</th></tr></thead><tbody>" + rows + "</tbody></table>"
     + "<p class='tot'>Total : " + total + " convive" + (total > 1 ? "s" : "") + "</p>"
-    + "</body></html>";
+    + PIED_IMPRESSION + "</body></html>";
 }
 function buildEmargementHtml(journee, terrain, participants) {
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -5114,7 +5121,7 @@ function buildEmargementHtml(journee, terrain, participants) {
     + "<p class='note'>Chaque participant doit être titulaire d'un permis de chasser validé pour la saison en cours et d'une assurance responsabilité civile. Signature obligatoire avant le début de la battue.</p>"
     + "<table><thead><tr><th class='num'>#</th><th>Prénom &amp; nom</th><th>N° de permis</th><th>Validation saison</th><th>Assurance</th><th>Signature</th></tr></thead><tbody>" + rows + "</tbody></table>"
     + "<div class='foot'><span>Organisateur : _______________________</span><span>Fait le " + esc(df(journee.date)) + "</span></div>"
-    + "</body></html>";
+    + PIED_IMPRESSION + "</body></html>";
 }
 function buildStatsPrintHtml(stats, season) {
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -5128,7 +5135,7 @@ function buildStatsPrintHtml(stats, season) {
     + "<h2>Résumé par journée</h2><table><thead><tr><th>Date</th><th>Territoire</th><th class='c'>Animaux</th><th class='c'>Balles</th></tr></thead><tbody>" + (jr || "<tr><td colspan='4'>—</td></tr>") + "</tbody></table>"
     + "<h2>Animaux &amp; balles par personne</h2><table><thead><tr><th>Chasseur</th><th class='c'>Animaux</th><th class='c'>Balles</th></tr></thead><tbody>" + (pr || "<tr><td colspan='3'>—</td></tr>") + "</tbody></table>"
     + "<h2>Animaux &amp; balles par poste</h2><table><thead><tr><th>Territoire</th><th>Traque</th><th>Poste</th><th class='c'>Animaux</th><th class='c'>Balles</th></tr></thead><tbody>" + (po || "<tr><td colspan='5'>—</td></tr>") + "</tbody></table>"
-    + "</body></html>";
+    + PIED_IMPRESSION + "</body></html>";
 }
 function CarnetView({ journees, terrains, participants, setJournees }) {
   const seasons = [...new Set(journees.map((j) => seasonOf(j.date)))].sort().reverse();
@@ -5233,7 +5240,7 @@ function buildDinnerPrintHtml(participants) {
     + "<header><div class='emo'>🐗</div><div><h1>Récap du dîner</h1><p>" + vient.length + " présent(s) · " + total + " convive(s)</p></div></header>"
     + "<h2>Présents</h2><table><thead><tr><th>Nom</th><th style='text-align:center'>+ invités</th><th style='text-align:center'>Total</th></tr></thead><tbody>" + (rowsV || "<tr><td colspan='3'>—</td></tr>") + "</tbody><tfoot><tr><td>TOTAL CONVIVES</td><td></td><td style='text-align:center'>" + total + "</td></tr></tfoot></table>"
     + (rowsA ? ("<h2>Absents</h2><ul class='abs'>" + rowsA + "</ul>") : "")
-    + "</body></html>";
+    + PIED_IMPRESSION + "</body></html>";
 }
 
 // ---------- Application ----------
