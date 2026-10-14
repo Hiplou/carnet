@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v3.8";
+const APP_VERSION = "v4.1";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -481,6 +481,55 @@ function rowsToGuests(rows) {
 }
 
 // Image de partage (traque recadrée, poste en évidence)
+// Carte d'une traque pour l'impression : meme cadrage que dans l'application,
+// postes numerotes comme dans le tableau. Une simple image, rien a charger au moment d'imprimer.
+// Numero d'un poste : celui ecrit dans son nom (« Poste 7 - Mirador » -> 7),
+// sinon son rang dans la liste. Meme regle pour le tableau et pour la carte.
+function numeroPoste(m, i) {
+  const t = String((m && m.label) || "").match(/\d+/);
+  return t ? String(parseInt(t[0], 10)) : String(i + 1);
+}
+async function carteTraqueImpression(planImage, track) {
+  const img = await loadImg(planImage);
+  const W = img.naturalWidth, H = img.naturalHeight, crop = track.crop || FULL_CROP;
+  const sx = crop.x / 100 * W, sy = crop.y / 100 * H, sw = crop.w / 100 * W, sh = crop.h / 100 * H;
+  const cw = 1600, ch = Math.max(200, Math.round(cw * sh / sw));
+  const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, cw, ch);
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
+  const P = (gx, gy) => ({ x: (gx - crop.x) / crop.w * cw, y: (gy - crop.y) / crop.h * ch });
+  const col = track.color || "#dc2626";
+  // contour de la traque
+  const z = Array.isArray(track.zone) ? track.zone : [];
+  if (z.length >= 2) {
+    const trace = () => { ctx.beginPath(); z.forEach((q, i) => { const p = P(q.gx, q.gy); if (i) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y); }); if (track.zoneFermee && z.length >= 3) ctx.closePath(); };
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    trace(); ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 11; ctx.stroke();
+    trace(); ctx.strokeStyle = col; ctx.lineWidth = 6; ctx.stroke();
+  }
+  // postes : comme dans l'application, une pastille a la couleur de la traque
+  // et le nom du poste dans une etiquette sombre juste en dessous
+  const r = 15, fs = 27, pad = 9;
+  ctx.font = "600 " + fs + "px Helvetica, Arial, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  (track.miradors || []).forEach((m, i) => {
+    const p = P(m.gx, m.gy);
+    if (p.x < -r || p.x > cw + r || p.y < -r || p.y > ch + r) return;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = col; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = "#ffffff"; ctx.stroke();
+    const txt = String(m.label || numeroPoste(m, i));
+    const tw = ctx.measureText(txt).width;
+    const bw = tw + pad * 2, bh = fs + pad * 1.3;
+    const bx = Math.max(2, Math.min(cw - bw - 2, p.x - bw / 2)), by = Math.min(ch - bh - 2, p.y + r + 6);
+    ctx.fillStyle = "rgba(28,25,23,.82)";
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 9); else ctx.rect(bx, by, bw, bh);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff"; ctx.fillText(txt, bx + bw / 2, by + bh / 2 + 1);
+  });
+  return cv.toDataURL("image/jpeg", 0.82);
+}
 async function buildTrackImage(planImage, track, targetMiradorId, title, subtitle) {
   const img = await loadImg(planImage);
   const W = img.naturalWidth, H = img.naturalHeight, crop = track.crop || FULL_CROP;
@@ -1597,11 +1646,13 @@ function PrintOverlay({ html, onClose }) {
   const ref = useRef(null);
   const doPrint = () => { try { ref.current.contentWindow.focus(); ref.current.contentWindow.print(); } catch (e) { try { window.print(); } catch (e2) {} } };
   return (<div className="fixed inset-0 z-50 bg-white flex flex-col">
-    <div className="flex items-center justify-between px-3 py-2 border-b border-stone-200 bg-stone-50 shrink-0">
-      <button onClick={onClose} className="flex items-center gap-1 text-sm font-medium text-stone-700"><ArrowLeft size={16} /> Retour</button>
+    <div className="flex items-center justify-between px-3 py-2 border-b border-stone-200 bg-stone-50 shrink-0" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
+      <button onClick={onClose} className="flex items-center gap-1 text-sm font-medium text-stone-700 py-1.5"><ArrowLeft size={16} /> Retour</button>
       <button onClick={doPrint} className="flex items-center gap-1.5 bg-emerald-800 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><FileText size={15} /> Imprimer / PDF</button>
     </div>
-    <iframe ref={ref} srcDoc={html} title="Aperçu" className="flex-1 w-full border-0" />
+    <div className="flex-1 overflow-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+      <iframe ref={ref} srcDoc={html} title="Aperçu" className="border-0 block" style={{ width: "1px", minWidth: "100%", height: "100%" }} />
+    </div>
   </div>);
 }
 // ---------- Groupes de membres ----------
@@ -3743,8 +3794,8 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
 }
 
 // ---------- Impression des postes ----------
-const PRINT_CSS = "@page{margin:14mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Georgia,'Times New Roman',serif;color:#1c1917;margin:0}header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header .emo{font-size:34px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}.traque{border:1px solid #d6d3d1;border-radius:8px;padding:10px 12px;break-inside:avoid;margin-bottom:14px}.traque h2{margin:0 0 8px;font-size:16px;border-left:5px solid #166534;padding-left:8px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:13px}th{text-align:left;color:#78716c;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e7e5e4;padding:3px 4px}td{padding:4px;border-bottom:1px solid #f0efee}td.num{color:#a8a29e;width:34px;font-weight:bold;text-align:center}td.pl{color:#57534e;width:42%}td.ch{font-weight:bold}td.chef{color:#57534e;font-style:italic}.free{color:#a8a29e;font-weight:normal;font-style:italic}.mapwrap{position:relative;width:100%;margin-top:10px;break-inside:avoid}.mapwrap img{width:100%;display:block;border-radius:8px;border:1px solid #d6d3d1}.mk{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;font-family:Helvetica,Arial,sans-serif}.mkdot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}.mklbl{margin-top:2px;background:rgba(255,255,255,.92);border:1px solid #d6d3d1;border-radius:5px;padding:1px 4px;font-size:9px;white-space:nowrap;font-weight:bold;color:#1c1917}footer{margin-top:16px;text-align:center;color:#a8a29e;font-size:11px;font-family:Helvetica,Arial,sans-serif}";
-function buildPrintHtml(journee, terrain, participants, safety) {
+const PRINT_CSS = "@page{margin:14mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Georgia,'Times New Roman',serif;color:#1c1917;margin:0}header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header .emo{font-size:34px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}.traque{border:1px solid #d6d3d1;border-radius:8px;padding:12px 14px;margin-bottom:14px}.traque+.traque{break-before:page}.carte{display:block;width:100%;height:auto;margin-top:12px;border:1px solid #d6d3d1;border-radius:8px;break-inside:avoid}.traque h2{margin:0 0 10px;font-size:20px;border-left:5px solid #166534;padding-left:8px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:16px}th{text-align:left;color:#57534e;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #d6d3d1;padding:6px}td{padding:8px 6px;border-bottom:1px solid #e7e5e4}td.num{color:#1c1917;width:40px;font-weight:bold;text-align:center;font-size:17px}td.pl{color:#57534e;width:42%}td.ch{font-weight:bold}td.chef{color:#57534e;font-style:italic}.free{color:#a8a29e;font-weight:normal;font-style:italic}.mapwrap{position:relative;width:100%;margin-top:10px;break-inside:avoid}.mapwrap img{width:100%;display:block;border-radius:8px;border:1px solid #d6d3d1}.mk{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;font-family:Helvetica,Arial,sans-serif}.mkdot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}.mklbl{margin-top:2px;background:rgba(255,255,255,.92);border:1px solid #d6d3d1;border-radius:5px;padding:1px 4px;font-size:9px;white-space:nowrap;font-weight:bold;color:#1c1917}footer{margin-top:16px;text-align:center;color:#a8a29e;font-size:11px;font-family:Helvetica,Arial,sans-serif}";
+function buildPrintHtml(journee, terrain, participants, safety, cartes) {
   const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
   const nameOf = (hid) => { const p = participants.find((x) => x.id === hid); return p ? p.name : hid; };
@@ -3754,13 +3805,14 @@ function buildPrintHtml(journee, terrain, participants, safety) {
   (terrain.tracks || []).forEach((trk, idx) => {
     const pl = journee.placements[trk.id] || {}; const byMir = {}; Object.entries(pl).forEach(([hid, mid]) => { byMir[mid] = hid; });
     let rows = "";
-    (trk.miradors || []).forEach((m, mi) => { const hid = byMir[m.id]; rows += "<tr><td class='num'>" + (mi + 1) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td><td class='chef'>" + ((journee.chefLignes && journee.chefLignes[m.id]) ? esc(nameOf(journee.chefLignes[m.id])) : "") + "</td></tr>"; });
+    (trk.miradors || []).forEach((m, mi) => { const hid = byMir[m.id]; rows += "<tr><td class='num'>" + numeroPoste(m, mi) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td><td class='chef'>" + ((journee.chefLignes && journee.chefLignes[m.id]) ? esc(nameOf(journee.chefLignes[m.id])) : "") + "</td></tr>"; });
     if (!trk.miradors || !trk.miradors.length) rows = "<tr><td colspan='4' class='free'>Aucun mirador</td></tr>";
-    const mapHtml = imageDe(terrain, trk) ? "<div class='mapbox' id='map" + idx + "'></div>" : "";
+    const carte = (cartes || {})[trk.id];
+    const mapHtml = carte ? "<img class='carte' src='" + carte + "' alt='Carte de la traque' />" : "";
     sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th><th>Chef de ligne</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
     traquesData.push({ img: imageDe(terrain, trk) || "", color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m, mi) => ({ gx: m.gx, gy: m.gy, n: mi + 1, tir: m.tir || null })) });
   });
-  const script = aUneImage(terrain) ? ("<script>var TQ=" + JSON.stringify(traquesData) + ";" + "TQ.forEach(function(t,i){if(!t.img)return;var im=new Image();im.onload=function(){var AR=(im.naturalWidth/im.naturalHeight)||1.4;var IMG=t.img;(function(t,i){var box=document.getElementById('map'+i);if(!box)return;var c=t.crop;box.style.position='relative';box.style.width='100%';box.style.paddingBottom=((c.h/c.w)/AR*100)+'%';box.style.overflow='hidden';box.style.borderRadius='8px';box.style.border='1px solid #d6d3d1';box.style.marginTop='10px';var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;var img=document.createElement('img');img.src=IMG;img.style.position='absolute';img.style.maxWidth='none';img.style.width=(100/fw)+'%';img.style.left=(-(fx/fw)*100)+'%';img.style.top=(-(fy/fh)*100)+'%';box.appendChild(img);t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);min-width:16px;height:16px;padding:0 3px;border-radius:9px;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);background:'+t.color+';color:#fff;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:3;font-family:Helvetica,Arial,sans-serif';d.textContent=m.n;box.appendChild(d);});})(t,i);};im.src=t.img;});" + "</scr" + "ipt>") : "";
+  const script = "";
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + PRINT_CSS + "</style></head><body>"
     + "<header><div class='emo'>🦌</div><div><h1>" + esc(terrain.name) + "</h1><p>" + esc(d) + "</p></div></header>"
     + "<div>" + sections + "</div>"
@@ -4205,10 +4257,16 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   const shareLinkWhatsApp = (lien) => { const link = lien || ((pub && pub.url) ? pub.url : pubUrl); const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
   const copyPubLink = () => { const link = (pub && pub.url) ? pub.url : pubUrl; if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => window.alert("Lien copié ✓ Colle-le dans ton groupe WhatsApp.")); else window.prompt("Copie le lien :", link); };
   const [postesPrint, setPostesPrint] = useState(null);
-  const printPostes = (journee) => {
+  const printPostes = async (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
-    setPostesPrint(buildPrintHtml(journee, terrain, participants, safety));
+    // Les cartes sont dessinees avant d'ouvrir l'apercu : elles sont pretes quand on imprime.
+    const cartes = {};
+    for (const trk of (terrain.tracks || [])) {
+      const im = imageDe(terrain, trk);
+      if (im) { try { cartes[trk.id] = await carteTraqueImpression(im, trk); } catch (e) {} }
+    }
+    setPostesPrint(buildPrintHtml(journee, terrain, participants, safety, cartes));
   };
   const addJournee = () => { const id = `j-${Date.now()}`; setJournees((prev) => [...prev, normJournee({ id, pubV: 2, date: new Date().toISOString().slice(0, 10), terrainId: terrains[0]?.id || null })]); setOpenJournee(id); };
   // Archiver ne perd rien : la journee disparait seulement de la liste. Elle continue de
