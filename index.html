@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.4";
+const APP_VERSION = "v4.6";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3821,6 +3821,15 @@ const POSTES_CSS = "@page{margin:12mm}*{box-sizing:border-box;-webkit-print-colo
   + ".zone{margin-top:2cqw;display:flex;align-items:flex-start;justify-content:center}"
   + ".zone img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;border:0.2cqw solid #d6d3d1;border-radius:1cqw}"
   + ".vide{color:#a8a29e;font-style:italic;font-size:2cqw}";
+// Largeur d'un texte, en multiples de la taille de police (mesure reelle quand c'est possible).
+let _ctxMesure = null;
+function mesureTexte(txt, gras) {
+  try {
+    if (!_ctxMesure) _ctxMesure = document.createElement("canvas").getContext("2d");
+    _ctxMesure.font = (gras ? "bold " : "") + "100px Helvetica, Arial, sans-serif";
+    return _ctxMesure.measureText(String(txt)).width / 100 * 1.08;
+  } catch (e) { return String(txt).length * (gras ? 0.66 : 0.6); }
+}
 function buildPrintHtml(journee, terrain, participants, safety, cartes) {
   const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
@@ -3838,13 +3847,50 @@ function buildPrintHtml(journee, terrain, participants, safety, cartes) {
     const deux = n > 12;
     const lignes = Math.max(1, deux ? Math.ceil(n / 2) : n);
     const [rh, fs] = lignes <= 8 ? [4.6, 2.4] : lignes <= 12 ? [4.2, 2.2] : lignes <= 16 ? [3.7, 2.0] : lignes <= 20 ? [3.2, 1.75] : lignes <= 25 ? [2.7, 1.5] : [2.2, 1.25];
+    // Largeurs des colonnes calculees d'apres les vrais textes (en largeurs de feuille),
+    // puis chaque nom trop long est resserre ou passe sur deux lignes, au lieu d'etre coupe.
+    const PADH = 1.8;
+    const larg = deux ? (100 - 3) / 2 : 100;
+    const numW = fs * 1.5 + PADH;
+    const plMax = Math.max(1, ...mirs.map((m) => mesureTexte(m.label || "", false))) * fs * 0.9 + PADH + 0.6;
+    const posteW = Math.min(larg * (deux ? 0.4 : 0.38), Math.max(fs * 4.5, plMax));
+    const chW = larg - numW - posteW;
+    const ajuste = (txt, gras, dispo, f, deuxLignesOk) => {
+      const besoin = mesureTexte(txt, gras) * f;
+      if (besoin <= dispo) return "";
+      const s = dispo / besoin;
+      if (s >= 0.8 || !deuxLignesOk) return "font-size:" + (f * Math.max(s, deuxLignesOk ? 0.72 : 0.58)).toFixed(2) + "cqw";
+      // deux lignes : on coupe entre deux mots la ou les lignes sont les plus equilibrees
+      const mots = String(txt).split(/\s+/); let pire = besoin / f;
+      for (let k = 1; k < mots.length; k++) pire = Math.min(pire, Math.max(mesureTexte(mots.slice(0, k).join(" "), gras), mesureTexte(mots.slice(k).join(" "), gras)));
+      const s2 = Math.max(0.6, Math.min(0.92, dispo / (pire * f), rh / (2.1 * f)));
+      return "font-size:" + (f * s2).toFixed(2) + "cqw;white-space:normal;line-height:1;word-break:break-word";
+    };
+    // Une seule taille par colonne pour une page homogene : on reduit tout le monde un peu (jusqu'a 80 %)
+    // plutot qu'un seul nom ; ceux qui restent trop longs passent sur deux lignes.
+    const dispoCh = chW - PADH - 0.6, dispoPl = posteW - PADH - 0.6;
+    const echelle = (txts, gras, dispo, f) => Math.max(0.8, Math.min(1, ...txts.map((t) => dispo / Math.max(0.01, mesureTexte(t, gras) * f))));
+    const fsCh = fs * echelle(mirs.map((m) => byMir[m.id] && !chefs[m.id] ? nameOf(byMir[m.id]) : "").filter(Boolean), true, dispoCh, fs);
+    const fsPl = fs * 0.9 * echelle(mirs.map((m) => m.label || ""), false, dispoPl, fs * 0.9);
+    const base = (f, g) => (f < g - 0.001 ? "font-size:" + f.toFixed(2) + "cqw" : "");
     const ligne = (m, mi) => {
       const hid = byMir[m.id];
-      const qui = hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>";
-      const cell = chefs[m.id] ? "<div class='bx'><span>" + qui + "</span><span class='chef'>chef : " + esc(nameOf(chefs[m.id])) + "</span></div>" : qui;
-      return "<tr><td class='num'>" + numeroPoste(m, mi) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + cell + "</td></tr>";
+      const nom = hid ? nameOf(hid) : "";
+      const stPl = ajuste(m.label || "", false, dispoPl, fsPl, true) || base(fsPl, fs * 0.9);
+      let cell, stCh = "";
+      if (chefs[m.id]) {
+        const chef = "chef : " + nameOf(chefs[m.id]);
+        const st1 = hid ? ajuste(nom, true, dispoCh, fs, false) : "";
+        const st2 = ajuste(chef, false, dispoCh, fs * 0.72, false);
+        cell = "<div class='bx'><span" + (st1 ? " style='" + st1 + "'" : "") + ">" + (hid ? esc(nom) : "<span class='free'>libre</span>") + "</span><span class='chef'" + (st2 ? " style='" + st2 + "'" : "") + ">" + esc(chef) + "</span></div>";
+      } else {
+        cell = hid ? esc(nom) : "<span class='free'>libre</span>";
+        stCh = hid ? (ajuste(nom, true, dispoCh, fsCh, true) || base(fsCh, fs)) : base(fsCh, fs);
+      }
+      return "<tr><td class='num'>" + numeroPoste(m, mi) + "</td><td class='pl'" + (stPl ? " style='" + stPl + "'" : "") + ">" + esc(m.label) + "</td><td class='ch'" + (stCh ? " style='" + stCh + "'" : "") + ">" + cell + "</td></tr>";
     };
-    const table = (liste, depart) => "<table><colgroup><col style='width:" + (deux ? 12 : 9) + "%'><col style='width:" + (deux ? 36 : 33) + "%'><col></colgroup>"
+    const pc = (w) => (w / larg * 100).toFixed(2) + "%";
+    const table = (liste, depart) => "<table><colgroup><col style='width:" + pc(numW) + "'><col style='width:" + pc(posteW) + "'><col style='width:" + pc(chW) + "'></colgroup>"
       + "<thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th></tr></thead><tbody>"
       + (liste.length ? liste.map((m, k) => ligne(m, depart + k)).join("") : "<tr><td colspan='3' class='free'>Aucun poste sur cette traque</td></tr>")
       + "</tbody></table>";
@@ -3863,6 +3909,119 @@ function buildPrintHtml(journee, terrain, participants, safety, cartes) {
       + "</section>";
   });
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Postes — " + esc(terrain.name) + "</title><style>" + POSTES_CSS + "</style></head><body>" + pages + "</body></html>";
+}
+
+// Carte d'une traque pour le resume de la journee : petite vignette, postes en pastilles numerotees
+// (cercle blanc, bord et chiffre a la couleur de la traque), comme une fiche papier classique.
+async function carteResumeImpression(planImage, track) {
+  const img = await loadImg(planImage);
+  const W = img.naturalWidth, H = img.naturalHeight, crop = track.crop || FULL_CROP;
+  const sx = crop.x / 100 * W, sy = crop.y / 100 * H, sw = crop.w / 100 * W, sh = crop.h / 100 * H;
+  const L = 1100, cw = sw >= sh ? L : Math.max(200, Math.round(L * sw / sh)), ch = sw >= sh ? Math.max(200, Math.round(L * sh / sw)) : L;
+  const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, cw, ch);
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
+  const P = (gx, gy) => ({ x: (gx - crop.x) / crop.w * cw, y: (gy - crop.y) / crop.h * ch });
+  const col = track.color || "#dc2626";
+  const z = Array.isArray(track.zone) ? track.zone : [];
+  if (z.length >= 2) {
+    const trace = () => { ctx.beginPath(); z.forEach((q, i) => { const p = P(q.gx, q.gy); if (i) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y); }); if (track.zoneFermee && z.length >= 3) ctx.closePath(); };
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    trace(); ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 9; ctx.stroke();
+    trace(); ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.stroke();
+  }
+  const r = 27;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  (track.miradors || []).forEach((m, i) => {
+    const p = P(m.gx, m.gy);
+    if (p.x < -r || p.x > cw + r || p.y < -r || p.y > ch + r) return;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = col; ctx.stroke();
+    const t = numeroPoste(m, i);
+    ctx.fillStyle = col; ctx.font = "bold " + (t.length >= 2 ? 27 : 32) + "px Helvetica, Arial, sans-serif";
+    ctx.fillText(t, p.x, p.y + 1);
+  });
+  return cv.toDataURL("image/jpeg", 0.85);
+}
+
+// Resume de la journee : page 1 un tableau (une ligne par personne, une colonne par traque,
+// le numero de poste dans la case ; M pour les marcheurs), page 2 toutes les cartes.
+const RESUME_CSS = "@page{margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+  + "html,body{margin:0;padding:0;background:#fff;color:#1c1917;font-family:Helvetica,Arial,sans-serif}"
+  + ".page{width:100%;aspect-ratio:1/1.3;container-type:inline-size;overflow:hidden;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}"
+  + ".page:last-child{break-after:auto;page-break-after:auto}"
+  + ".tete{height:9cqw;border-bottom:0.6cqw solid #166534;display:flex;align-items:flex-end;justify-content:space-between;gap:2cqw;padding-bottom:1cqw}"
+  + ".tete h1{margin:0;font-family:Georgia,serif;font-size:4cqw;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+  + ".tete .date{color:#57534e;font-size:2.1cqw;white-space:nowrap}"
+  + "table{width:99.4%;margin-left:0.3cqw;border-collapse:collapse;table-layout:fixed;margin-top:2cqw}"
+  + "th,td{border:0.2cqw solid #44403c;padding:0 0.9cqw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}"
+  + "th{font-size:1.8cqw;height:4.2cqw;background:#f5f5f4}th.grp{height:3.4cqw;font-size:2cqw;text-transform:uppercase;letter-spacing:.06em}"
+  + "th.tq{text-align:center;border-top:1.1cqw solid var(--c)}"
+  + "td{height:var(--rh);font-size:var(--fs)}td.nom{text-transform:uppercase;font-weight:bold}td.num{text-align:center;font-weight:bold;font-size:calc(var(--fs) * 1.12)}"
+  + "td.m{text-align:center;color:#57534e;font-weight:bold}tr.sep td{border-top:0.7cqw solid #1c1917}"
+  + ".grille{display:grid;gap:1.6cqw;margin-top:2cqw}"
+  + ".case{border:0.4cqw solid var(--c);overflow:hidden}"
+  + ".case .t{background:var(--c);color:#fff;font-weight:bold;font-size:2cqw;height:3.6cqw;line-height:3.6cqw;padding:0 1.2cqw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.03em}"
+  + ".case .im{display:flex;align-items:center;justify-content:center;padding:0.8cqw}"
+  + ".case img{display:block;max-width:100%;max-height:100%;width:auto;height:auto}"
+  + ".vide{color:#a8a29e;font-style:italic;font-size:1.8cqw}";
+function buildResumeHtml(journee, terrain, participants, cartes) {
+  const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const tracks = terrain.tracks || [];
+  const pres = journee.presence || {};
+  const present = (p) => (pres[p.id] || {}).statut === "present";
+  // numero de poste de chacun sur chaque traque
+  const poste = {};
+  tracks.forEach((trk) => {
+    const pl = journee.placements[trk.id] || {};
+    Object.entries(pl).forEach(([hid, mid]) => {
+      const i = (trk.miradors || []).findIndex((m) => m.id === mid);
+      if (i >= 0) (poste[hid] = poste[hid] || {})[trk.id] = numeroPoste(trk.miradors[i], i);
+    });
+  });
+  const tri = (a, b) => (a.nom || nomKey(a.name)).localeCompare(b.nom || nomKey(b.name), "fr", { sensitivity: "base" })
+    || (a.prenom || "").localeCompare(b.prenom || "", "fr", { sensitivity: "base" });
+  const chasseurs = participants.filter((p) => p.role !== "rabatteur" && (present(p) || poste[p.id])).sort(tri);
+  const marcheurs = participants.filter((p) => p.role === "rabatteur" && present(p)).sort(tri);
+  const nomDe = (p) => p.nom || (p.prenom ? "" : nomKey(p.name)) || p.name || "";
+  const prenomDe = (p) => p.prenom || (p.nom ? "" : (p.name || "").split(/\s+/)[0]) || "";
+  // ---- page 1 : le tableau ----
+  const nT = Math.max(1, tracks.length);
+  const nomW = nT > 6 ? 24 : 28, preW = nT > 6 ? 16 : 20, tqW = (100 - nomW - preW) / nT;
+  const lignes = chasseurs.length + marcheurs.length;
+  const dispo = 130 - 9 - 2 - 3.4 - 4.2 - 1.5;
+  const rh = Math.max(2.2, Math.min(6.4, dispo / Math.max(1, lignes)));
+  const fs = Math.min(2.6, rh * 0.5);
+  const echelle = (txts, gras, w) => Math.max(0.7, Math.min(1, ...txts.map((t) => (w - 2.2) / Math.max(0.01, mesureTexte(t, gras) * fs))));
+  const tous = chasseurs.concat(marcheurs);
+  const fNom = fs * echelle(tous.map((p) => nomDe(p).toUpperCase()), true, nomW);
+  const fPre = fs * echelle(tous.map(prenomDe), false, preW);
+  const ligne = (p, marche, sep) => "<tr" + (sep ? " class='sep'" : "") + "><td class='nom' style='font-size:" + fNom.toFixed(2) + "cqw'>" + esc(nomDe(p)) + "</td><td style='font-size:" + fPre.toFixed(2) + "cqw'>" + esc(prenomDe(p)) + "</td>"
+    + tracks.map((trk) => marche ? "<td class='m'>M</td>" : "<td class='num'>" + esc((poste[p.id] || {})[trk.id] || "") + "</td>").join("") + "</tr>";
+  const corps = chasseurs.map((p) => ligne(p, false, false)).join("") + marcheurs.map((p, k) => ligne(p, true, k === 0 && chasseurs.length > 0)).join("");
+  const page1 = "<section class='page' style='--fs:" + fs.toFixed(2) + "cqw;--rh:" + rh.toFixed(2) + "cqw'>"
+    + "<div class='tete'><h1>" + esc(terrain.name) + "</h1><span class='date'>" + esc(d) + "</span></div>"
+    + "<table><colgroup><col style='width:" + nomW + "%'><col style='width:" + preW + "%'>" + tracks.map(() => "<col style='width:" + tqW.toFixed(2) + "%'>").join("") + "</colgroup>"
+    + "<thead><tr><th rowspan='2'>NOM</th><th rowspan='2'>Prénom</th><th class='grp' colspan='" + nT + "' style='text-align:center'>Poste</th></tr>"
+    + "<tr>" + tracks.map((trk) => "<th class='tq' style='--c:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</th>").join("") + "</tr></thead>"
+    + "<tbody>" + (corps || "<tr><td colspan='" + (2 + nT) + "' class='vide'>Personne n'est encore coché présent pour cette journée.</td></tr>") + "</tbody></table></section>";
+  // ---- page 2 : toutes les cartes ----
+  const n = tracks.length;
+  const cols = n <= 1 ? 1 : n <= 6 ? 2 : 3;
+  const rangs = Math.max(1, Math.ceil(n / cols));
+  const hauteur = 130 - 9 - 2 - 1.5;
+  const hCase = (hauteur - (rangs - 1) * 1.6) / rangs;
+  const cases = tracks.map((trk, k) => {
+    const c = trk.color || "#166534"; const im = (cartes || {})[trk.id];
+    return "<div class='case' style='--c:" + c + ";height:" + hCase.toFixed(2) + "cqw'><div class='t'>TRAQUE " + (k + 1) + " · " + esc(trk.name) + "</div>"
+      + "<div class='im' style='height:" + (hCase - 0.8 - 3.6).toFixed(2) + "cqw'>" + (im ? "<img src='" + im + "' alt='' />" : "<span class='vide'>Pas de carte</span>") + "</div></div>";
+  }).join("");
+  const page2 = n ? "<section class='page'><div class='tete'><h1>Cartes des traques</h1><span class='date'>" + esc(terrain.name) + " · " + esc(d) + "</span></div>"
+    + "<div class='grille' style='grid-template-columns:repeat(" + cols + ",minmax(0,1fr))'>" + cases + "</div></section>" : "";
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Résumé — " + esc(terrain.name) + "</title><style>" + RESUME_CSS + "</style></head><body>" + page1 + page2 + "</body></html>";
 }
 function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onRemoveKill, onSetShot, onSetState }) {
   const [sub, setSub] = useState("final");
@@ -4302,6 +4461,18 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   const shareLinkWhatsApp = (lien) => { const link = lien || ((pub && pub.url) ? pub.url : pubUrl); const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
   const copyPubLink = () => { const link = (pub && pub.url) ? pub.url : pubUrl; if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => window.alert("Lien copié ✓ Colle-le dans ton groupe WhatsApp.")); else window.prompt("Copie le lien :", link); };
   const [postesPrint, setPostesPrint] = useState(null);
+  const [choixPrint, setChoixPrint] = useState(null);
+  // Resume de la journee : un tableau general puis toutes les cartes sur une page.
+  const printResume = async (journee) => {
+    const terrain = terrains.find((t) => t.id === journee.terrainId);
+    if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
+    const cartes = {};
+    for (const trk of (terrain.tracks || [])) {
+      const im = imageDe(terrain, trk);
+      if (im) { try { cartes[trk.id] = await carteResumeImpression(im, trk); } catch (e) {} }
+    }
+    setPostesPrint(buildResumeHtml(journee, terrain, participants, cartes));
+  };
   const printPostes = async (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
@@ -4537,7 +4708,17 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
               </div>
               <StepPanel id="docs" open={step}>
                 {terrain ? (<div className="space-y-2">
-                  <button onClick={() => printPostes(j)} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">📄 Imprimer les postes</button>
+                  <button onClick={() => setChoixPrint(choixPrint === j.id ? null : j.id)} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">📄 Imprimer les postes {choixPrint === j.id ? "▴" : "▾"}</button>
+                  {choixPrint === j.id && <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => { setChoixPrint(null); printPostes(j); }} className="text-left bg-white border-2 border-emerald-700 rounded-lg px-3 py-2">
+                      <span className="block text-sm font-semibold text-stone-800">Une page par traque</span>
+                      <span className="block text-xs text-stone-500 mt-0.5">Tableau des postes et carte de la traque</span>
+                    </button>
+                    <button onClick={() => { setChoixPrint(null); printResume(j); }} className="text-left bg-white border-2 border-emerald-700 rounded-lg px-3 py-2">
+                      <span className="block text-sm font-semibold text-stone-800">Résumé de la journée</span>
+                      <span className="block text-xs text-stone-500 mt-0.5">Tableau de tout le monde, puis toutes les cartes</span>
+                    </button>
+                  </div>}
                   <button onClick={() => { if (!nbPres) { window.alert("Coche d'abord des présents à l'étape Présences."); return; } setPostesPrint(buildEmargementHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">✍️ Feuille d'émargement</button>
                   <button onClick={() => { if (!nbDej) { window.alert("Personne n'est inscrit au déjeuner."); return; } setPostesPrint(buildDejeunerHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">🥪 Liste du déjeuner (PDF)</button>
                   <button onClick={() => { if (!nbDiner) { window.alert("Personne n'est inscrit au dîner."); return; } setPostesPrint(buildDinerHtml(j, terrain, participants)); }} className="w-full text-left text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2.5">🍽️ Liste du dîner (PDF)</button>
