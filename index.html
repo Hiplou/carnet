@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.1";
+const APP_VERSION = "v4.2";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -510,7 +510,7 @@ async function carteTraqueImpression(planImage, track) {
   }
   // postes : comme dans l'application, une pastille a la couleur de la traque
   // et le nom du poste dans une etiquette sombre juste en dessous
-  const r = 15, fs = 27, pad = 9;
+  const r = 17, fs = 32, pad = 10;
   ctx.font = "600 " + fs + "px Helvetica, Arial, sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   (track.miradors || []).forEach((m, i) => {
@@ -3795,30 +3795,56 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
 
 // ---------- Impression des postes ----------
 const PRINT_CSS = "@page{margin:14mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Georgia,'Times New Roman',serif;color:#1c1917;margin:0}header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header .emo{font-size:34px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}.traque{border:1px solid #d6d3d1;border-radius:8px;padding:12px 14px;margin-bottom:14px}.traque+.traque{break-before:page}.carte{display:block;width:100%;height:auto;margin-top:12px;border:1px solid #d6d3d1;border-radius:8px;break-inside:avoid}.traque h2{margin:0 0 10px;font-size:20px;border-left:5px solid #166534;padding-left:8px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:16px}th{text-align:left;color:#57534e;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #d6d3d1;padding:6px}td{padding:8px 6px;border-bottom:1px solid #e7e5e4}td.num{color:#1c1917;width:40px;font-weight:bold;text-align:center;font-size:17px}td.pl{color:#57534e;width:42%}td.ch{font-weight:bold}td.chef{color:#57534e;font-style:italic}.free{color:#a8a29e;font-weight:normal;font-style:italic}.mapwrap{position:relative;width:100%;margin-top:10px;break-inside:avoid}.mapwrap img{width:100%;display:block;border-radius:8px;border:1px solid #d6d3d1}.mk{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;font-family:Helvetica,Arial,sans-serif}.mkdot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}.mklbl{margin-top:2px;background:rgba(255,255,255,.92);border:1px solid #d6d3d1;border-radius:5px;padding:1px 4px;font-size:9px;white-space:nowrap;font-weight:bold;color:#1c1917}footer{margin-top:16px;text-align:center;color:#a8a29e;font-size:11px;font-family:Helvetica,Arial,sans-serif}";
+// Feuille des postes : une page A4 par traque, tableau en haut, carte dans tout l'espace restant.
+// La taille du texte s'adapte au nombre de postes pour que tout tienne sur la page.
+const POSTES_CSS = "@page{size:A4 portrait;margin:11mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+  + "html,body{margin:0;padding:0;background:#fff;color:#1c1917;font-family:Helvetica,Arial,sans-serif}"
+  + ".page{height:272mm;display:flex;flex-direction:column;overflow:hidden;break-after:page;page-break-after:always;padding:0}"
+  + ".page:last-child{break-after:auto;page-break-after:auto}"
+  + ".tete{display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-bottom:3px solid #166534;padding-bottom:5px;margin-bottom:7px;flex:none}"
+  + ".tete h1{margin:0;font-family:Georgia,serif;font-size:20px;line-height:1.15}.tete h1 .tq{display:inline-block;border-left:6px solid #166534;padding-left:8px}"
+  + ".tete p{margin:0;color:#57534e;font-size:12px;text-align:right;white-space:nowrap}"
+  + "table{width:100%;border-collapse:collapse;flex:none}"
+  + "th{text-align:left;color:#57534e;font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #d6d3d1;padding:3px 5px}"
+  + "td{border-bottom:1px solid #e7e5e4;padding:var(--pad) 5px;font-size:var(--fs);line-height:1.2}"
+  + "td.num{font-weight:bold;width:34px;text-align:center}td.pl{color:#44403c}td.ch{font-weight:bold}td.chef{color:#57534e;font-style:italic}"
+  + ".free{color:#a8a29e;font-weight:normal;font-style:italic}"
+  + ".zone{flex:1 1 auto;min-height:0;margin-top:8px;display:flex;align-items:center;justify-content:center}"
+  + ".zone img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;border:1px solid #d6d3d1;border-radius:6px}"
+  + ".vide{color:#a8a29e;font-style:italic;font-size:13px}";
 function buildPrintHtml(journee, terrain, participants, safety, cartes) {
   const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
   const nameOf = (hid) => { const p = participants.find((x) => x.id === hid); return p ? p.name : hid; };
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  let sections = "";
-  const traquesData = [];
-  (terrain.tracks || []).forEach((trk, idx) => {
+  const chefs = journee.chefLignes || {};
+  let pages = "";
+  (terrain.tracks || []).forEach((trk) => {
     const pl = journee.placements[trk.id] || {}; const byMir = {}; Object.entries(pl).forEach(([hid, mid]) => { byMir[mid] = hid; });
+    const mirs = trk.miradors || [];
+    const avecChef = mirs.some((m) => chefs[m.id]);
+    // Plus il y a de postes, plus le texte se resserre, pour laisser de la place a la carte.
+    const n = mirs.length;
+    const fs = n <= 10 ? 15 : n <= 16 ? 13.5 : n <= 22 ? 12 : n <= 30 ? 10.5 : 9.5;
+    const pad = n <= 10 ? 6 : n <= 16 ? 4.5 : n <= 22 ? 3 : 2;
     let rows = "";
-    (trk.miradors || []).forEach((m, mi) => { const hid = byMir[m.id]; rows += "<tr><td class='num'>" + numeroPoste(m, mi) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td><td class='chef'>" + ((journee.chefLignes && journee.chefLignes[m.id]) ? esc(nameOf(journee.chefLignes[m.id])) : "") + "</td></tr>"; });
-    if (!trk.miradors || !trk.miradors.length) rows = "<tr><td colspan='4' class='free'>Aucun mirador</td></tr>";
+    mirs.forEach((m, mi) => {
+      const hid = byMir[m.id];
+      rows += "<tr><td class='num'>" + numeroPoste(m, mi) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>"
+        + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td>"
+        + (avecChef ? "<td class='chef'>" + (chefs[m.id] ? esc(nameOf(chefs[m.id])) : "") + "</td>" : "") + "</tr>";
+    });
+    if (!n) rows = "<tr><td colspan='4' class='free'>Aucun poste sur cette traque</td></tr>";
     const carte = (cartes || {})[trk.id];
-    const mapHtml = carte ? "<img class='carte' src='" + carte + "' alt='Carte de la traque' />" : "";
-    sections += "<section class='traque'><h2 style='border-color:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</h2><table><thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th><th>Chef de ligne</th></tr></thead><tbody>" + rows + "</tbody></table>" + mapHtml + "</section>";
-    traquesData.push({ img: imageDe(terrain, trk) || "", color: trk.color || "#166534", crop: trk.crop || { x: 0, y: 0, w: 100, h: 100 }, miradors: (trk.miradors || []).map((m, mi) => ({ gx: m.gx, gy: m.gy, n: mi + 1, tir: m.tir || null })) });
+    const col = trk.color || "#166534";
+    pages += "<section class='page' style='--fs:" + fs + "px;--pad:" + pad + "px'>"
+      + "<div class='tete'><h1>" + esc(terrain.name) + " — <span class='tq' style='border-color:" + col + "'>" + esc(trk.name) + "</span></h1><p>" + esc(d) + "</p></div>"
+      + "<table><thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th>" + (avecChef ? "<th>Chef de ligne</th>" : "") + "</tr></thead><tbody>" + rows + "</tbody></table>"
+      + "<div class='zone'>" + (carte ? "<img src='" + carte + "' alt='Carte de la traque' />" : "<span class='vide'>Pas de carte pour cette traque.</span>") + "</div>"
+      + "</section>";
   });
-  const script = "";
-  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + PRINT_CSS + "</style></head><body>"
-    + "<header><div class='emo'>🦌</div><div><h1>" + esc(terrain.name) + "</h1><p>" + esc(d) + "</p></div></header>"
-    + "<div>" + sections + "</div>"
-    + "<footer>Carnet de Battue — " + esc(terrain.name) + "</footer>" + script + "</body></html>";
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + POSTES_CSS + "</style></head><body>" + pages + "</body></html>";
 }
-
 function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onRemoveKill, onSetShot, onSetState }) {
   const [sub, setSub] = useState("final");
   const shots = j.shots || {};
