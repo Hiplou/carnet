@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.6";
+const APP_VERSION = "v4.7";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3957,7 +3957,7 @@ const RESUME_CSS = "@page{margin:12mm}*{box-sizing:border-box;-webkit-print-colo
   + "table{width:99.4%;margin-left:0.3cqw;border-collapse:collapse;table-layout:fixed;margin-top:2cqw}"
   + "th,td{border:0.2cqw solid #44403c;padding:0 0.9cqw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}"
   + "th{font-size:1.8cqw;height:4.2cqw;background:#f5f5f4}th.grp{height:3.4cqw;font-size:2cqw;text-transform:uppercase;letter-spacing:.06em}"
-  + "th.tq{text-align:center;border-top:1.1cqw solid var(--c)}"
+  + "th.tq{text-align:center;border-top:1.1cqw solid var(--c);white-space:normal;text-overflow:clip;line-height:1.15;overflow-wrap:anywhere;padding:0 0.6cqw}"
   + "td{height:var(--rh);font-size:var(--fs)}td.nom{text-transform:uppercase;font-weight:bold}td.num{text-align:center;font-weight:bold;font-size:calc(var(--fs) * 1.12)}"
   + "td.m{text-align:center;color:#57534e;font-weight:bold}tr.sep td{border-top:0.7cqw solid #1c1917}"
   + ".grille{display:grid;gap:1.6cqw;margin-top:2cqw}"
@@ -3990,13 +3990,30 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
   const prenomDe = (p) => p.prenom || (p.nom ? "" : (p.name || "").split(/\s+/)[0]) || "";
   // ---- page 1 : le tableau ----
   const nT = Math.max(1, tracks.length);
-  const nomW = nT > 6 ? 24 : 28, preW = nT > 6 ? 16 : 20, tqW = (100 - nomW - preW) / nT;
   const lignes = chasseurs.length + marcheurs.length;
-  const dispo = 130 - 9 - 2 - 3.4 - 4.2 - 1.5;
+  const tous = chasseurs.concat(marcheurs);
+  // 1) taille provisoire du texte, pour dimensionner les colonnes NOM et Prenom au plus juste
+  const fs0 = Math.min(2.6, Math.max(2.2, Math.min(6.4, (130 - 9 - 2 - 4.2 - 9 - 1.5) / Math.max(1, lignes))) * 0.5);
+  const largeMax = (txts, gras) => Math.max(0, ...txts.map((t) => mesureTexte(t, gras)));
+  const nomW = Math.min(30, Math.max(13, largeMax(tous.map((p) => nomDe(p).toUpperCase()), true) * fs0 + 2.4));
+  const preW = Math.min(20, Math.max(10, largeMax(tous.map(prenomDe), false) * fs0 + 2.4));
+  const tqW = (99.4 - nomW - preW) / nT;
+  // 2) noms des traques en entier : retour a la ligne entre les mots, texte reduit si un mot ne tient pas
+  const dispoT = tqW - 1.2;
+  let fT = 1.9;
+  tracks.forEach((trk) => String(trk.name || "").split(/\s+/).forEach((w) => { const l = mesureTexte(w, true); if (l * fT > dispoT) fT = Math.max(1.1, dispoT / l); }));
+  const nbLignes = (txt) => {
+    let n = 1, cur = 0; const esp = mesureTexte(" ", true);
+    String(txt || "").split(/\s+/).filter(Boolean).forEach((w) => { const l = mesureTexte(w, true) * fT; if (cur && cur + esp * fT + l > dispoT) { n++; cur = l; } else cur += (cur ? esp * fT : 0) + l; });
+    return n;
+  };
+  const lt = Math.max(1, ...tracks.map((t) => nbLignes(t.name)));
+  const hTq = lt * fT * 1.15 + 1.6;
+  // 3) la hauteur des lignes du tableau tient compte de cet en-tete
+  const dispo = 130 - 9 - 2 - 3.4 - hTq - 1.1 - 1.5;
   const rh = Math.max(2.2, Math.min(6.4, dispo / Math.max(1, lignes)));
   const fs = Math.min(2.6, rh * 0.5);
   const echelle = (txts, gras, w) => Math.max(0.7, Math.min(1, ...txts.map((t) => (w - 2.2) / Math.max(0.01, mesureTexte(t, gras) * fs))));
-  const tous = chasseurs.concat(marcheurs);
   const fNom = fs * echelle(tous.map((p) => nomDe(p).toUpperCase()), true, nomW);
   const fPre = fs * echelle(tous.map(prenomDe), false, preW);
   const ligne = (p, marche, sep) => "<tr" + (sep ? " class='sep'" : "") + "><td class='nom' style='font-size:" + fNom.toFixed(2) + "cqw'>" + esc(nomDe(p)) + "</td><td style='font-size:" + fPre.toFixed(2) + "cqw'>" + esc(prenomDe(p)) + "</td>"
@@ -4004,9 +4021,9 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
   const corps = chasseurs.map((p) => ligne(p, false, false)).join("") + marcheurs.map((p, k) => ligne(p, true, k === 0 && chasseurs.length > 0)).join("");
   const page1 = "<section class='page' style='--fs:" + fs.toFixed(2) + "cqw;--rh:" + rh.toFixed(2) + "cqw'>"
     + "<div class='tete'><h1>" + esc(terrain.name) + "</h1><span class='date'>" + esc(d) + "</span></div>"
-    + "<table><colgroup><col style='width:" + nomW + "%'><col style='width:" + preW + "%'>" + tracks.map(() => "<col style='width:" + tqW.toFixed(2) + "%'>").join("") + "</colgroup>"
+    + "<table><colgroup><col style='width:" + (nomW / 99.4 * 100).toFixed(2) + "%'><col style='width:" + (preW / 99.4 * 100).toFixed(2) + "%'>" + tracks.map(() => "<col style='width:" + (tqW / 99.4 * 100).toFixed(2) + "%'>").join("") + "</colgroup>"
     + "<thead><tr><th rowspan='2'>NOM</th><th rowspan='2'>Prénom</th><th class='grp' colspan='" + nT + "' style='text-align:center'>Poste</th></tr>"
-    + "<tr>" + tracks.map((trk) => "<th class='tq' style='--c:" + (trk.color || "#166534") + "'>" + esc(trk.name) + "</th>").join("") + "</tr></thead>"
+    + "<tr>" + tracks.map((trk) => "<th class='tq' style='--c:" + (trk.color || "#166534") + ";height:" + hTq.toFixed(2) + "cqw;font-size:" + fT.toFixed(2) + "cqw'>" + esc(trk.name) + "</th>").join("") + "</tr></thead>"
     + "<tbody>" + (corps || "<tr><td colspan='" + (2 + nT) + "' class='vide'>Personne n'est encore coché présent pour cette journée.</td></tr>") + "</tbody></table></section>";
   // ---- page 2 : toutes les cartes ----
   const n = tracks.length;
