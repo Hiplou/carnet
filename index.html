@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.12";
+const APP_VERSION = "v4.13";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1746,17 +1746,31 @@ function pdfDepuisImages(pages) {
   const put = (d) => { const b = typeof d === "string" ? enc.encode(d) : d; parts.push(b); len += b.length; };
   const n = pages.length, total = 4 + n * 3;
   // Signature en Helvetica 8 pt (police standard des PDF, rien a integrer) : largeur calculee pour la centrer.
-  const SIG = "carnetdechasse.fr", TAILLE = 8, LARG = 7.948 * TAILLE, BAS = 6 * 72 / 25.4;
+  const SIG = "carnetdechasse.fr", TAILLE = 8, BAS = 6 * 72 / 25.4, MARGE = 10 * 72 / 25.4;
+  // Largeurs Helvetica (1/1000 de la taille) pour centrer ou caler a droite ; accents = lettre de base.
+  const LH = "278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584".split(",").map(Number);
+  const largeur = (t, sz) => Array.from(t).reduce((s, ch) => { const b = ch.normalize("NFD")[0].charCodeAt(0); return s + (b >= 32 && b <= 126 ? LH[b - 32] : 556); }, 0) * sz / 1000;
+  // Texte en WinAnsi (les accents francais y sont), parentheses echappees.
+  const pdfTxt = (t) => Array.from(t).map((ch) => { const c = ch.charCodeAt(0); const v = c < 256 ? ch : ch === "’" ? "'" : ch.normalize("NFD")[0]; return v === "(" || v === ")" || v === "\\" ? "\\" + v : v; }).join("");
+  const enLatin1 = (str) => { const a = new Uint8Array(str.length); for (let k = 0; k < str.length; k++) { const c = str.charCodeAt(k); a[k] = c < 256 ? c : 63; } return a; };
   put("%PDF-1.4\n");
   off[1] = len; put("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
   off[2] = len; put("2 0 obj\n<< /Type /Pages /Kids [" + pages.map((_, i) => (4 + i * 3) + " 0 R").join(" ") + "] /Count " + n + " >>\nendobj\n");
   off[3] = len; put("3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n");
   pages.forEach((p, i) => {
     const po = 4 + i * 3, co = po + 1, io = po + 2;
+    // Chaque texte : centre (cx) ou cale a droite (xd), sur la ligne de pied de page.
+    // Sur un verso retourne, les textes sont tournes avec l'image (miroir du point d'ancrage).
+    const textes = (p.sig || []).map((cx) => ({ t: SIG, sz: TAILLE, cx })).concat(p.pieds || []);
     const flux = "q " + p.dw.toFixed(2) + " 0 0 " + p.dh.toFixed(2) + " " + p.x.toFixed(2) + " " + p.y.toFixed(2) + " cm /Im0 Do Q"
-      + (p.sig || []).map((cx) => " BT /F1 " + TAILLE + " Tf 0.66 0.64 0.62 rg " + (cx - LARG / 2).toFixed(2) + " " + BAS.toFixed(2) + " Td (" + SIG + ") Tj ET").join("");
+      + textes.map((o) => {
+        const w = largeur(o.t, o.sz), x0 = o.cx !== undefined ? o.cx - w / 2 : o.xd - w;
+        const m = p.inv ? "-1 0 0 -1 " + (p.pw - x0).toFixed(2) + " " + (p.ph - BAS).toFixed(2) : "1 0 0 1 " + x0.toFixed(2) + " " + BAS.toFixed(2);
+        return " BT /F1 " + o.sz.toFixed(2) + " Tf 0.6 0.58 0.56 rg " + m + " Tm (" + pdfTxt(o.t) + ") Tj ET";
+      }).join("");
     off[po] = len; put(po + " 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + p.pw.toFixed(2) + " " + p.ph.toFixed(2) + "] /Resources << /XObject << /Im0 " + io + " 0 R >> /Font << /F1 3 0 R >> >> /Contents " + co + " 0 R >>\nendobj\n");
-    off[co] = len; put(co + " 0 obj\n<< /Length " + flux.length + " >>\nstream\n" + flux + "\nendstream\nendobj\n");
+    const fluxB = enLatin1(flux);
+    off[co] = len; put(co + " 0 obj\n<< /Length " + fluxB.length + " >>\nstream\n"); put(fluxB); put("\nendstream\nendobj\n");
     off[io] = len; put(io + " 0 obj\n<< /Type /XObject /Subtype /Image /Width " + p.w + " /Height " + p.h + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + p.jpeg.length + " >>\nstream\n");
     put(p.jpeg); put("\nendstream\nendobj\n");
   });
@@ -1786,7 +1800,7 @@ async function fabriquerPdf(html, onAvance) {
       return { pw, ph, dw, dh, x: (pw - dw) / 2, y: centrer ? (ph - dh) / 2 : ph - MARGE - dh, w: cv.width, h: cv.height, jpeg: jpegOctets(cv, 0.88) };
     };
     // La signature est retiree de l'image : elle est ecrite directement en bas de chaque page du PDF.
-    doc.querySelectorAll(".cdc, .cdc-fixe").forEach((e) => { e.style.display = "none"; });
+    doc.querySelectorAll(".cdc, .cdc-fixe, .pnum").forEach((e) => { e.style.display = "none"; });
     const pages = [];
     const sections = Array.from(doc.querySelectorAll("section.page, section.feuille"));
     if (sections.length) {
@@ -1800,6 +1814,21 @@ async function fabriquerPdf(html, onAvance) {
         if (inv) { cv = document.createElement("canvas"); cv.width = cv0.width; cv.height = cv0.height; const c = cv.getContext("2d"); c.translate(cv.width, cv.height); c.rotate(Math.PI); c.drawImage(cv0, 0, 0); }
         const pl = placer(cv, paysage, paysage), mode = sec.getAttribute("data-sig") || "page";
         pl.sig = mode === "aucune" ? [] : mode === "moities" ? [pl.pw / 4, pl.pw * 3 / 4] : [pl.pw / 2];
+        pl.inv = inv;
+        // Livret : nom du chasseur et numero de page, en bas a droite de chaque demi-page.
+        let pp = null; try { pp = JSON.parse(sec.getAttribute("data-pieds") || "null"); } catch (e) {}
+        if (Array.isArray(pp)) {
+          const MM2 = 72 / 25.4, demi = pl.pw / 2;
+          pl.pieds = pp.map((t, k) => {
+            if (!t) return null;
+            const droite = (k === 0 ? demi - 12 * MM2 : pl.pw - 10 * MM2);
+            // si la signature est centree sur cette moitie, on reduit le texte pour ne pas la toucher
+            const libre = mode === "moities" ? droite - (k === 0 ? demi / 2 : demi * 1.5) - 32 - 8 : droite - (k === 0 ? 10 * MM2 : demi + 12 * MM2);
+            let sz = 7; const wl = (z) => Array.from(t).length * z * 0.56;
+            while (sz > 5 && wl(sz) > libre) sz -= 0.25;
+            return { t, sz, xd: droite };
+          }).filter(Boolean);
+        }
         pages.push(pl);
         if (onAvance) onAvance(i + 1, sections.length);
         await new Promise((r2) => setTimeout(r2, 0));
@@ -4283,6 +4312,7 @@ const LIVRET_CSS = "@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;
   + ".carte .w img{display:block;max-width:100%;width:auto;height:auto;border:0.15cqw solid #a8a29e;border-radius:0.6cqw}"
   + ".moi{position:absolute;transform:translate(-50%,-50%);width:4cqw;height:4cqw;border-radius:50%;background:#facc15;border:0.45cqw solid #1c1917;box-shadow:0 0 0 0.7cqw rgba(250,204,21,.55);display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:1.8cqw;line-height:1;color:#1c1917}"
   + ".moi i{position:absolute;top:100%;margin-top:0.9cqw;left:50%;transform:translateX(-50%);background:#1c1917;color:#facc15;font-style:normal;font-size:1.2cqw;padding:0.35cqw 0.7cqw;border-radius:0.5cqw;white-space:nowrap;line-height:1}"
+  + ".pg .pnum{position:absolute;bottom:1.2cqw;font-size:1.05cqw;color:#a8a29e;white-space:nowrap;max-width:17cqw;overflow:hidden;text-overflow:ellipsis}.pg.g .pnum{right:3.2cqw}.pg.d .pnum{right:2cqw}"
   + ".pg .cdc{position:absolute;left:0;right:0;bottom:1.2cqw;text-align:center;font-size:1.2cqw;color:#a8a29e;letter-spacing:.05em}"
   + ".fin{margin:auto;text-align:center;color:#a8a29e;font-family:Georgia,serif;font-size:2.4cqw}.fin img{display:block;width:9cqw;margin:0 auto 1.4cqw;opacity:.85}";
 function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, opts) {
@@ -4380,8 +4410,12 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
       }).join("") + "</div>" + sig + "</div>";
     };
     const p3 = pageCartes(lot3, "d"), p4 = pageCartes(lot4, "g");
-    feuilles.push("<section class='feuille' data-sig='moities'>" + p4 + p1 + "</section>");
-    feuilles.push("<section class='feuille" + (opts.retourner ? " inv" : "") + "' data-sig='aucune'>" + p2 + p3 + "</section>");
+    // Numero de la page dans le livret plie + nom du chasseur : on repere tout de suite une feuille mal assemblee.
+    const libPied = (k) => nomComplet + " · p. " + k + "/4";
+    const avecPied = (h, k) => h.slice(0, -6) + "<div class='pnum'>" + esc(libPied(k)) + "</div></div>";
+    const attr = (a, b) => " data-pieds='" + esc(JSON.stringify([libPied(a), libPied(b)])).replace(/'/g, "&#39;") + "'";
+    feuilles.push("<section class='feuille' data-sig='moities'" + attr(4, 1) + ">" + avecPied(p4, 4) + avecPied(p1, 1) + "</section>");
+    feuilles.push("<section class='feuille" + (opts.retourner ? " inv" : "") + "' data-sig='aucune'" + attr(2, 3) + ">" + avecPied(p2, 2) + avecPied(p3, 3) + "</section>");
   });
   return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Livrets — " + esc(terrain.name) + "</title><style>" + LIVRET_CSS + "</style></head><body>" + feuilles.join("") + "</body></html>";
 }
