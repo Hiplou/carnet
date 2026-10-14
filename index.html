@@ -362,7 +362,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.3";
+const APP_VERSION = "v4.4";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3797,33 +3797,38 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
 // ---------- Impression des postes ----------
 const PRINT_CSS = "@page{margin:14mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:Georgia,'Times New Roman',serif;color:#1c1917;margin:0}header{display:flex;align-items:center;gap:14px;border-bottom:3px solid #166534;padding-bottom:10px;margin-bottom:16px}header .emo{font-size:34px}header h1{margin:0;font-size:24px}header p{margin:2px 0 0;color:#57534e;font-size:13px}.traque{border:1px solid #d6d3d1;border-radius:8px;padding:12px 14px;margin-bottom:14px}.traque+.traque{break-before:page}.carte{display:block;width:100%;height:auto;margin-top:12px;border:1px solid #d6d3d1;border-radius:8px;break-inside:avoid}.traque h2{margin:0 0 10px;font-size:20px;border-left:5px solid #166534;padding-left:8px}table{width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:16px}th{text-align:left;color:#57534e;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #d6d3d1;padding:6px}td{padding:8px 6px;border-bottom:1px solid #e7e5e4}td.num{color:#1c1917;width:40px;font-weight:bold;text-align:center;font-size:17px}td.pl{color:#57534e;width:42%}td.ch{font-weight:bold}td.chef{color:#57534e;font-style:italic}.free{color:#a8a29e;font-weight:normal;font-style:italic}.mapwrap{position:relative;width:100%;margin-top:10px;break-inside:avoid}.mapwrap img{width:100%;display:block;border-radius:8px;border:1px solid #d6d3d1}.mk{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;font-family:Helvetica,Arial,sans-serif}.mkdot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}.mklbl{margin-top:2px;background:rgba(255,255,255,.92);border:1px solid #d6d3d1;border-radius:5px;padding:1px 4px;font-size:9px;white-space:nowrap;font-weight:bold;color:#1c1917}footer{margin-top:16px;text-align:center;color:#a8a29e;font-size:11px;font-family:Helvetica,Arial,sans-serif}";
 // Feuille des postes : une page par traque, tableau lisible en haut, carte dessous.
-// Hauteur prudente (tient sur A4 comme sur Letter, meme avec les marges du navigateur),
-// et hauteur de carte calculee a l'avance : la page ne peut pas deborder sur la suivante.
+// Toutes les tailles sont proportionnelles a la largeur de la feuille (unites cqw) :
+// l'iPhone agrandit la page a l'impression, l'ordinateur non, mais la mise en page reste la meme.
+// Une page fait 1,30 fois sa largeur : cela tient en A4 comme en format americain, marges comprises.
 const POSTES_CSS = "@page{margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
   + "html,body{margin:0;padding:0;background:#fff;color:#1c1917;font-family:Helvetica,Arial,sans-serif}"
-  + ".page{height:236mm;overflow:hidden;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}"
+  + ".page{width:100%;aspect-ratio:1/1.3;container-type:inline-size;overflow:hidden;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}"
   + ".page:last-child{break-after:auto;page-break-after:auto}"
-  + ".tete{display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-bottom:3px solid #166534;padding-bottom:4px;height:12mm}"
-  + ".tete h1{margin:0;font-family:Georgia,serif;font-size:19px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
-  + ".tete h1 .tq{border-left:6px solid #166534;padding-left:7px}"
-  + ".tete p{margin:0;color:#57534e;font-size:12px;white-space:nowrap}"
-  + ".tabs{display:flex;gap:5mm;margin-top:3mm;align-items:flex-start}.tabs table{flex:1 1 0}"
+  + ".tete{height:10.5cqw;border-bottom:0.6cqw solid #166534;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:1cqw}"
+  + ".tete .l1{display:flex;align-items:baseline;justify-content:space-between;gap:2cqw}"
+  + ".tete h1{margin:0;font-family:Georgia,serif;font-size:4.4cqw;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:1.3cqw solid #166534;padding-left:1.6cqw}"
+  + ".tete .date{color:#57534e;font-size:2cqw;white-space:nowrap}"
+  + ".tete .terr{color:#57534e;font-size:2.2cqw;margin-top:0.6cqw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+  + ".tabs{display:flex;gap:3cqw;margin-top:2cqw;align-items:flex-start}.tabs table{flex:1 1 0;min-width:0}"
   + "table{width:100%;border-collapse:collapse;table-layout:fixed}"
-  + "th{text-align:left;color:#57534e;font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #a8a29e;padding:0 4px;height:6mm}"
-  + "td{border-bottom:1px solid #d6d3d1;padding:0 4px;height:var(--rh);font-size:var(--fs);line-height:1.15;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}"
-  + "td.num{font-weight:bold;text-align:center}td.pl{color:#44403c}td.ch{font-weight:bold}"
-  + "td .chef{display:block;font-weight:normal;font-style:italic;color:#57534e;font-size:.78em}"
+  + "th{text-align:left;color:#57534e;font-size:1.5cqw;text-transform:uppercase;letter-spacing:.05em;border-bottom:0.35cqw solid #a8a29e;padding:0 0.8cqw;height:3.2cqw}"
+  + "td{border-bottom:0.15cqw solid #d6d3d1;padding:0 0.8cqw;height:var(--rh);font-size:var(--fs);line-height:1.1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}"
+  + "td.num{font-weight:bold;text-align:center}td.pl{color:#44403c;font-size:calc(var(--fs) * .9)}td.ch{font-weight:bold}"
+  + "td .bx{max-height:var(--rh);overflow:hidden;display:flex;flex-direction:column;justify-content:center;line-height:1.05}"
+  + "td .bx span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+  + "td .chef{font-weight:normal;font-style:italic;color:#57534e;font-size:.72em}"
   + ".free{color:#a8a29e;font-weight:normal;font-style:italic}"
-  + ".zone{margin-top:4mm;display:flex;align-items:flex-start;justify-content:center}"
-  + ".zone img{display:block;max-width:100%;width:auto;height:auto;border:1px solid #d6d3d1;border-radius:5px}"
-  + ".vide{color:#a8a29e;font-style:italic;font-size:13px}";
+  + ".zone{margin-top:2cqw;display:flex;align-items:flex-start;justify-content:center}"
+  + ".zone img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;border:0.2cqw solid #d6d3d1;border-radius:1cqw}"
+  + ".vide{color:#a8a29e;font-style:italic;font-size:2cqw}";
 function buildPrintHtml(journee, terrain, participants, safety, cartes) {
   const dRaw = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const d = dRaw.charAt(0).toUpperCase() + dRaw.slice(1);
-  const nameOf = (hid) => { const p = participants.find((x) => x.id === hid); return p ? p.name : hid; };
+  const nameOf = (hid) => { const p = participants.find((x) => x.id === hid); return p ? (p.name || "(sans nom)") : "(membre supprimé)"; };
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const chefs = journee.chefLignes || {};
-  const PAGE = 236, TETE = 12, ECART = 3 + 4, ENTETE = 6;   // millimetres
+  // En largeurs de feuille (100 = toute la largeur)
+  const HAUT = 130, TETE = 10.5, ECARTS = 2 + 2, ENTETE = 3.2, MARGE = 1.5;
   let pages = "";
   (terrain.tracks || []).forEach((trk) => {
     const pl = journee.placements[trk.id] || {}; const byMir = {}; Object.entries(pl).forEach(([hid, mid]) => { byMir[mid] = hid; });
@@ -3832,15 +3837,14 @@ function buildPrintHtml(journee, terrain, participants, safety, cartes) {
     // Au-dela de 12 postes, deux tableaux cote a cote : le texte reste grand.
     const deux = n > 12;
     const lignes = Math.max(1, deux ? Math.ceil(n / 2) : n);
-    const fs = lignes <= 12 ? 15 : lignes <= 16 ? 13.5 : lignes <= 20 ? 12 : 10.5;
-    const rh = lignes <= 12 ? 8 : lignes <= 16 ? 7 : lignes <= 20 ? 6 : 5;      // hauteur de ligne en mm
+    const [rh, fs] = lignes <= 8 ? [4.6, 2.4] : lignes <= 12 ? [4.2, 2.2] : lignes <= 16 ? [3.7, 2.0] : lignes <= 20 ? [3.2, 1.75] : lignes <= 25 ? [2.7, 1.5] : [2.2, 1.25];
     const ligne = (m, mi) => {
       const hid = byMir[m.id];
-      const chef = chefs[m.id] ? "<span class='chef'>chef : " + esc(nameOf(chefs[m.id])) + "</span>" : "";
-      if (chef) return "<tr><td class='num'>" + numeroPoste(m, mi) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch' style='white-space:normal'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + chef + "</td></tr>";
-      return "<tr><td class='num'>" + numeroPoste(m, mi) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + (hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>") + "</td></tr>";
+      const qui = hid ? esc(nameOf(hid)) : "<span class='free'>libre</span>";
+      const cell = chefs[m.id] ? "<div class='bx'><span>" + qui + "</span><span class='chef'>chef : " + esc(nameOf(chefs[m.id])) + "</span></div>" : qui;
+      return "<tr><td class='num'>" + numeroPoste(m, mi) + "</td><td class='pl'>" + esc(m.label) + "</td><td class='ch'>" + cell + "</td></tr>";
     };
-    const table = (liste, depart) => "<table><colgroup><col style='width:" + (deux ? 11 : 9) + "%'><col style='width:" + (deux ? 33 : 34) + "%'><col></colgroup>"
+    const table = (liste, depart) => "<table><colgroup><col style='width:" + (deux ? 12 : 9) + "%'><col style='width:" + (deux ? 36 : 33) + "%'><col></colgroup>"
       + "<thead><tr><th>N°</th><th>Poste</th><th>Chasseur</th></tr></thead><tbody>"
       + (liste.length ? liste.map((m, k) => ligne(m, depart + k)).join("") : "<tr><td colspan='3' class='free'>Aucun poste sur cette traque</td></tr>")
       + "</tbody></table>";
@@ -3848,16 +3852,17 @@ function buildPrintHtml(journee, terrain, participants, safety, cartes) {
       ? "<div class='tabs'>" + table(mirs.slice(0, lignes), 0) + table(mirs.slice(lignes), lignes) + "</div>"
       : "<div class='tabs'>" + table(mirs, 0) + "</div>";
     // La place restante revient a la carte, calculee ici plutot que laissee au navigateur.
-    const hCarte = Math.max(60, PAGE - TETE - ECART - ENTETE - lignes * rh - 4);
+    const hCarte = Math.max(25, HAUT - TETE - ECARTS - ENTETE - lignes * rh - MARGE);
     const carte = (cartes || {})[trk.id];
     const col = trk.color || "#166534";
-    pages += "<section class='page' style='--fs:" + fs + "px;--rh:" + rh + "mm'>"
-      + "<div class='tete'><h1>" + esc(terrain.name) + " — <span class='tq' style='border-color:" + col + "'>" + esc(trk.name) + "</span></h1><p>" + esc(d) + "</p></div>"
+    pages += "<section class='page' style='--fs:" + fs + "cqw;--rh:" + rh + "cqw'>"
+      + "<div class='tete'><div class='l1'><h1 style='border-color:" + col + "'>" + esc(trk.name) + "</h1><span class='date'>" + esc(d) + "</span></div>"
+      + "<div class='terr'>" + esc(terrain.name) + "</div></div>"
       + tables
-      + "<div class='zone' style='height:" + hCarte + "mm'>" + (carte ? "<img src='" + carte + "' alt='Carte de la traque' style='max-height:" + hCarte + "mm' />" : "<span class='vide'>Pas de carte pour cette traque.</span>") + "</div>"
+      + "<div class='zone' style='height:" + hCarte.toFixed(1) + "cqw'>" + (carte ? "<img src='" + carte + "' alt='Carte de la traque' />" : "<span class='vide'>Pas de carte pour cette traque.</span>") + "</div>"
       + "</section>";
   });
-  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>Postes — " + esc(terrain.name) + "</title><style>" + POSTES_CSS + "</style></head><body>" + pages + "</body></html>";
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Postes — " + esc(terrain.name) + "</title><style>" + POSTES_CSS + "</style></head><body>" + pages + "</body></html>";
 }
 function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onRemoveKill, onSetShot, onSetState }) {
   const [sub, setSub] = useState("final");
