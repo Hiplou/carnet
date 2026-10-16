@@ -12,11 +12,9 @@
 <meta property="og:url" content="https://carnetdechasse.fr/" />
 <meta property="og:locale" content="fr_FR" />
 <meta property="og:site_name" content="Carnet de Chasse" />
-<meta property="og:image" content="https://carnetdechasse.fr/og-image.jpg" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="Carnet de Chasse : organiser une battue et envoyer à chacun son poste" />
-<meta name="twitter:card" content="summary_large_image" />
+<meta property="og:image" content="https://carnetdechasse.fr/icon.png" />
+<meta property="og:image:alt" content="Logo Carnet de Chasse" />
+<meta name="twitter:card" content="summary" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -368,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.14";
+const APP_VERSION = "v4.15";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1746,39 +1744,42 @@ async function dessinerZone(root, scale, zone) {
   parcours(root, Z, 1);
   return cv;
 }
+// Largeurs Helvetica (1/1000 de la taille) pour centrer ou caler a droite ; accents = lettre de base.
+const LARG_HELV = "278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584".split(",").map(Number);
+function largeurHelv(t, sz) { return Array.from(String(t)).reduce((s, ch) => { const c = ch.charCodeAt(0); const b = c === 183 ? 46 : ch.normalize("NFD")[0].charCodeAt(0); return s + (b >= 32 && b <= 126 ? LARG_HELV[b - 32] : 556); }, 0) * sz / 1000; }
 function pdfDepuisImages(pages) {
-  // PDF minimal : une image JPEG par page A4, sans police ni bibliotheque externe.
+  // PDF minimal : des images JPEG posees sur des pages, des textes en Helvetica (police standard
+  // des PDF, rien a integrer) et des traits. Aucune bibliotheque externe.
+  // Une page : { pw, ph, imgs:[{jpeg,w,h,x,y,dw,dh}], textes:[{t,sz,cx|xd,y}], lignes:[{x1,y1,x2,y2}], inv }
   const enc = new TextEncoder(); const parts = []; let len = 0; const off = [];
   const put = (d) => { const b = typeof d === "string" ? enc.encode(d) : d; parts.push(b); len += b.length; };
-  const n = pages.length, total = 4 + n * 3;
-  // Signature en Helvetica 8 pt (police standard des PDF, rien a integrer) : largeur calculee pour la centrer.
-  const SIG = "carnetdechasse.fr", TAILLE = 8, BAS = 6 * 72 / 25.4, MARGE = 10 * 72 / 25.4;
-  // Largeurs Helvetica (1/1000 de la taille) pour centrer ou caler a droite ; accents = lettre de base.
-  const LH = "278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584".split(",").map(Number);
-  const largeur = (t, sz) => Array.from(t).reduce((s, ch) => { const b = ch.normalize("NFD")[0].charCodeAt(0); return s + (b >= 32 && b <= 126 ? LH[b - 32] : 556); }, 0) * sz / 1000;
   // Texte en WinAnsi (les accents francais y sont), parentheses echappees.
-  const pdfTxt = (t) => Array.from(t).map((ch) => { const c = ch.charCodeAt(0); const v = c < 256 ? ch : ch === "’" ? "'" : ch.normalize("NFD")[0]; return v === "(" || v === ")" || v === "\\" ? "\\" + v : v; }).join("");
+  const pdfTxt = (t) => Array.from(String(t)).map((ch) => { const c = ch.charCodeAt(0); const v = c < 256 ? ch : ch === "’" ? "'" : ch.normalize("NFD")[0]; return v === "(" || v === ")" || v === "\\" ? "\\" + v : v; }).join("");
   const enLatin1 = (str) => { const a = new Uint8Array(str.length); for (let k = 0; k < str.length; k++) { const c = str.charCodeAt(k); a[k] = c < 256 ? c : 63; } return a; };
+  // numerotation des objets : 1 catalogue, 2 pages, 3 police, puis page / contenu / images
+  let num = 4; const plan = pages.map((p) => { const po = num++, co = num++; const ios = p.imgs.map(() => num++); return { po, co, ios }; });
+  const total = num;
   put("%PDF-1.4\n");
   off[1] = len; put("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-  off[2] = len; put("2 0 obj\n<< /Type /Pages /Kids [" + pages.map((_, i) => (4 + i * 3) + " 0 R").join(" ") + "] /Count " + n + " >>\nendobj\n");
+  off[2] = len; put("2 0 obj\n<< /Type /Pages /Kids [" + plan.map((q) => q.po + " 0 R").join(" ") + "] /Count " + pages.length + " >>\nendobj\n");
   off[3] = len; put("3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n");
   pages.forEach((p, i) => {
-    const po = 4 + i * 3, co = po + 1, io = po + 2;
-    // Chaque texte : centre (cx) ou cale a droite (xd), sur la ligne de pied de page.
-    // Sur un verso retourne, les textes sont tournes avec l'image (miroir du point d'ancrage).
-    const textes = (p.sig || []).map((cx) => ({ t: SIG, sz: TAILLE, cx })).concat(p.pieds || []);
-    const flux = "q " + p.dw.toFixed(2) + " 0 0 " + p.dh.toFixed(2) + " " + p.x.toFixed(2) + " " + p.y.toFixed(2) + " cm /Im0 Do Q"
-      + textes.map((o) => {
-        const w = largeur(o.t, o.sz), x0 = o.cx !== undefined ? o.cx - w / 2 : o.xd - w;
-        const m = p.inv ? "-1 0 0 -1 " + (p.pw - x0).toFixed(2) + " " + (p.ph - BAS).toFixed(2) : "1 0 0 1 " + x0.toFixed(2) + " " + BAS.toFixed(2);
-        return " BT /F1 " + o.sz.toFixed(2) + " Tf 0.6 0.58 0.56 rg " + m + " Tm (" + pdfTxt(o.t) + ") Tj ET";
-      }).join("");
-    off[po] = len; put(po + " 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + p.pw.toFixed(2) + " " + p.ph.toFixed(2) + "] /Resources << /XObject << /Im0 " + io + " 0 R >> /Font << /F1 3 0 R >> >> /Contents " + co + " 0 R >>\nendobj\n");
+    const { po, co, ios } = plan[i];
+    let flux = p.imgs.map((im, k) => "q " + im.dw.toFixed(2) + " 0 0 " + im.dh.toFixed(2) + " " + im.x.toFixed(2) + " " + im.y.toFixed(2) + " cm /Im" + k + " Do Q").join(" ");
+    flux += (p.lignes || []).map((l) => " q 0.66 0.64 0.62 RG 0.6 w [3 2.5] 0 d " + l.x1.toFixed(2) + " " + l.y1.toFixed(2) + " m " + l.x2.toFixed(2) + " " + l.y2.toFixed(2) + " l S Q").join("");
+    // Sur un verso retourne, les textes tournent avec la page (miroir du point d'ancrage).
+    flux += (p.textes || []).map((o) => {
+      const w = largeurHelv(o.t, o.sz), x0 = o.cx !== undefined ? o.cx - w / 2 : o.xd - w;
+      const m = p.inv ? "-1 0 0 -1 " + (p.pw - x0).toFixed(2) + " " + (p.ph - o.y).toFixed(2) : "1 0 0 1 " + x0.toFixed(2) + " " + o.y.toFixed(2);
+      return " BT /F1 " + o.sz.toFixed(2) + " Tf 0.6 0.58 0.56 rg " + m + " Tm (" + pdfTxt(o.t) + ") Tj ET";
+    }).join("");
+    off[po] = len; put(po + " 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + p.pw.toFixed(2) + " " + p.ph.toFixed(2) + "] /Resources << /XObject << " + ios.map((o, k) => "/Im" + k + " " + o + " 0 R").join(" ") + " >> /Font << /F1 3 0 R >> >> /Contents " + co + " 0 R >>\nendobj\n");
     const fluxB = enLatin1(flux);
     off[co] = len; put(co + " 0 obj\n<< /Length " + fluxB.length + " >>\nstream\n"); put(fluxB); put("\nendstream\nendobj\n");
-    off[io] = len; put(io + " 0 obj\n<< /Type /XObject /Subtype /Image /Width " + p.w + " /Height " + p.h + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + p.jpeg.length + " >>\nstream\n");
-    put(p.jpeg); put("\nendstream\nendobj\n");
+    p.imgs.forEach((im, k) => {
+      off[ios[k]] = len; put(ios[k] + " 0 obj\n<< /Type /XObject /Subtype /Image /Width " + im.w + " /Height " + im.h + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n");
+      put(im.jpeg); put("\nendstream\nendobj\n");
+    });
   });
   const xref = len;
   let x = "xref\n0 " + total + "\n0000000000 65535 f \n";
@@ -1787,6 +1788,7 @@ function pdfDepuisImages(pages) {
   return new Blob(parts, { type: "application/pdf" });
 }
 function jpegOctets(cv, q) { const b64 = cv.toDataURL("image/jpeg", q).split(",")[1]; const bin = atob(b64); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+function tourner180(cv0) { const cv = document.createElement("canvas"); cv.width = cv0.width; cv.height = cv0.height; const c = cv.getContext("2d"); c.translate(cv.width, cv.height); c.rotate(Math.PI); c.drawImage(cv0, 0, 0); return cv; }
 // Fabrique le PDF d'un document imprimable (le meme HTML que l'apercu).
 async function fabriquerPdf(html, onAvance) {
   const ifr = document.createElement("iframe");
@@ -1798,44 +1800,72 @@ async function fabriquerPdf(html, onAvance) {
     const doc = ifr.contentDocument;
     await Promise.all(Array.from(doc.images).map((im) => (im.complete ? Promise.resolve() : new Promise((r) => { im.onload = r; im.onerror = r; }))));
     try { if (doc.fonts && doc.fonts.ready) await doc.fonts.ready; } catch (e) {}
-    const MM = 72 / 25.4, A4W = 210 * MM, A4H = 297 * MM, MARGE = 10 * MM;
-    const placer = (cv, paysage, centrer) => {
-      const pw = paysage ? A4H : A4W, ph = paysage ? A4W : A4H;
-      const s = Math.min((pw - 2 * MARGE) / cv.width, (ph - 2 * MARGE) / cv.height);
+    const MM = 72 / 25.4, A4W = 210 * MM, A4H = 297 * MM, A5H = 148 * MM;
+    const SIG = "carnetdechasse.fr";
+    // Pose une image au centre d'une zone de la page (coordonnees PDF : origine en bas a gauche).
+    const poser = (cv, z, marge, enHaut) => {
+      const s = Math.min((z.w - 2 * marge) / cv.width, (z.h - 2 * marge) / cv.height);
       const dw = cv.width * s, dh = cv.height * s;
-      return { pw, ph, dw, dh, x: (pw - dw) / 2, y: centrer ? (ph - dh) / 2 : ph - MARGE - dh, w: cv.width, h: cv.height, jpeg: jpegOctets(cv, 0.88) };
+      return { jpeg: jpegOctets(cv, 0.88), w: cv.width, h: cv.height, dw, dh, x: z.x + (z.w - dw) / 2, y: enHaut ? z.y + z.h - marge - dh : z.y + (z.h - dh) / 2 };
     };
-    // La signature est retiree de l'image : elle est ecrite directement en bas de chaque page du PDF.
-    doc.querySelectorAll(".cdc, .cdc-fixe, .pnum").forEach((e) => { e.style.display = "none"; });
+    // Livret : signature au centre de la couverture et du dos, nom + numero de page a droite de chaque demi-page.
+    const piedsLivret = (el, z, petit) => {
+      const mode = el.getAttribute("data-sig") || "aucune";
+      const szSig = petit ? 6.5 : 8, szMax = petit ? 5.5 : 7, bas = (petit ? 4.5 : 6) * MM, m = (petit ? 7 : 10) * MM;
+      const out = [];
+      const centres = mode === "moities" ? [z.x + z.w / 4, z.x + z.w * 3 / 4] : [];
+      centres.forEach((cx) => out.push({ t: SIG, sz: szSig, cx, y: z.y + bas }));
+      let pp = null; try { pp = JSON.parse(el.getAttribute("data-pieds") || "null"); } catch (e) {}
+      if (Array.isArray(pp)) pp.forEach((t, k) => {
+        if (!t) return;
+        const droite = k === 0 ? z.x + z.w / 2 - m - 2 * MM : z.x + z.w - m;
+        const gauche = centres.length ? centres[k] + largeurHelv(SIG, szSig) / 2 + 6 : z.x + k * z.w / 2 + m;
+        let sz = szMax; while (sz > 4.5 && largeurHelv(t, sz) > droite - gauche) sz -= 0.25;
+        out.push({ t, sz, xd: droite, y: z.y + bas });
+      });
+      return out;
+    };
+    // La signature et les pieds HTML sont retires de l'image : ils sont ecrits directement dans le PDF.
+    doc.querySelectorAll(".cdc, .cdc-fixe, .pnum, .coupe").forEach((e) => { e.style.display = "none"; });
+    const format = doc.body.getAttribute("data-format") || "";
     const pages = [];
-    const sections = Array.from(doc.querySelectorAll("section.page, section.feuille"));
+    const sections = Array.from(doc.querySelectorAll("section.page, section.feuille, section.duo"));
     if (sections.length) {
       for (let i = 0; i < sections.length; i++) {
         const sec = sections[i];
         const inv = sec.classList.contains("inv"); if (inv) sec.classList.remove("inv");
-        const r = sec.getBoundingClientRect();
-        const paysage = r.width > r.height;
-        const cv0 = await dessinerZone(sec, (paysage ? 2300 : 1600) / r.width);
-        let cv = cv0;
-        if (inv) { cv = document.createElement("canvas"); cv.width = cv0.width; cv.height = cv0.height; const c = cv.getContext("2d"); c.translate(cv.width, cv.height); c.rotate(Math.PI); c.drawImage(cv0, 0, 0); }
-        const pl = placer(cv, paysage, paysage), mode = sec.getAttribute("data-sig") || "page";
-        pl.sig = mode === "aucune" ? [] : mode === "moities" ? [pl.pw / 4, pl.pw * 3 / 4] : [pl.pw / 2];
-        pl.inv = inv;
-        // Livret : nom du chasseur et numero de page, en bas a droite de chaque demi-page.
-        let pp = null; try { pp = JSON.parse(sec.getAttribute("data-pieds") || "null"); } catch (e) {}
-        if (Array.isArray(pp)) {
-          const MM2 = 72 / 25.4, demi = pl.pw / 2;
-          pl.pieds = pp.map((t, k) => {
-            if (!t) return null;
-            const droite = (k === 0 ? demi - 12 * MM2 : pl.pw - 10 * MM2);
-            // si la signature est centree sur cette moitie, on reduit le texte pour ne pas la toucher
-            const libre = mode === "moities" ? droite - (k === 0 ? demi / 2 : demi * 1.5) - 32 - 8 : droite - (k === 0 ? 10 * MM2 : demi + 12 * MM2);
-            let sz = 7; const wl = (z) => Array.from(t).length * z * 0.56;
-            while (sz > 5 && wl(sz) > libre) sz -= 0.25;
-            return { t, sz, xd: droite };
-          }).filter(Boolean);
+        if (sec.classList.contains("duo")) {
+          // A4 a couper : deux livrets A5 l'un au-dessus de l'autre, trait de coupe au milieu.
+          const pw = A4W, ph = A4H, zones = [{ x: 0, y: ph / 2, w: pw, h: ph / 2 }, { x: 0, y: 0, w: pw, h: ph / 2 }];
+          const pg = { pw, ph, imgs: [], textes: [], lignes: [{ x1: 4 * MM, y1: ph / 2, x2: pw - 4 * MM, y2: ph / 2 }], inv };
+          pg.textes.push({ t: "couper ici", sz: 5.5, cx: 22 * MM, y: ph / 2 + 1.5 * MM });
+          const fs = Array.from(sec.querySelectorAll(".feuille"));
+          for (let k = 0; k < fs.length; k++) {
+            const r = fs[k].getBoundingClientRect();
+            let cv = await dessinerZone(fs[k], 1800 / r.width);
+            // verso retourne : toute la page tourne, donc chaque livret tourne et change de moitie
+            if (inv) cv = tourner180(cv);
+            pg.imgs.push(poser(cv, zones[inv ? 1 - k : k], 7 * MM, false));
+            pg.textes = pg.textes.concat(piedsLivret(fs[k], zones[k], true));
+          }
+          pages.push(pg);
+        } else if (sec.classList.contains("feuille")) {
+          // Livret plie : A4 ou A5 en paysage.
+          const petit = format === "a5";
+          const pw = petit ? 210 * MM : A4H, ph = petit ? A5H : A4W;
+          const r = sec.getBoundingClientRect();
+          let cv = await dessinerZone(sec, (petit ? 1800 : 2300) / r.width);
+          if (inv) cv = tourner180(cv);
+          const z = { x: 0, y: 0, w: pw, h: ph };
+          pages.push({ pw, ph, inv, imgs: [poser(cv, z, (petit ? 7 : 10) * MM, false)], textes: piedsLivret(sec, z, petit) });
+        } else {
+          // Page portrait A4 (postes, resume) : contenu en haut, signature en bas au centre.
+          const r = sec.getBoundingClientRect();
+          let cv = await dessinerZone(sec, 1600 / r.width);
+          if (inv) cv = tourner180(cv);
+          const pw = A4W, ph = A4H;
+          pages.push({ pw, ph, inv, imgs: [poser(cv, { x: 0, y: 0, w: pw, h: ph }, 10 * MM, true)], textes: [{ t: SIG, sz: 8, cx: pw / 2, y: 6 * MM }] });
         }
-        pages.push(pl);
         if (onAvance) onAvance(i + 1, sections.length);
         await new Promise((r2) => setTimeout(r2, 0));
       }
@@ -1850,8 +1880,7 @@ async function fabriquerPdf(html, onAvance) {
         if (c < fin) { const ok = coupes.filter((v) => v > y + hautPage * 0.5 && v <= y + hautPage); if (ok.length) c = ok[ok.length - 1]; }
         else c = fin;
         const cv = await dessinerZone(body, 1600 / br.width, { x: br.left, y: br.top + y, w: br.width, h: c - y });
-        const pl = placer(cv, false, false); pl.sig = [pl.pw / 2];
-        pages.push(pl);
+        pages.push({ pw: A4W, ph: A4H, imgs: [poser(cv, { x: 0, y: 0, w: A4W, h: A4H }, 10 * MM, true)], textes: [{ t: SIG, sz: 8, cx: A4W / 2, y: 6 * MM }] });
         y = c;
         if (onAvance) onAvance(pages.length, 0);
         await new Promise((r2) => setTimeout(r2, 0));
@@ -4420,10 +4449,25 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
     const libPied = (k) => nomComplet + " · p. " + k + "/4";
     const avecPied = (h, k) => h.slice(0, -6) + "<div class='pnum'>" + esc(libPied(k)) + "</div></div>";
     const attr = (a, b) => " data-pieds='" + esc(JSON.stringify([libPied(a), libPied(b)])).replace(/'/g, "&#39;") + "'";
-    feuilles.push("<section class='feuille' data-sig='moities'" + attr(4, 1) + ">" + avecPied(p4, 4) + avecPied(p1, 1) + "</section>");
-    feuilles.push("<section class='feuille" + (opts.retourner ? " inv" : "") + "' data-sig='aucune'" + attr(2, 3) + ">" + avecPied(p2, 2) + avecPied(p3, 3) + "</section>");
+    feuilles.push({ recto: " data-sig='moities'" + attr(4, 1) + ">" + avecPied(p4, 4) + avecPied(p1, 1), verso: " data-sig='aucune'" + attr(2, 3) + ">" + avecPied(p2, 2) + avecPied(p3, 3) });
   });
-  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Livrets — " + esc(terrain.name) + "</title><style>" + LIVRET_CSS + "</style></head><body>" + feuilles.join("") + "</body></html>";
+  // Trois formats : A4 plie (livret A5), A5 plie (petit livret A6), A4 a couper (deux livrets A5 par feuille).
+  const format = opts.format === "a5" || opts.format === "coupe" ? opts.format : "a4";
+  const inv = opts.retourner ? " inv" : "";
+  let corps = "";
+  if (format === "coupe") {
+    for (let k = 0; k < feuilles.length; k += 2) {
+      const a = feuilles[k], b = feuilles[k + 1];
+      const coupe = "<div class='coupe'><span>✂ couper ici</span></div>";
+      corps += "<section class='duo'><div class='feuille'" + a.recto + "</div>" + coupe + (b ? "<div class='feuille'" + b.recto + "</div>" : "") + "</section>";
+      corps += "<section class='duo" + inv + "'><div class='feuille'" + a.verso + "</div>" + coupe + (b ? "<div class='feuille'" + b.verso + "</div>" : "") + "</section>";
+    }
+  } else corps = feuilles.map((f) => "<section class='feuille'" + f.recto + "</section><section class='feuille" + inv + "'" + f.verso + "</section>").join("");
+  const css = LIVRET_CSS.replace("@page{size:A4 landscape;margin:10mm}", format === "a5" ? "@page{size:A5 landscape;margin:7mm}" : format === "coupe" ? "@page{size:A4 portrait;margin:8mm}" : "@page{size:A4 landscape;margin:10mm}")
+    + ".duo{width:100%;container-type:inline-size;display:flex;flex-direction:column;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always}.duo:last-of-type{break-after:auto;page-break-after:auto}.duo.inv{transform:rotate(180deg)}"
+    + ".duo .feuille{break-after:auto;page-break-after:auto}.coupe{height:4cqw;position:relative}.coupe:before{content:'';position:absolute;left:0;right:0;top:50%;border-top:0.25cqw dashed #a8a29e}"
+    + ".coupe span{position:absolute;left:3cqw;top:50%;transform:translateY(-50%);background:#fff;padding:0 1cqw;font-size:1.3cqw;color:#a8a29e}";
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Livrets — " + esc(terrain.name) + "</title><style>" + css + "</style></head><body data-format='" + format + "'>" + corps + "</body></html>";
 }
 async function logoDataUrl() {
   try {
@@ -4884,7 +4928,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     if (!terr) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
     const liste = chasseursPlaces(j, terr);
     if (!liste.length) { window.alert("Aucun chasseur n'est encore placé sur un poste."); return; }
-    setLivret({ jid: j.id, sel: Object.fromEntries(liste.map((p) => [p.id, true])), retourner: false });
+    setLivret({ jid: j.id, sel: Object.fromEntries(liste.map((p) => [p.id, true])), retourner: false, format: "a4" });
   };
   const choisirCouverture = async (terrId, file) => {
     try { const url = await downscaleImage(file, 1000, 0.75); setTerrains((prev) => prev.map((t) => (t.id === terrId ? { ...t, imageCouverture: url } : t))); }
@@ -4902,7 +4946,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     }
     const logo = await logoDataUrl();
     setLivret(null);
-    setPostesPrint(buildLivretsHtml(j, terr, participants, safety, ids, cartes, { image: terr.imageCouverture || "", logo, retourner: !!livret.retourner }));
+    setPostesPrint(buildLivretsHtml(j, terr, participants, safety, ids, cartes, { image: terr.imageCouverture || "", logo, retourner: !!livret.retourner, format: livret.format || "a4" }));
   };
   // Resume de la journee : un tableau general puis toutes les cartes sur une page.
   const printResume = async (journee) => {
@@ -5192,7 +5236,17 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                         </div>
                       </div>
                       <label className="flex items-start gap-2 text-xs text-stone-600"><input type="checkbox" checked={!!livret.retourner} onChange={() => setLivret({ ...livret, retourner: !livret.retourner })} className="w-4 h-4 mt-0.5 accent-emerald-700" /><span>Le verso sort à l'envers ? Coche ici pour le retourner.</span></label>
-                      <p className="text-[11px] text-stone-400">À l'impression : paysage, recto-verso, retournement sur le bord court. Une feuille par chasseur.</p>
+                      <div>
+                        <span className="text-xs text-stone-500">Format</span>
+                        <div className="grid grid-cols-3 gap-1.5 mt-1">
+                          {[["a4", "A4 plié", "livret A5"], ["a5", "A5 plié", "petit livret A6"], ["coupe", "A4 à couper", "2 livrets A5 / feuille"]].map(([k, t, st]) => (
+                            <button key={k} onClick={() => setLivret({ ...livret, format: k })} className={"rounded-md border px-2 py-1.5 text-left " + ((livret.format || "a4") === k ? "border-emerald-700 bg-emerald-50" : "border-stone-200 bg-white")}>
+                              <span className={"block text-xs font-semibold " + ((livret.format || "a4") === k ? "text-emerald-900" : "text-stone-700")}>{t}</span>
+                              <span className="block text-[10px] text-stone-500">{st}</span>
+                            </button>))}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-stone-400">{(livret.format || "a4") === "a5" ? "À l'impression : papier A5, paysage, recto-verso, retournement sur le bord court, puis pliez en deux. Une feuille par chasseur." : (livret.format || "a4") === "coupe" ? "À l'impression : papier A4, portrait, recto-verso, retournement sur le bord long. Coupez au pointillé, puis pliez chaque moitié. Deux chasseurs par feuille." : "À l'impression : papier A4, paysage, recto-verso, retournement sur le bord court, puis pliez en deux. Une feuille par chasseur."}</p>
                       <button disabled={!nbSel} onClick={() => printLivrets(j)} className="w-full bg-emerald-800 disabled:bg-stone-300 text-white text-sm font-semibold rounded-lg py-2.5">Imprimer {nbSel} livret{nbSel > 1 ? "s" : ""}</button>
                     </div>);
                   })()}
