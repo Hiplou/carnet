@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.15";
+const APP_VERSION = "v4.16";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1838,7 +1838,6 @@ async function fabriquerPdf(html, onAvance) {
           // A4 a couper : deux livrets A5 l'un au-dessus de l'autre, trait de coupe au milieu.
           const pw = A4W, ph = A4H, zones = [{ x: 0, y: ph / 2, w: pw, h: ph / 2 }, { x: 0, y: 0, w: pw, h: ph / 2 }];
           const pg = { pw, ph, imgs: [], textes: [], lignes: [{ x1: 4 * MM, y1: ph / 2, x2: pw - 4 * MM, y2: ph / 2 }], inv };
-          pg.textes.push({ t: "couper ici", sz: 5.5, cx: 22 * MM, y: ph / 2 + 1.5 * MM });
           const fs = Array.from(sec.querySelectorAll(".feuille"));
           for (let k = 0; k < fs.length; k++) {
             const r = fs[k].getBoundingClientRect();
@@ -4458,7 +4457,7 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
   if (format === "coupe") {
     for (let k = 0; k < feuilles.length; k += 2) {
       const a = feuilles[k], b = feuilles[k + 1];
-      const coupe = "<div class='coupe'><span>✂ couper ici</span></div>";
+      const coupe = "<div class='coupe'></div>";
       corps += "<section class='duo'><div class='feuille'" + a.recto + "</div>" + coupe + (b ? "<div class='feuille'" + b.recto + "</div>" : "") + "</section>";
       corps += "<section class='duo" + inv + "'><div class='feuille'" + a.verso + "</div>" + coupe + (b ? "<div class='feuille'" + b.verso + "</div>" : "") + "</section>";
     }
