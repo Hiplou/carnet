@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.16";
+const APP_VERSION = "v4.17";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -2970,7 +2970,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
   <canvas id="jeuCv" width="800" height="300" style="display:block;width:100%;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;touch-action:manipulation"></canvas>
   <div style="display:flex;justify-content:space-between;font-size:11px;color:#78716c;margin:8px 0 4px"><span>Distance de la meute</span><span id="jeuDogTxt">à bonne distance</span></div>
   <div style="height:7px;background:#e7e5e4;border-radius:4px;overflow:hidden"><i id="jeuDogBar" style="display:block;height:100%;background:var(--emerald);width:100%"></i></div>
-  <p style="font-size:12px;color:#a8a29e;text-align:center;margin:10px 0 0">Touche l'écran pour sauter. Trois fautes et les chiens te rattrapent.</p>
+  <p style="font-size:12px;color:#a8a29e;text-align:center;margin:10px 0 0">Touche l'écran pour sauter. Deux fautes et les chiens te rattrapent.</p>
   <h3 class="sec" style="margin-top:16px">🏆 Les cinq meilleurs</h3>
   <ol id="jeuTop" style="margin:0;padding:0 0 0 22px;font-size:14px;color:#44403c"><li style="color:#a8a29e">chargement…</li></ol>
   <p id="jeuSync" style="font-size:11px;color:#a8a29e;margin:8px 0 0;text-align:center"></p>
@@ -3264,7 +3264,8 @@ function jeuStart(pseudo) {
     } else {
       st.obs.push({ type: "fosse", x: W + 40, w: (44 + d * 20) + Math.random() * (32 + d * 22), h: 0 });
     }
-    st.spawnIn = AIR * Math.max(1.08, (1.25 - d * 0.28) + Math.random() * (1.65 - d * 0.5));
+    st.spawnIn = AIR * Math.max(1.0, (1.12 - d * 0.3) + Math.random() * (1.35 - d * 0.5));
+    if (st.dist > 250 && Math.random() < 0.15 + d * 0.2) st.spawnIn = AIR * (0.95 + Math.random() * 0.08);
   }
 
   function boar(x, y, t, running) {
@@ -3384,7 +3385,7 @@ function jeuStart(pseudo) {
 
   function hit() {
     st.faults++; st.dogPush = st.faults; st.shake = 12;
-    if (st.faults >= 3) {
+    if (st.faults >= 2) {
       st.mode = "over";
       var d = Math.floor(st.dist);
       var b = Number(jeuLS("cdc_best") || 0);
@@ -3397,8 +3398,8 @@ function jeuStart(pseudo) {
     st.t++;
     if (st.shake > 0) st.shake *= 0.86;
     if (st.mode === "run") {
-      st.speed = Math.min(13.5, 5.2 + st.dist / 230);
-      st.diff = Math.min(1, st.dist / 1000);
+      st.speed = Math.min(16.2, 5.2 + st.dist / 110);
+      st.diff = Math.min(1, st.dist / 700);
       st.x += st.speed; st.dist += st.speed / 9;
       elS.textContent = Math.floor(st.dist);
       st.vy += GRAV; st.y += st.vy;
@@ -3414,7 +3415,7 @@ function jeuStart(pseudo) {
         if (o.type === "ronce") { if (st.y > GROUND - o.h + 4) { o.touched = true; hit(); } }
         else { if (st.y >= GROUND - 2) { o.touched = true; hit(); } }
       }
-      var ratio = Math.max(0, 1 - st.dogPush / 3);
+      var ratio = Math.max(0, 1 - st.dogPush / 2);
       elBar.style.width = (ratio * 100) + "%";
       elBar.style.background = ratio > 0.66 ? "#166534" : ratio > 0.33 ? "#b45309" : "#b91c1c";
       elDog.textContent = ratio > 0.66 ? "à bonne distance" : ratio > 0.33 ? "ils se rapprochent" : "ils sont sur toi !";
