@@ -199,7 +199,7 @@ function Grip({ size = 16, className = "" }) {
 }
 function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, armes: j.armes || {}, rdv: j.rdv || {}, canal: j.canal || "", deposesJourParTraque: (j.deposesJourParTraque && typeof j.deposesJourParTraque === "object") ? j.deposesJourParTraque : {}, voitures: (j.voitures && !Array.isArray(j.voitures) && typeof j.voitures === "object") ? j.voitures : {}, transport: (j.transport && typeof j.transport === "object") ? j.transport : {} }; }
 function normTirZone(z) { z = z || {}; return { dir: ((Number(z.dir) || 0) % 360 + 360) % 360, width: Math.max(10, Math.min(360, Number(z.width) || 60)) }; }
-function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, deposeHab: m.deposeHab || "", armes: (Array.isArray(m.armes) ? m.armes : (m.arme && m.arme !== "indifferent" ? [m.arme] : [])).filter((k) => ARMES.some((x) => x.key === k)), tir: { zones: tz } }; }
+function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], photoNotes: normPhotoNotes(m.photoNotes), consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, deposeHab: m.deposeHab || "", armes: (Array.isArray(m.armes) ? m.armes : (m.arme && m.arme !== "indifferent" ? [m.arme] : [])).filter((k) => ARMES.some((x) => x.key === k)), tir: { zones: tz } }; }
 const nettoiePts = (l) => Array.isArray(l) ? l.filter((d) => d && isFinite(d.gx) && isFinite(d.gy)).slice(0, 40).map((d) => ({ id: String(d.id || ""), nom: String(d.nom || "").slice(0, 40), gx: Number(d.gx), gy: Number(d.gy) })) : [];
 // --- Suggestions tirees des journees passees (2 occurrences minimum) ---
 const SUGG_MIN = 2;
@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.17";
+const APP_VERSION = "v4.20";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -735,6 +735,29 @@ function PlaceMiradors({ image, track, updateTrack }) {
   const pinch = useRef(null);
   const vueRef = useRef(vue); vueRef.current = vue;
   const modeRef = useRef(mode); modeRef.current = mode;
+  const [plein, setPlein] = useState(false);
+  const [noms, setNoms] = useState(true);
+  const [ecran, setEcran] = useState({ w: typeof window !== "undefined" ? window.innerWidth : 800, h: typeof window !== "undefined" ? window.innerHeight : 600 });
+  useEffect(() => { if (!plein) return; const f = () => setEcran({ w: window.innerWidth, h: window.innerHeight }); f(); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, [plein]);
+  const pan = useRef(null);
+  // Zoom autour d'un point de l'ecran (molette, boutons + / -)
+  const zoomAt = (f, cx, cy) => {
+    if (!wrapRef.current) return;
+    const r = wrapRef.current.getBoundingClientRect(), v = vueRef.current;
+    const z = Math.max(1, Math.min(8, v.z * f));
+    const ox = cx - r.left, oy = cy - r.top;
+    let tx = ox - ((ox - v.tx) / v.z) * z, ty = oy - ((oy - v.ty) / v.z) * z;
+    tx = Math.max(r.width - r.width * z, Math.min(0, tx)); ty = Math.max(r.height - r.height * z, Math.min(0, ty));
+    setVue({ z, tx, ty });
+  };
+  // Molette : en plein ecran toujours ; sinon seulement avec Ctrl (ou le pincement du pave tactile),
+  // pour ne pas bloquer le defilement de la page.
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const fn = (e) => { if (!plein && !e.ctrlKey) return; e.preventDefault(); zoomAt(Math.exp(-e.deltaY * 0.0018), e.clientX, e.clientY); };
+    el.addEventListener("wheel", fn, { passive: false });
+    return () => el.removeEventListener("wheel", fn);
+  }, [plein]);
   const zRef = useRef(track.zone || []); zRef.current = track.zone || [];
   const zDrag = useRef(null);
   const longTimer = useRef(null); const longRef = useRef(false); const hStart = useRef(null); const [sel, setSel] = useState(null);
@@ -759,8 +782,8 @@ function PlaceMiradors({ image, track, updateTrack }) {
     majDoigt(e);
     // Un toucher est validé au relâcher, pas par l'événement « clic » :
     // Safari annule le clic dès que le doigt bouge de quelques pixels.
-    if (doigts.current.size === 1) tap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now() };
-    else tap.current = null;
+    if (doigts.current.size === 1) { tap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now() }; pan.current = { x: e.clientX, y: e.clientY, tx: vueRef.current.tx, ty: vueRef.current.ty, actif: false }; }
+    else { tap.current = null; pan.current = null; }
     if (doigts.current.size === 2) {
       const [a, b] = Array.from(doigts.current.values());
       pinch.current = {
@@ -775,13 +798,24 @@ function PlaceMiradors({ image, track, updateTrack }) {
   const onPinchMove = (e) => {
     if (!doigts.current.has(e.pointerId)) return;
     majDoigt(e);
+    // Un seul doigt sur la carte zoomee : on la fait glisser (le toucher ne pose alors pas de poste)
+    if (doigts.current.size === 1 && pan.current && vueRef.current.z > 1.01 && wrapRef.current && drag.current === null && zDrag.current === null) {
+      const P0 = pan.current, dx = e.clientX - P0.x, dy = e.clientY - P0.y;
+      if (!P0.actif && Math.hypot(dx, dy) > 8) { P0.actif = true; tap.current = null; moved.current = true; }
+      if (P0.actif) {
+        e.preventDefault();
+        const r = wrapRef.current.getBoundingClientRect(), z = vueRef.current.z;
+        setVue({ z, tx: Math.max(r.width - r.width * z, Math.min(0, P0.tx + dx)), ty: Math.max(r.height - r.height * z, Math.min(0, P0.ty + dy)) });
+      }
+      return;
+    }
     if (doigts.current.size < 2 || !pinch.current || !wrapRef.current) return;
     e.preventDefault();
     const [a, b] = Array.from(doigts.current.values());
     const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
     const P = pinch.current;
-    const z = Math.max(1, Math.min(6, P.v0.z * (d / P.d0)));
+    const z = Math.max(1, Math.min(8, P.v0.z * (d / P.d0)));
     const r = wrapRef.current.getBoundingClientRect();
     // Le point pincé reste sous les doigts
     const ox = P.mx - r.left, oy = P.my - r.top;
@@ -798,6 +832,7 @@ function PlaceMiradors({ image, track, updateTrack }) {
     if (longTimer.current) { clearTimeout(longTimer.current); longTimer.current = null; }
     doigts.current.delete(e.pointerId);
     if (doigts.current.size < 2) pinch.current = null;
+    if (doigts.current.size === 0) { if (pan.current && pan.current.actif) moved.current = false; pan.current = null; }
     if (!t || t.id !== e.pointerId) { tap.current = null; return; }
     tap.current = null;
     if (drag.current !== null || zDrag.current !== null || longRef.current) return;
@@ -836,29 +871,17 @@ function PlaceMiradors({ image, track, updateTrack }) {
       updateTrack({ zone: [...z, { gx, gy }] }); return;
     }
     const { gx, gy } = toGlobal(e.clientX, e.clientY); const id = `m-${Date.now()}`; updateTrack({ miradors: [...track.miradors, { id, label: `Poste ${track.miradors.length + 1}`, gx: +gx.toFixed(2), gy: +gy.toFixed(2), photos: [], consignes: "" }] }); setSel(id); };
-  return (<div>
-    <div className="flex gap-1.5 mb-2">
-      {[["poste", "📍 Postes"], ["contour", "✏️ Contour"]].map(([k, lab]) => (
-        <button key={k} onClick={() => setMode(k)} className={`flex-1 text-[12px] font-medium py-1.5 rounded-md border ${mode === k ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-white text-stone-700 border-stone-300"}`}>{lab}</button>
-      ))}
-    </div>
-    <p className="text-[11px] text-stone-500 mb-1.5">
-      {mode === "poste"
-        ? "Touche la carte pour poser un mirador, glisse une pastille pour la déplacer. Pince à deux doigts pour zoomer."
-        : "Touche pour poser un point · retouche le premier ou le dernier pour fermer · glisse pour déplacer · touche la ligne pour insérer · appui long pour supprimer."}
-    </p>
-    {mode === "contour" && (<div className="flex gap-1.5 mb-2">
-      <button onClick={() => updateTrack({ zone: (track.zone || []).slice(0, -1) })} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-stone-600 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">↶ Dernier point</button>
-      <button onClick={() => updateTrack({ zoneFermee: !track.zoneFermee })} disabled={(track.zone || []).length < 3} className="flex-1 text-[11px] text-stone-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">{track.zoneFermee ? "↔ Rouvrir" : "⭘ Fermer"}</button>
-      <button onClick={() => { if ((track.zone || []).length && !window.confirm("Effacer le contour de cette traque ?")) return; updateTrack({ zone: [], zoneFermee: false }); }} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-red-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">🗑 Effacer</button>
-    </div>)}
-    {vue.z > 1.02 && (<div className="flex items-center justify-between mb-1.5 bg-stone-100 border border-stone-200 rounded-md px-2.5 py-1.5">
-      <span className="text-[11px] text-stone-500">Zoom ×{vue.z.toFixed(1)}</span>
-      <button onClick={() => setVue({ z: 1, tx: 0, ty: 0 })} className="text-[11px] text-emerald-800 underline">Revoir toute la traque</button>
-    </div>)}
-    <div ref={wrapRef}
+  // ---- Plein ecran, zoom a la molette / aux boutons, nom des postes ----
+  const ratio = ar > 0 ? (crop.h / crop.w) / ar : (crop.h / crop.w);
+  const tailleCarte = () => {
+    const w = Math.max(200, Math.min(ecran.w - 16, (ecran.h - 150) / ratio));
+    return { w, h: w * ratio };
+  };
+  const dims = plein ? tailleCarte() : null;
+  const inv = 1 / vue.z;
+  const carte = (<div ref={wrapRef}
       onPointerDown={onDown} onPointerMove={onPinchMove} onPointerUp={onFin} onPointerCancel={onFin}
-      style={{ ...cropWrapperStyle(crop, ar), touchAction: "none", overflow: "hidden", position: "relative" }}
+      style={plein ? { position: "relative", width: dims.w, height: dims.h, touchAction: "none", overflow: "hidden", borderRadius: 6, background: "#292524" } : { ...cropWrapperStyle(crop, ar), touchAction: "none", overflow: "hidden", position: "relative" }}
       className="border border-stone-300 select-none relative">
       <div ref={boxRef}
         style={{ position: "absolute", inset: 0, transform: `translate(${vue.tx}px, ${vue.ty}px) scale(${vue.z})`, transformOrigin: "0 0", cursor: "crosshair" }}>
@@ -867,7 +890,6 @@ function PlaceMiradors({ image, track, updateTrack }) {
       {mode === "contour" && (track.zone || []).map((pt, i) => {
         const lx = ((pt.gx - crop.x) / crop.w) * 100, ly = ((pt.gy - crop.y) / crop.h) * 100;
         if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null;
-        const gros = true;
         return (<div key={"z" + i}
           onPointerDown={(e) => {
             if (mode !== "contour") return;
@@ -891,18 +913,71 @@ function PlaceMiradors({ image, track, updateTrack }) {
               updateTrack({ zoneFermee: true });
             }
           }}
-          style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "contour" ? "auto" : "none" }}
-          className="-translate-x-1/2 -translate-y-1/2">
-          <span className={`block rounded-full shadow ${gros ? "w-5 h-5 bg-white border-[3px]" : "w-2.5 h-2.5 border-2 border-white"}`}
-            style={gros ? { borderColor: track.color || "#dc2626" } : { backgroundColor: track.color || "#dc2626" }} />
+          style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "contour" ? "auto" : "none", transform: `translate(-50%,-50%) scale(${inv})`, transformOrigin: "50% 50%" }}>
+          <span className="block rounded-full shadow w-5 h-5 bg-white border-[3px]" style={{ borderColor: track.color || "#dc2626" }} />
         </div>);
       })}
       {track.miradors.map((m) => { const lx = ((m.gx - crop.x) / crop.w) * 100, ly = ((m.gy - crop.y) / crop.h) * 100; if (lx < -3 || lx > 103 || ly < -3 || ly > 103) return null; const s = sel === m.id;
-        return (<div key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, touchAction: "none", pointerEvents: mode === "poste" ? "auto" : "none" }} className="-translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5" onClick={(e) => { if (mode !== "poste") return; e.stopPropagation(); setSel(m.id); }} onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSel(m.id); drag.current = m.id; moved.current = false; }}>
-          <span className={`rounded-full border-2 shadow ${s ? "border-stone-900 w-4 h-4" : "border-white w-3.5 h-3.5"}`} style={{ backgroundColor: track.color }} />
-          <span className="text-[9px] leading-tight bg-stone-900/70 text-stone-50 px-1 rounded whitespace-nowrap">{m.label}{(m.photos && m.photos.length) ? " 📷" : ""}</span>
+        // Le poste garde la meme taille a l'ecran quel que soit le zoom : zoomer ecarte les postes
+        // au lieu de les grossir, et le placement devient plus precis.
+        return (<div key={m.id} style={{ position: "absolute", left: `${lx}%`, top: `${ly}%`, width: 0, height: 0, transform: `scale(${inv})`, transformOrigin: "0 0", zIndex: s ? 3 : 2, pointerEvents: "none" }}>
+          <div style={{ position: "absolute", left: 0, top: 0, width: 28, height: 28, transform: "translate(-50%,-50%)", display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none", pointerEvents: mode === "poste" ? "auto" : "none", cursor: "grab" }}
+            onClick={(e) => { if (mode !== "poste") return; e.stopPropagation(); setSel(m.id); }}
+            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} setSel(m.id); drag.current = m.id; moved.current = false; }}>
+            <span className={`block rounded-full border-2 shadow ${s ? "border-stone-900 w-4 h-4" : "border-white w-3.5 h-3.5"}`} style={{ backgroundColor: track.color }} />
+          </div>
+          {(noms || s) && <span style={{ position: "absolute", left: 0, top: 9, transform: "translateX(-50%)", pointerEvents: "none" }} className={`${plein ? "text-[11px]" : "text-[9px]"} leading-tight ${s ? "bg-stone-900" : "bg-stone-900/70"} text-stone-50 px-1 rounded whitespace-nowrap`}>{m.label}{(m.photos && m.photos.length) ? " 📷" : ""}</span>}
         </div>); })}
-    </div></div></div>);
+    </div></div>);
+  const centreZoom = (f) => { const r = wrapRef.current && wrapRef.current.getBoundingClientRect(); if (r) zoomAt(f, r.left + r.width / 2, r.top + r.height / 2); };
+  const boutonsZoom = (sombre) => (<span className="flex items-center gap-1">
+    <button onClick={() => centreZoom(1 / 1.6)} disabled={vue.z <= 1.01} className={`w-7 h-7 rounded-md border text-base leading-none disabled:opacity-40 ${sombre ? "bg-stone-700 text-stone-100 border-stone-600" : "bg-white text-stone-700 border-stone-300"}`}>−</button>
+    <span className={`text-[11px] w-10 text-center ${sombre ? "text-stone-300" : "text-stone-500"}`}>×{vue.z.toFixed(1)}</span>
+    <button onClick={() => centreZoom(1.6)} disabled={vue.z >= 7.9} className={`w-7 h-7 rounded-md border text-base leading-none disabled:opacity-40 ${sombre ? "bg-stone-700 text-stone-100 border-stone-600" : "bg-white text-stone-700 border-stone-300"}`}>+</button>
+    {vue.z > 1.02 && <button onClick={() => setVue({ z: 1, tx: 0, ty: 0 })} className={`text-[11px] underline ml-1 ${sombre ? "text-amber-300" : "text-emerald-800"}`}>Tout voir</button>}
+  </span>);
+  const caseNoms = (sombre) => (<label className={`flex items-center gap-1 text-[11px] ${sombre ? "text-stone-200" : "text-stone-600"}`}><input type="checkbox" checked={noms} onChange={() => setNoms(!noms)} className="w-3.5 h-3.5 accent-emerald-700" />Noms</label>);
+  const aide = mode === "poste"
+    ? "Touche la carte pour poser un mirador, glisse une pastille pour la déplacer. Pince à deux doigts (ou molette) pour zoomer, glisse la carte pour te déplacer."
+    : "Touche pour poser un point · retouche le premier ou le dernier pour fermer · glisse pour déplacer · touche la ligne pour insérer · appui long pour supprimer.";
+  return (<div>
+    <div className="flex gap-1.5 mb-2">
+      {[["poste", "📍 Postes"], ["contour", "✏️ Contour"]].map(([k, lab]) => (
+        <button key={k} onClick={() => setMode(k)} className={`flex-1 text-[12px] font-medium py-1.5 rounded-md border ${mode === k ? "bg-emerald-800 text-stone-50 border-emerald-800" : "bg-white text-stone-700 border-stone-300"}`}>{lab}</button>
+      ))}
+    </div>
+    <p className="text-[11px] text-stone-500 mb-1.5">{aide}</p>
+    {mode === "contour" && (<div className="flex gap-1.5 mb-2">
+      <button onClick={() => updateTrack({ zone: (track.zone || []).slice(0, -1) })} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-stone-600 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">↶ Dernier point</button>
+      <button onClick={() => updateTrack({ zoneFermee: !track.zoneFermee })} disabled={(track.zone || []).length < 3} className="flex-1 text-[11px] text-stone-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">{track.zoneFermee ? "↔ Rouvrir" : "⭘ Fermer"}</button>
+      <button onClick={() => { if ((track.zone || []).length && !window.confirm("Effacer le contour de cette traque ?")) return; updateTrack({ zone: [], zoneFermee: false }); }} disabled={!(track.zone || []).length} className="flex-1 text-[11px] text-red-700 bg-white border border-stone-300 disabled:opacity-40 rounded-md py-1.5">🗑 Effacer</button>
+    </div>)}
+    <div className="flex items-center gap-2 mb-1.5 bg-stone-100 border border-stone-200 rounded-md px-2 py-1.5">
+      <button onClick={() => { setVue({ z: 1, tx: 0, ty: 0 }); setPlein(true); }} className="text-[12px] font-medium bg-stone-700 text-stone-50 rounded-md px-2.5 py-1">⛶ Plein écran</button>
+      {caseNoms(false)}
+      <span className="ml-auto">{boutonsZoom(false)}</span>
+    </div>
+    {plein ? <div className="text-[11px] text-stone-400 italic border border-dashed border-stone-300 rounded-md p-3 text-center">Carte ouverte en plein écran.</div> : carte}
+    {plein && (<div className="fixed inset-0 z-[55] bg-stone-900 flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <div className="flex items-center gap-2 px-3 py-2 bg-stone-800">
+        <button onClick={() => { setVue({ z: 1, tx: 0, ty: 0 }); setPlein(false); }} className="text-[12px] font-semibold bg-amber-500 text-stone-900 rounded-md px-2.5 py-1.5 shrink-0">✕ Quitter le plein écran</button>
+        <span className="text-[12px] text-stone-300 truncate">{track.name}</span>
+        <div className="ml-auto flex gap-1 shrink-0">
+          {[["poste", "📍"], ["contour", "✏️"]].map(([k, lab]) => (<button key={k} onClick={() => setMode(k)} className={`text-[12px] rounded-md px-2 py-1 ${mode === k ? "bg-emerald-700 text-white" : "bg-stone-700 text-stone-200"}`}>{lab} {k === "poste" ? "Postes" : "Contour"}</button>))}
+        </div>
+      </div>
+      <div className="flex items-center gap-3 px-3 py-1.5 bg-stone-800 border-t border-stone-700">
+        {boutonsZoom(true)}
+        {caseNoms(true)}
+        {mode === "contour" && (<span className="ml-auto flex gap-1">
+          <button onClick={() => updateTrack({ zone: (track.zone || []).slice(0, -1) })} disabled={!(track.zone || []).length} className="text-[11px] bg-stone-700 text-stone-100 disabled:opacity-40 rounded px-2 py-1">↶ Dernier point</button>
+          <button onClick={() => updateTrack({ zoneFermee: !track.zoneFermee })} disabled={(track.zone || []).length < 3} className="text-[11px] bg-stone-700 text-stone-100 disabled:opacity-40 rounded px-2 py-1">{track.zoneFermee ? "↔ Rouvrir" : "⭘ Fermer"}</button>
+        </span>)}
+      </div>
+      <div className="flex-1 min-h-0 flex items-center justify-center p-2">{carte}</div>
+      <p className="text-[11px] text-stone-300 px-3 pb-2">{aide}</p>
+    </div>)}
+  </div>);
 }
 
 // Editeur d'un mirador (nom, consignes, photos)
@@ -934,12 +1009,211 @@ function TirPreview({ image, crop, m, miradors }) {
     <div style={{ position: "absolute", left: lx + "%", top: ly + "%", width: 13, height: 13, borderRadius: "50%", background: "#1c1917", border: "2px solid #fff", transform: "translate(-50%,-50%)", boxShadow: "0 0 0 1px rgba(0,0,0,.4)" }} />
   </div>);
 }
+// ======================= Annotations des photos de poste =======================
+// Les dessins sont enregistres a part (m.photoNotes[i] = liste d'elements) : la photo d'origine
+// n'est jamais modifiee, et tout reste deplacable / modifiable / effacable.
+// Coordonnees entre 0 et 1 (relatives a la photo) pour ne pas dependre de la taille d'affichage.
+function normAnnot(o) {
+  if (!o || typeof o !== "object") return null;
+  const c = (v) => Math.max(0, Math.min(1, Number(v) || 0));
+  if (o.t === "perso" || o.t === "note") return { t: o.t, x: c(o.x), y: c(o.y), txt: String(o.txt || "").slice(0, 80) };
+  if (o.t === "ligne") return { t: "ligne", x1: c(o.x1), y1: c(o.y1), x2: c(o.x2), y2: c(o.y2), c: o.c === "v" ? "v" : "r" };
+  return null;
+}
+function normPhotoNotes(l) { return Array.isArray(l) ? l.slice(0, 40).map((a) => (Array.isArray(a) ? a.slice(0, 80).map(normAnnot).filter(Boolean) : [])) : []; }
+// Etiquette sombre a texte blanc (comme les noms de postes sur les cartes). Renvoie sa boite.
+function etiquetteAnnot(ctx, txt, x, y, U, mode, W, H) {
+  const fs = 26 * U, pad = 9 * U, lh = fs * 1.2, maxW = 430 * U;
+  ctx.font = "600 " + fs + "px Helvetica, Arial, sans-serif";
+  const lignes = []; let cur = "";
+  String(txt).split(/\s+/).filter(Boolean).forEach((w) => { const t = cur ? cur + " " + w : w; if (cur && ctx.measureText(t).width > maxW) { lignes.push(cur); cur = w; } else cur = t; });
+  if (cur) lignes.push(cur);
+  if (!lignes.length) lignes.push("…");
+  const w = Math.min(maxW, Math.max(...lignes.map((l) => ctx.measureText(l).width))) + pad * 2, h = lignes.length * lh + pad * 1.2;
+  // reste dans la photo : a cote du voisin, l'etiquette passe a gauche si elle deborde a droite
+  let bx = mode === "gauche" ? x : x - w / 2, by = y - h / 2;
+  if (W && mode === "gauche" && bx + w > W - 4 * U) bx = x - 52 * U - w;
+  if (W) bx = Math.max(4 * U, Math.min(W - w - 4 * U, bx));
+  if (H) by = Math.max(4 * U, Math.min(H - h - 4 * U, by));
+  return { x: bx, y: by, w, h, dessiner: () => {
+    ctx.fillStyle = "rgba(28,25,23,.86)"; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, by, w, h, 8 * U); else ctx.rect(bx, by, w, h); ctx.fill();
+    ctx.fillStyle = "#ffffff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    lignes.forEach((l, k) => ctx.fillText(l, bx + pad, by + pad * 0.6 + lh * (k + 0.5)));
+  } };
+}
+// Dessine toutes les annotations ; renvoie la boite de chaque element (pour les toucher a l'ecran).
+function dessinerAnnotations(ctx, W, H, items, sel) {
+  const U = Math.max(W, H) / 1000, boites = [];
+  ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
+  // ordre de dessin : traits, puis voisins, puis notes (les textes restent lisibles par-dessus)
+  const ordre = items.map((it, i) => i).sort((a, b) => ({ ligne: 0, perso: 1, note: 2 })[items[a].t] - ({ ligne: 0, perso: 1, note: 2 })[items[b].t]);
+  ordre.forEach((i) => {
+    const it = items[i];
+    if (it.t === "ligne") {
+      const x1 = it.x1 * W, y1 = it.y1 * H, x2 = it.x2 * W, y2 = it.y2 * H;
+      ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 15 * U; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.strokeStyle = it.c === "v" ? "#16a34a" : "#dc2626"; ctx.lineWidth = 9 * U; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      boites[i] = { ligne: [x1, y1, x2, y2] };
+      if (sel === i) [[x1, y1], [x2, y2]].forEach(([hx, hy]) => { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4 * U; ctx.beginPath(); ctx.arc(hx, hy, 13 * U, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+    } else if (it.t === "perso") {
+      // bonhomme orange : les pieds sont au point pose
+      const px = it.x * W, py = it.y * H;
+      const corps = (col, plus) => {
+        ctx.strokeStyle = col; ctx.fillStyle = col;
+        ctx.lineWidth = 8 * U + plus; ctx.beginPath(); ctx.moveTo(px - 6 * U, py - 20 * U); ctx.lineTo(px - 7 * U, py); ctx.moveTo(px + 6 * U, py - 20 * U); ctx.lineTo(px + 7 * U, py); ctx.stroke();
+        ctx.lineWidth = 6 * U + plus; ctx.beginPath(); ctx.moveTo(px - 12 * U, py - 44 * U); ctx.lineTo(px - 21 * U, py - 24 * U); ctx.moveTo(px + 12 * U, py - 44 * U); ctx.lineTo(px + 21 * U, py - 24 * U); ctx.stroke();
+        ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(px - 13 * U - plus / 2, py - 49 * U - plus / 2, 26 * U + plus, 31 * U + plus, 9 * U); else ctx.rect(px - 13 * U, py - 49 * U, 26 * U, 31 * U); ctx.fill();
+        ctx.beginPath(); ctx.arc(px, py - 62 * U, 11 * U + plus / 2, 0, Math.PI * 2); ctx.fill();
+      };
+      corps("#ffffff", 6 * U); corps("#f97316", 0);
+      let b = { x: px - 26 * U, y: py - 78 * U, w: 52 * U, h: 84 * U };
+      if (it.txt) { const e = etiquetteAnnot(ctx, it.txt, px + 26 * U, py - 42 * U, U, "gauche", W, H); e.dessiner(); const x0 = Math.min(b.x, e.x), y0 = Math.min(b.y, e.y); b = { x: x0, y: y0, w: Math.max(b.x + b.w, e.x + e.w) - x0, h: Math.max(b.y + b.h, e.y + e.h) - y0 }; }
+      boites[i] = b;
+      if (sel === i) { ctx.setLineDash([10 * U, 7 * U]); ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4 * U; ctx.strokeRect(b.x - 5 * U, b.y - 5 * U, b.w + 10 * U, b.h + 10 * U); ctx.setLineDash([]); }
+    } else if (it.t === "note") {
+      const e = etiquetteAnnot(ctx, it.txt || "Note", it.x * W, it.y * H, U, "centre", W, H); e.dessiner();
+      boites[i] = { x: e.x, y: e.y, w: e.w, h: e.h };
+      if (sel === i) { ctx.setLineDash([10 * U, 7 * U]); ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4 * U; ctx.strokeRect(e.x - 5 * U, e.y - 5 * U, e.w + 10 * U, e.h + 10 * U); ctx.setLineDash([]); }
+    }
+  });
+  ctx.restore();
+  return boites;
+}
+// Photo + annotations fusionnees en une seule image (pour la page des chasseurs et les vignettes).
+async function aplatirPhoto(src, items, maxDim, q) {
+  if (!items || !items.length) return src;
+  const img = await loadImg(src);
+  let W = img.naturalWidth, H = img.naturalHeight;
+  if (maxDim && Math.max(W, H) > maxDim) { const r = maxDim / Math.max(W, H); W = Math.round(W * r); H = Math.round(H * r); }
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d"); ctx.drawImage(img, 0, 0, W, H);
+  dessinerAnnotations(ctx, W, H, items, null);
+  return cv.toDataURL("image/jpeg", q || 0.72);
+}
+function AnnotThumb({ src, items, onClick }) {
+  const [url, setUrl] = useState(src);
+  useEffect(() => { let vivant = true; aplatirPhoto(src, items, 260, 0.7).then((u) => { if (vivant) setUrl(u); }).catch(() => {}); return () => { vivant = false; }; }, [src, JSON.stringify(items || [])]);
+  return <button onClick={onClick} className="block" title="Annoter la photo"><img src={url} alt="" className="w-16 h-16 object-cover rounded border border-stone-300" /></button>;
+}
+function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
+  const cvRef = useRef(null), imgRef = useRef(null), boites = useRef([]), glisse = useRef(null);
+  const [items, setItems] = useState(() => (depart || []).map((x) => ({ ...x })));
+  const [hist, setHist] = useState([]);
+  const [mode, setMode] = useState("main");
+  const [sel, setSel] = useState(null);
+  const [temp, setTemp] = useState(null);
+  const [pret, setPret] = useState(false);
+  const [quitter, setQuitter] = useState(false);
+  const modifie = JSON.stringify(items) !== JSON.stringify(depart || []);
+  useEffect(() => { loadImg(src).then((im) => { imgRef.current = im; const cv = cvRef.current; if (cv) { cv.width = im.naturalWidth; cv.height = im.naturalHeight; } setPret(true); }).catch(() => {}); }, [src]);
+  useEffect(() => {
+    const cv = cvRef.current, im = imgRef.current; if (!cv || !im || !pret) return;
+    const ctx = cv.getContext("2d"); ctx.drawImage(im, 0, 0, cv.width, cv.height);
+    const liste = temp ? items.concat([temp]) : items;
+    boites.current = dessinerAnnotations(ctx, cv.width, cv.height, liste, sel);
+  }, [items, sel, temp, pret]);
+  const memo = () => setHist((h) => h.concat([items.map((x) => ({ ...x }))]).slice(-40));
+  const pos = (e) => { const cv = cvRef.current, r = cv.getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)), px: (e.clientX - r.left) * cv.width / r.width, py: (e.clientY - r.top) * cv.height / r.height }; };
+  const toucher = (p) => {
+    const cv = cvRef.current, U = Math.max(cv.width, cv.height) / 1000;
+    const ordre = items.map((_, i) => i).sort((a, b) => ({ ligne: 0, perso: 1, note: 2 })[items[b].t] - ({ ligne: 0, perso: 1, note: 2 })[items[a].t]);
+    for (const i of ordre) {
+      const b = boites.current[i]; if (!b) continue;
+      if (b.ligne) {
+        const [x1, y1, x2, y2] = b.ligne, dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy || 1;
+        const t = Math.max(0, Math.min(1, ((p.px - x1) * dx + (p.py - y1) * dy) / L));
+        if (Math.hypot(p.px - (x1 + t * dx), p.py - (y1 + t * dy)) < 22 * U) return i;
+      } else if (p.px >= b.x - 8 * U && p.px <= b.x + b.w + 8 * U && p.py >= b.y - 8 * U && p.py <= b.y + b.h + 8 * U) return i;
+    }
+    return null;
+  };
+  const down = (e) => {
+    e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {}
+    const p = pos(e), cv = cvRef.current, U = Math.max(cv.width, cv.height) / 1000;
+    if (mode === "perso" || mode === "note") {
+      memo(); const n = { t: mode, x: p.x, y: p.y, txt: "" };
+      setItems((l) => l.concat([n])); setSel(items.length); setMode("main");
+      setTimeout(() => { const el = document.getElementById("annotTxt"); if (el) el.focus(); }, 60);
+      return;
+    }
+    if (mode === "r" || mode === "v") { glisse.current = { trait: true, x: p.x, y: p.y }; setTemp({ t: "ligne", x1: p.x, y1: p.y, x2: p.x, y2: p.y, c: mode }); return; }
+    // mode main : choisir / deplacer
+    if (sel !== null && items[sel] && items[sel].t === "ligne") {
+      const it = items[sel], W = cv.width, H = cv.height;
+      if (Math.hypot(p.px - it.x1 * W, p.py - it.y1 * H) < 26 * U) { memo(); glisse.current = { i: sel, bout: 1 }; return; }
+      if (Math.hypot(p.px - it.x2 * W, p.py - it.y2 * H) < 26 * U) { memo(); glisse.current = { i: sel, bout: 2 }; return; }
+    }
+    const i = toucher(p);
+    setSel(i);
+    if (i !== null) { memo(); glisse.current = { i, x: p.x, y: p.y, orig: { ...items[i] } }; }
+  };
+  const move = (e) => {
+    const g = glisse.current; if (!g) return;
+    const p = pos(e);
+    if (g.trait) { setTemp((t) => (t ? { ...t, x2: p.x, y2: p.y } : t)); return; }
+    setItems((l) => l.map((it, k) => {
+      if (k !== g.i) return it;
+      if (g.bout === 1) return { ...it, x1: p.x, y1: p.y };
+      if (g.bout === 2) return { ...it, x2: p.x, y2: p.y };
+      const dx = p.x - g.x, dy = p.y - g.y, o = g.orig, c = (v) => Math.max(0, Math.min(1, v));
+      return it.t === "ligne" ? { ...it, x1: c(o.x1 + dx), y1: c(o.y1 + dy), x2: c(o.x2 + dx), y2: c(o.y2 + dy) } : { ...it, x: c(o.x + dx), y: c(o.y + dy) };
+    }));
+  };
+  const up = () => {
+    const g = glisse.current; glisse.current = null;
+    if (g && g.trait && temp) {
+      if (Math.hypot(temp.x2 - temp.x1, temp.y2 - temp.y1) > 0.03) { memo(); setItems((l) => l.concat([temp])); setSel(items.length); }
+      setTemp(null);
+    }
+  };
+  const annuler = () => { if (!hist.length) return; setItems(hist[hist.length - 1]); setHist((h) => h.slice(0, -1)); setSel(null); };
+  const majSel = (patch) => setItems((l) => l.map((it, k) => (k === sel ? { ...it, ...patch } : it)));
+  const suppr = () => { if (sel === null) return; memo(); setItems((l) => l.filter((_, k) => k !== sel)); setSel(null); };
+  const it = sel !== null ? items[sel] : null;
+  const outils = [["main", "👆", "Déplacer"], ["perso", "🧍", "Voisin"], ["r", "🟥", "Tir interdit"], ["v", "🟩", "Tir autorisé"], ["note", "📝", "Note"]];
+  const aide = { main: "Touche un élément pour le choisir, puis fais-le glisser.", perso: "Touche la photo là où se trouve le voisin.", r: "Trace un trait rouge : direction de tir interdite.", v: "Trace un trait vert : direction de tir autorisée.", note: "Touche la photo là où poser la note." }[mode];
+  return (<div className="fixed inset-0 z-[60] bg-stone-900 flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+    <div className="flex items-center justify-between gap-2 px-3 py-2 bg-stone-800">
+      {quitter
+        ? <span className="flex items-center gap-2"><span className="text-xs text-stone-200">Quitter sans enregistrer ?</span><button onClick={onClose} className="text-xs font-semibold bg-red-700 text-white rounded px-2 py-1">Quitter</button><button onClick={() => setQuitter(false)} className="text-xs text-stone-300 px-2 py-1">Rester</button></span>
+        : <button onClick={() => (modifie ? setQuitter(true) : onClose())} className="text-sm text-stone-200 flex items-center gap-1"><ArrowLeft size={16} /> Fermer</button>}
+      <div className="flex items-center gap-2">
+        <button onClick={annuler} disabled={!hist.length} className="text-sm text-stone-200 disabled:text-stone-500 px-2 py-1">↶ Annuler</button>
+        <button onClick={() => onSave(items)} className="text-sm font-semibold bg-emerald-700 text-white rounded-md px-3 py-1.5">Enregistrer</button>
+      </div>
+    </div>
+    <div className="flex gap-1 px-2 py-2 bg-stone-800 border-t border-stone-700 overflow-x-auto">
+      {outils.map(([k, ico, lab]) => (<button key={k} onClick={() => { setMode(k); if (k !== "main") setSel(null); }} className={"shrink-0 flex flex-col items-center rounded-md px-2.5 py-1 text-[11px] " + (mode === k ? "bg-amber-500 text-stone-900 font-semibold" : "bg-stone-700 text-stone-100")}><span className="text-base leading-tight">{ico}</span>{lab}</button>))}
+    </div>
+    <p className="px-3 py-1 text-[11px] text-stone-300 bg-stone-800">{aide}</p>
+    <div className="flex-1 min-h-0 flex items-center justify-center p-2">
+      <canvas ref={cvRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} style={{ maxWidth: "100%", maxHeight: "100%", touchAction: "none", borderRadius: 6, background: "#292524" }} />
+    </div>
+    {it && (<div className="bg-stone-800 px-3 py-2 space-y-2 border-t border-stone-700">
+      {(it.t === "perso" || it.t === "note") && (<div>
+        <input id="annotTxt" value={it.txt || ""} maxLength={80} onChange={(e) => majSel({ txt: e.target.value })} placeholder={it.t === "perso" ? "Texte à côté du voisin (ex. P5, voisin à 60 m)…" : "Texte de la note (ex. chemin, maison, ligne de crête)…"} className="w-full rounded-md px-2.5 py-2 text-sm bg-white text-stone-900" />
+        {it.t === "perso" && (voisins || []).length > 0 && (<div className="flex gap-1.5 flex-wrap mt-1.5">{voisins.map((v) => (<button key={v} onClick={() => majSel({ txt: v })} className="text-[11px] bg-stone-700 text-stone-100 rounded-full px-2 py-0.5">{v}</button>))}</div>)}
+      </div>)}
+      <div className="flex items-center gap-2">
+        {it.t === "ligne" && (<><button onClick={() => majSel({ c: "r" })} className={"text-xs rounded px-2 py-1 " + (it.c === "r" ? "bg-red-700 text-white" : "bg-stone-700 text-stone-200")}>🟥 Interdit</button><button onClick={() => majSel({ c: "v" })} className={"text-xs rounded px-2 py-1 " + (it.c === "v" ? "bg-green-700 text-white" : "bg-stone-700 text-stone-200")}>🟩 Autorisé</button></>)}
+        <button onClick={suppr} className="ml-auto text-xs font-semibold text-red-300 border border-red-400 rounded px-2 py-1">Supprimer</button>
+      </div>
+    </div>)}
+  </div>);
+}
 function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, image, crop, sugg }) {
   const [open, setOpen] = useState(false); const fileRef = useRef(null); const [busy, setBusy] = useState(false); const [renaming, setRenaming] = useState(false);
+  // Suppression en deux appuis, sans fenetre du navigateur (qui peut etre bloquee et ne rien afficher).
+  const [armer, setArmer] = useState(false);
+  useEffect(() => { if (!armer) return; const t = setTimeout(() => setArmer(false), 4000); return () => clearTimeout(t); }, [armer]);
   const patch = (p) => updateTrack({ miradors: track.miradors.map((x) => (x.id === m.id ? { ...x, ...p } : x)) });
   const del = () => updateTrack({ miradors: track.miradors.filter((x) => x.id !== m.id) });
   const addPhoto = async (e) => { const f = e.target.files?.[0]; if (!f) return; setBusy(true); try { const d = await downscaleImage(f, 1100, 0.55); patch({ photos: [...(m.photos || []), d] }); } catch {} finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; } };
-  const rmPhoto = (i) => patch({ photos: (m.photos || []).filter((_, k) => k !== i) });
+  const rmPhoto = (i) => patch({ photos: (m.photos || []).filter((_, k) => k !== i), photoNotes: (m.photoNotes || []).filter((_, k) => k !== i) });
+  const [annot, setAnnot] = useState(null);
+  const notesDe = (i) => (m.photoNotes || [])[i] || [];
+  const enregistrerNotes = (i, items) => { const l = (m.photos || []).map((_, k) => notesDe(k)); l[i] = items; patch({ photoNotes: l }); setAnnot(null); };
+  const voisins = (track.miradors || []).filter((x) => x.id !== m.id).map((x) => x.label || "").filter(Boolean).slice(0, 30);
   return (<div data-mid={m.id} className={`border rounded ${isDragging ? "opacity-60 ring-2 ring-amber-400 " : ""}${(m.accFauteuil || m.accCanne) ? "bg-emerald-50 border-emerald-300" : "bg-white border-stone-200"}`}>
     <div className="flex items-center gap-1.5 px-2 py-1.5">
       <button onPointerDown={(e) => { e.preventDefault(); onDragStart && onDragStart(m.id); }} title="Glisser pour réordonner" className="shrink-0 text-stone-300 hover:text-stone-500 touch-none px-0.5"><Grip size={16} /></button>
@@ -953,7 +1227,9 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
       {(m.photos && m.photos.length) ? <span className="text-[10px] text-stone-400 shrink-0">📷{m.photos.length}</span> : null}
       {inCommon ? <span className="text-[10px] shrink-0" title="Reçoit une consigne commune">🔗</span> : null}
       <button onClick={() => setRenaming((r) => !r)} title="Renommer" className="shrink-0 text-stone-400 hover:text-amber-700 p-0.5"><Pencil size={14} /></button>
-      <button onClick={() => { if (window.confirm("Supprimer « " + (m.label || "ce poste") + " » ?")) del(); }} title="Supprimer" className="shrink-0 text-stone-400 hover:text-red-700 p-0.5"><Trash2 size={14} /></button>
+      {armer
+        ? <button onClick={() => { setArmer(false); del(); }} className="shrink-0 bg-red-700 text-white text-[11px] font-semibold rounded px-2 py-1">Supprimer ?</button>
+        : <button onClick={() => setArmer(true)} title="Supprimer" className="shrink-0 text-stone-400 hover:text-red-700 p-0.5"><Trash2 size={14} /></button>}
     </div>
     {open && (<div className="border-t border-stone-100 px-2 py-2 space-y-2">
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Priorité d'attribution</label>
@@ -1002,10 +1278,12 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
 </div>
       <div><label className="text-[10px] uppercase tracking-wide text-stone-400">Photos du poste</label>
         <div className="flex gap-2 flex-wrap mt-1">
-          {(m.photos || []).map((ph, i) => (<div key={i} className="relative"><img src={ph} alt="" className="w-16 h-16 object-cover rounded border border-stone-300" /><button onClick={() => rmPhoto(i)} className="absolute -top-1.5 -right-1.5 bg-red-700 text-white rounded-full p-0.5"><X size={11} /></button></div>))}
+          {(m.photos || []).map((ph, i) => (<div key={i} className="relative"><AnnotThumb src={ph} items={notesDe(i)} onClick={() => setAnnot(i)} /><button onClick={() => setAnnot(i)} title="Annoter" className="absolute -bottom-1.5 -left-1.5 bg-amber-500 text-stone-900 rounded-full w-5 h-5 text-[10px] flex items-center justify-center shadow">✏️</button><button onClick={() => rmPhoto(i)} className="absolute -top-1.5 -right-1.5 bg-red-700 text-white rounded-full p-0.5"><X size={11} /></button></div>))}
           <input ref={fileRef} type="file" accept="image/*" onChange={addPhoto} className="hidden" />
           <button onClick={() => fileRef.current?.click()} disabled={busy} className="w-16 h-16 rounded border-2 border-dashed border-stone-300 text-stone-400 flex items-center justify-center"><Plus size={18} /></button>
-        </div>{busy && <p className="text-xs text-stone-400 mt-1">Préparation…</p>}</div>
+        </div>{busy && <p className="text-xs text-stone-400 mt-1">Préparation…</p>}
+        {(m.photos || []).length > 0 && <p className="text-[10px] text-stone-400 mt-1">Touche une photo (ou ✏️) pour y placer le voisin, des notes et les angles de tir. Le chasseur la voit annotée.</p>}
+        {annot !== null && (m.photos || [])[annot] && <PhotoAnnoteur src={m.photos[annot]} items={notesDe(annot)} voisins={voisins} onSave={(items) => enregistrerNotes(annot, items)} onClose={() => setAnnot(null)} />}</div>
     </div>)}
   </div>);
 }
@@ -1346,7 +1624,10 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
   };
 
   const addTrack = () => { const id = `trk-${Date.now()}`; setTracks((prev) => [...prev, { id, name: `Traque ${prev.length + 1}`, secteurId: (secteurs[0] || {}).id || "sec-1", color: PALETTE[prev.length % PALETTE.length], crop: { ...DEFAULT_CROP }, miradors: [] }]); setTab(id); };
-  const deleteTrack = (id) => { if (tracks.length === 1) { alert("Il faut au moins une traque."); return; } if (!window.confirm("Supprimer cette traque ?")) return; setTracks((prev) => { const next = prev.filter((t) => t.id !== id); if (tab === id) setTab("plan"); return next; }); };
+  // Suppression d'une traque en deux appuis (pas de fenetre du navigateur, qui peut etre bloquee).
+  const [delArme, setDelArme] = useState(null);
+  useEffect(() => { if (!delArme) return; const t = setTimeout(() => setDelArme(null), 4000); return () => clearTimeout(t); }, [delArme]);
+  const deleteTrack = (id) => { if (tracks.length <= 1) return; setDelArme(null); setTracks((prev) => prev.filter((t) => t.id !== id)); if (tab === id) setTab("plan"); };
   const current = tracks.find((t) => t.id === tab);
   return (<SectionCard className="p-4 space-y-4">
     <div className="flex items-center justify-between"><button onClick={onCancel} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={15} /> Retour</button>{initialTerrain && <button onClick={onDelete} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer le territoire</button>}</div>
@@ -1433,7 +1714,11 @@ function TerritoryEditor({ initialTerrain, journees, onSave, onCancel, onDelete,
         className="w-full border border-dashed border-stone-300 rounded-lg py-2.5 text-sm font-medium text-amber-800 bg-white">+ Ajouter un secteur</button>
     </div>)
       : tab === "chasse" ? (<PlanChasseEditor planChasse={planChasse} setPlanChasse={setPlanChasse} journees={journees} tid={tid} />)
-      : current ? (<div className="space-y-3"><div className="flex justify-end"><button onClick={() => deleteTrack(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button></div><TrackEditor image={(secteurs.find((s) => s.id === current.secteurId) || secteurs[0] || {}).image || null} secteurs={secteurs} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} suggDep={suggDep} /></div>) : null}
+      : current ? (<div className="space-y-3"><div className="flex justify-end items-center gap-2">{tracks.length <= 1
+        ? <span className="text-[11px] text-stone-400">Dernière traque : elle ne peut pas être supprimée.</span>
+        : delArme === current.id
+          ? (<><span className="text-xs text-red-800">Supprimer « {current.name} » et ses {(current.miradors || []).length} poste(s) ?</span><button onClick={() => setDelArme(null)} className="text-xs text-stone-600 border border-stone-300 bg-white rounded px-2 py-1">Annuler</button><button onClick={() => deleteTrack(current.id)} className="text-xs font-semibold text-white bg-red-700 rounded px-2 py-1">Supprimer</button></>)
+          : <button onClick={() => setDelArme(current.id)} className="flex items-center gap-1 text-xs text-red-700 hover:text-red-900"><Trash2 size={13} /> Supprimer cette traque</button>}</div><TrackEditor image={(secteurs.find((s) => s.id === current.secteurId) || secteurs[0] || {}).image || null} secteurs={secteurs} track={current} updateTrack={(patch) => updateTrack(current.id, patch)} consignesCommunes={consignesCommunes} setConsignesCommunes={setConsignesCommunes} suggDep={suggDep} /></div>) : null}
     <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200"><span className="text-xs text-emerald-700 flex items-center gap-1"><Check size={13} /> Enregistrement automatique</span><button onClick={() => onSave({ id: tid, name: name.trim() || "Territoire", vueEnsemble, vueGeo, secteurs, tracks, planChasse, consignesCommunes })} className="bg-emerald-800 hover:bg-emerald-900 text-stone-50 text-sm font-medium px-4 py-1.5 rounded-md">Terminé</button></div>
   </SectionCard>);
 }
@@ -3506,9 +3791,9 @@ renderPicker();fillLists();var wb=document.getElementById("welcomeBtn");if(wb)wb
 if(DATA.image){var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR=im.naturalWidth/im.naturalHeight;var mp=$("map");if(mp&&mp.innerHTML!=="")renderMap(MAP_I);}};im.src=DATA.image;}
 </scr` + `ipt></body></html>`;
 
-function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId) {
+function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId, photosAnn) {
   const posted = {};
-  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "", chefId: (journee.chefLignes && journee.chefLignes[mid]) || "" }); }); });
+  (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: (photosAnn && photosAnn[mid]) || m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "", chefId: (journee.chefLignes && journee.chefLignes[mid]) || "" }); }); });
   const chefLignesData = journee.chefLignes || {};
   const chefPostsOf = (hid) => Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid).map((mid) => { let f = null; (terrain.tracks || []).forEach((trk) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) { const pl = journee.placements[trk.id] || {}; const occHid = Object.keys(pl).find((h) => pl[h] === mid); const occ = occHid ? participants.find((x) => x.id === occHid) : null; f = { traqueName: trk.name, label: m.label, hunter: occ ? occ.name : "" }; } }); return f; }).filter(Boolean);
   const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { id: hid, name: p ? p.name : "Chasseur", posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => byNom(a.name || "", b.name || ""));
@@ -4894,7 +5179,14 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
     setPub({ status: "publishing" });
     try {
-      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId);
+      // Photos annotees : voisin, notes et angles de tir fusionnes dans l'image envoyee au chasseur.
+      const photosAnn = {};
+      for (const trk of (terrain.tracks || [])) for (const mm of (trk.miradors || [])) {
+        if (!(mm.photoNotes || []).some((l) => l && l.length)) continue;
+        photosAnn[mm.id] = [];
+        for (let k = 0; k < (mm.photos || []).length; k++) { try { photosAnn[mm.id].push(await aplatirPhoto(mm.photos[k], (mm.photoNotes || [])[k] || [], 1100, 0.62)); } catch (e) { photosAnn[mm.id].push(mm.photos[k]); } }
+      }
+      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId, photosAnn);
       const token = "PUBTS-" + Date.now();
       const stamped = html + "\n<!--" + token + "-->";
       const fn = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
