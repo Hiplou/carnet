@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.21";
+const APP_VERSION = "v4.22";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1020,7 +1020,7 @@ function normAnnot(o) {
   if (!o || typeof o !== "object") return null;
   const c = (v) => Math.max(0, Math.min(1, Number(v) || 0));
   const coul = ANNOT_COULEURS.indexOf(o.c) >= 0 ? o.c : "#dc2626", ep = [1, 2, 3].indexOf(o.e) >= 0 ? o.e : 2;
-  if (o.t === "perso" || o.t === "note") return { t: o.t, x: c(o.x), y: c(o.y), txt: String(o.txt || "").slice(0, 80) };
+  if (o.t === "perso" || o.t === "note" || o.t === "maison") return { t: o.t, x: c(o.x), y: c(o.y), txt: String(o.txt || "").slice(0, 80) };
   if (o.t === "ligne") return { t: "ligne", x1: c(o.x1), y1: c(o.y1), x2: c(o.x2), y2: c(o.y2), c: o.c === "v" ? "v" : "r" };
   if (o.t === "rect" || o.t === "ovale") return { t: o.t, x1: c(o.x1), y1: c(o.y1), x2: c(o.x2), y2: c(o.y2), c: coul, e: ep };
   if (o.t === "stylo" && Array.isArray(o.pts)) { const pts = o.pts.slice(0, 600).map((p) => [Math.round(c(p[0]) * 10000) / 10000, Math.round(c(p[1]) * 10000) / 10000]); return pts.length >= 2 ? { t: "stylo", pts, c: coul, e: ep } : null; }
@@ -1047,7 +1047,7 @@ function etiquetteAnnot(ctx, txt, x, y, U, mode, W, H) {
     lignes.forEach((l, k) => ctx.fillText(l, bx + pad, by + pad * 0.6 + lh * (k + 0.5)));
   } };
 }
-const ANNOT_COUCHE = { stylo: 0, rect: 0, ovale: 0, ligne: 0, perso: 1, note: 2 };
+const ANNOT_COUCHE = { stylo: 0, rect: 0, ovale: 0, ligne: 0, perso: 1, maison: 1, note: 2 };
 // Dessine toutes les annotations ; renvoie la boite de chaque element (pour les toucher a l'ecran).
 function dessinerAnnotations(ctx, W, H, items, sel) {
   const U = Math.max(W, H) / 1000, boites = [];
@@ -1096,6 +1096,19 @@ function dessinerAnnotations(ctx, W, H, items, sel) {
       corps("#ffffff", 6 * U); corps("#f97316", 0);
       let b = { x: px - 26 * U, y: py - 78 * U, w: 52 * U, h: 84 * U };
       if (it.txt) { const e = etiquetteAnnot(ctx, it.txt, px + 26 * U, py - 42 * U, U, "gauche", W, H); e.dessiner(); const x0 = Math.min(b.x, e.x), y0 = Math.min(b.y, e.y); b = { x: x0, y: y0, w: Math.max(b.x + b.w, e.x + e.w) - x0, h: Math.max(b.y + b.h, e.y + e.h) - y0 }; }
+      boites[i] = b;
+      if (sel === i) cadre(b);
+    } else if (it.t === "maison") {
+      // maison : toit rouge, murs blancs, contour sombre ; le bas de la maison est au point pose
+      const px = it.x * W, py = it.y * H, k = 4 * U;
+      const toit = () => { ctx.beginPath(); ctx.moveTo(px - 30 * U, py - 30 * U); ctx.lineTo(px, py - 58 * U); ctx.lineTo(px + 30 * U, py - 30 * U); ctx.closePath(); };
+      ctx.lineWidth = k + 6 * U; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.strokeRect(px - 22 * U, py - 32 * U, 44 * U, 32 * U); toit(); ctx.stroke();
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(px - 22 * U, py - 32 * U, 44 * U, 32 * U);
+      ctx.lineWidth = k; ctx.strokeStyle = "#1c1917"; ctx.strokeRect(px - 22 * U, py - 32 * U, 44 * U, 32 * U);
+      ctx.fillStyle = "#b91c1c"; toit(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#78350f"; ctx.fillRect(px - 6 * U, py - 17 * U, 12 * U, 17 * U);
+      let b = { x: px - 32 * U, y: py - 62 * U, w: 64 * U, h: 66 * U };
+      if (it.txt) { const e = etiquetteAnnot(ctx, it.txt, px + 34 * U, py - 30 * U, U, "gauche", W, H); e.dessiner(); const x0 = Math.min(b.x, e.x), y0 = Math.min(b.y, e.y); b = { x: x0, y: y0, w: Math.max(b.x + b.w, e.x + e.w) - x0, h: Math.max(b.y + b.h, e.y + e.h) - y0 }; }
       boites[i] = b;
       if (sel === i) cadre(b);
     } else if (it.t === "note") {
@@ -1160,7 +1173,7 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
   const down = (e) => {
     e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {}
     const p = pos(e), cv = cvRef.current, U = Math.max(cv.width, cv.height) / 1000;
-    if (mode === "perso" || mode === "note") {
+    if (mode === "perso" || mode === "note" || mode === "maison") {
       memo(); const n = { t: mode, x: p.x, y: p.y, txt: "" };
       setItems((l) => l.concat([n])); setSel(items.length); setMode("main");
       setTimeout(() => { const el = document.getElementById("annotTxt"); if (el) el.focus(); }, 60);
@@ -1226,8 +1239,8 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
   const libre = it && (it.t === "stylo" || it.t === "rect" || it.t === "ovale");
   const choisirCouleur = (c) => { setCouleur(c); if (libre) { memo(); majSel({ c }); } };
   const choisirEpaisseur = (n) => { setEpaisseur(n); if (libre) { memo(); majSel({ e: n }); } };
-  const outils = [["main", "👆", "Déplacer"], ["perso", "🧍", "Voisin"], ["r", "🟥", "Tir interdit"], ["v", "🟩", "Tir autorisé"], ["note", "📝", "Note"], ["stylo", "🖊️", "Stylo"], ["rect", "▭", "Rectangle"], ["ovale", "⬭", "Ovale"], ["rond", "◯", "Rond"]];
-  const aide = { main: "Touche un élément pour le choisir, puis fais-le glisser. Les poignées rondes agrandissent les formes.", perso: "Touche la photo là où se trouve le voisin.", r: "Trace un trait rouge : direction de tir interdite.", v: "Trace un trait vert : direction de tir autorisée.", note: "Touche la photo là où poser la note.", stylo: "Dessine librement avec le doigt.", rect: "Glisse pour tracer un rectangle.", ovale: "Glisse pour tracer un ovale.", rond: "Glisse pour tracer un rond." }[mode];
+  const outils = [["main", "👆", "Déplacer"], ["perso", "🧍", "Voisin"], ["maison", "🏠", "Maison"], ["r", "🟥", "Tir interdit"], ["v", "🟩", "Tir autorisé"], ["note", "📝", "Note"], ["stylo", "🖊️", "Stylo"], ["rect", "▭", "Rectangle"], ["ovale", "⬭", "Ovale"], ["rond", "◯", "Rond"]];
+  const aide = { main: "Touche un élément pour le choisir, puis fais-le glisser. Les poignées rondes agrandissent les formes.", perso: "Touche la photo là où se trouve le voisin.", maison: "Touche la photo là où se trouve la maison (ou un bâtiment).", r: "Trace un trait rouge : direction de tir interdite.", v: "Trace un trait vert : direction de tir autorisée.", note: "Touche la photo là où poser la note.", stylo: "Dessine librement avec le doigt.", rect: "Glisse pour tracer un rectangle.", ovale: "Glisse pour tracer un ovale.", rond: "Glisse pour tracer un rond." }[mode];
   const montrerPalette = ["stylo", "rect", "ovale", "rond"].indexOf(mode) >= 0 || libre;
   return (<div className="fixed inset-0 z-[60] bg-stone-900 flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
     <div className="flex items-center justify-between gap-2 px-3 py-2 bg-stone-800">
@@ -1252,8 +1265,8 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
       <canvas ref={cvRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} style={{ maxWidth: "100%", maxHeight: "100%", touchAction: "none", borderRadius: 6, background: "#292524" }} />
     </div>
     {it && (<div className="bg-stone-800 px-3 py-2 space-y-2 border-t border-stone-700">
-      {(it.t === "perso" || it.t === "note") && (<div>
-        <input id="annotTxt" value={it.txt || ""} maxLength={80} onChange={(e) => majSel({ txt: e.target.value })} placeholder={it.t === "perso" ? "Texte à côté du voisin (ex. P5, voisin à 60 m)…" : "Texte de la note (ex. chemin, maison, ligne de crête)…"} className="w-full rounded-md px-2.5 py-2 text-sm bg-white text-stone-900" />
+      {(it.t === "perso" || it.t === "note" || it.t === "maison") && (<div>
+        <input id="annotTxt" value={it.txt || ""} maxLength={80} onChange={(e) => majSel({ txt: e.target.value })} placeholder={it.t === "perso" ? "Texte à côté du voisin (ex. P5, voisin à 60 m)…" : it.t === "maison" ? "Texte à côté de la maison (ex. ferme habitée, 200 m)…" : "Texte de la note (ex. chemin, maison, ligne de crête)…"} className="w-full rounded-md px-2.5 py-2 text-sm bg-white text-stone-900" />
         {it.t === "perso" && (voisins || []).length > 0 && (<div className="flex gap-1.5 flex-wrap mt-1.5">{voisins.map((v) => (<button key={v} onClick={() => majSel({ txt: v })} className="text-[11px] bg-stone-700 text-stone-100 rounded-full px-2 py-0.5">{v}</button>))}</div>)}
       </div>)}
       <div className="flex items-center gap-2">
