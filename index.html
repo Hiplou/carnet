@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.20";
+const APP_VERSION = "v4.21";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1013,14 +1013,20 @@ function TirPreview({ image, crop, m, miradors }) {
 // Les dessins sont enregistres a part (m.photoNotes[i] = liste d'elements) : la photo d'origine
 // n'est jamais modifiee, et tout reste deplacable / modifiable / effacable.
 // Coordonnees entre 0 et 1 (relatives a la photo) pour ne pas dependre de la taille d'affichage.
+const ANNOT_COULEURS = ["#dc2626", "#f97316", "#facc15", "#16a34a", "#2563eb", "#ffffff", "#1c1917"];
+const ANNOT_EPAISSEURS = [[1, "Fin"], [2, "Moyen"], [3, "Épais"]];
+const annotLargeur = (e, U) => ({ 1: 5, 2: 9, 3: 15 })[e || 2] * U;
 function normAnnot(o) {
   if (!o || typeof o !== "object") return null;
   const c = (v) => Math.max(0, Math.min(1, Number(v) || 0));
+  const coul = ANNOT_COULEURS.indexOf(o.c) >= 0 ? o.c : "#dc2626", ep = [1, 2, 3].indexOf(o.e) >= 0 ? o.e : 2;
   if (o.t === "perso" || o.t === "note") return { t: o.t, x: c(o.x), y: c(o.y), txt: String(o.txt || "").slice(0, 80) };
   if (o.t === "ligne") return { t: "ligne", x1: c(o.x1), y1: c(o.y1), x2: c(o.x2), y2: c(o.y2), c: o.c === "v" ? "v" : "r" };
+  if (o.t === "rect" || o.t === "ovale") return { t: o.t, x1: c(o.x1), y1: c(o.y1), x2: c(o.x2), y2: c(o.y2), c: coul, e: ep };
+  if (o.t === "stylo" && Array.isArray(o.pts)) { const pts = o.pts.slice(0, 600).map((p) => [Math.round(c(p[0]) * 10000) / 10000, Math.round(c(p[1]) * 10000) / 10000]); return pts.length >= 2 ? { t: "stylo", pts, c: coul, e: ep } : null; }
   return null;
 }
-function normPhotoNotes(l) { return Array.isArray(l) ? l.slice(0, 40).map((a) => (Array.isArray(a) ? a.slice(0, 80).map(normAnnot).filter(Boolean) : [])) : []; }
+function normPhotoNotes(l) { return Array.isArray(l) ? l.slice(0, 40).map((a) => (Array.isArray(a) ? a.slice(0, 120).map(normAnnot).filter(Boolean) : [])) : []; }
 // Etiquette sombre a texte blanc (comme les noms de postes sur les cartes). Renvoie sa boite.
 function etiquetteAnnot(ctx, txt, x, y, U, mode, W, H) {
   const fs = 26 * U, pad = 9 * U, lh = fs * 1.2, maxW = 430 * U;
@@ -1041,20 +1047,42 @@ function etiquetteAnnot(ctx, txt, x, y, U, mode, W, H) {
     lignes.forEach((l, k) => ctx.fillText(l, bx + pad, by + pad * 0.6 + lh * (k + 0.5)));
   } };
 }
+const ANNOT_COUCHE = { stylo: 0, rect: 0, ovale: 0, ligne: 0, perso: 1, note: 2 };
 // Dessine toutes les annotations ; renvoie la boite de chaque element (pour les toucher a l'ecran).
 function dessinerAnnotations(ctx, W, H, items, sel) {
   const U = Math.max(W, H) / 1000, boites = [];
   ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round";
-  // ordre de dessin : traits, puis voisins, puis notes (les textes restent lisibles par-dessus)
-  const ordre = items.map((it, i) => i).sort((a, b) => ({ ligne: 0, perso: 1, note: 2 })[items[a].t] - ({ ligne: 0, perso: 1, note: 2 })[items[b].t]);
+  const poignees = (pts) => pts.forEach(([hx, hy]) => { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4 * U; ctx.beginPath(); ctx.arc(hx, hy, 13 * U, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+  const cadre = (b) => { ctx.setLineDash([10 * U, 7 * U]); ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4 * U; ctx.strokeRect(b.x - 5 * U, b.y - 5 * U, b.w + 10 * U, b.h + 10 * U); ctx.setLineDash([]); };
+  // trait colore avec un liseré (blanc, ou sombre pour le blanc) : lisible sur n'importe quelle photo
+  const tracer = (chemin, coul, larg) => {
+    ctx.strokeStyle = coul === "#ffffff" ? "rgba(0,0,0,.45)" : "rgba(255,255,255,.85)"; ctx.lineWidth = larg + 5 * U; chemin(); ctx.stroke();
+    ctx.strokeStyle = coul; ctx.lineWidth = larg; chemin(); ctx.stroke();
+  };
+  // ordre de dessin : traits et formes, puis voisins, puis notes (les textes restent lisibles par-dessus)
+  const ordre = items.map((it, i) => i).sort((a, b) => ANNOT_COUCHE[items[a].t] - ANNOT_COUCHE[items[b].t]);
   ordre.forEach((i) => {
     const it = items[i];
     if (it.t === "ligne") {
       const x1 = it.x1 * W, y1 = it.y1 * H, x2 = it.x2 * W, y2 = it.y2 * H;
-      ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 15 * U; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      ctx.strokeStyle = it.c === "v" ? "#16a34a" : "#dc2626"; ctx.lineWidth = 9 * U; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      tracer(() => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); }, it.c === "v" ? "#16a34a" : "#dc2626", 9 * U);
       boites[i] = { ligne: [x1, y1, x2, y2] };
-      if (sel === i) [[x1, y1], [x2, y2]].forEach(([hx, hy]) => { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4 * U; ctx.beginPath(); ctx.arc(hx, hy, 13 * U, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+      if (sel === i) poignees([[x1, y1], [x2, y2]]);
+    } else if (it.t === "stylo") {
+      const pts = it.pts.map(([x, y]) => [x * W, y * H]);
+      tracer(() => { ctx.beginPath(); pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); }, it.c, annotLargeur(it.e, U));
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      const b = { x: Math.min(...xs), y: Math.min(...ys) }; b.w = Math.max(...xs) - b.x; b.h = Math.max(...ys) - b.y;
+      boites[i] = { ...b, pts };
+      if (sel === i) cadre(b);
+    } else if (it.t === "rect" || it.t === "ovale") {
+      const x1 = it.x1 * W, y1 = it.y1 * H, x2 = it.x2 * W, y2 = it.y2 * H;
+      const b = { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+      const larg = annotLargeur(it.e, U);
+      if (it.t === "rect") tracer(() => { ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); }, it.c, larg);
+      else tracer(() => { ctx.beginPath(); ctx.ellipse(b.x + b.w / 2, b.y + b.h / 2, Math.max(1, b.w / 2), Math.max(1, b.h / 2), 0, 0, Math.PI * 2); }, it.c, larg);
+      boites[i] = { ...b, forme: true };
+      if (sel === i) poignees([[x1, y1], [x2, y2]]);
     } else if (it.t === "perso") {
       // bonhomme orange : les pieds sont au point pose
       const px = it.x * W, py = it.y * H;
@@ -1069,11 +1097,11 @@ function dessinerAnnotations(ctx, W, H, items, sel) {
       let b = { x: px - 26 * U, y: py - 78 * U, w: 52 * U, h: 84 * U };
       if (it.txt) { const e = etiquetteAnnot(ctx, it.txt, px + 26 * U, py - 42 * U, U, "gauche", W, H); e.dessiner(); const x0 = Math.min(b.x, e.x), y0 = Math.min(b.y, e.y); b = { x: x0, y: y0, w: Math.max(b.x + b.w, e.x + e.w) - x0, h: Math.max(b.y + b.h, e.y + e.h) - y0 }; }
       boites[i] = b;
-      if (sel === i) { ctx.setLineDash([10 * U, 7 * U]); ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4 * U; ctx.strokeRect(b.x - 5 * U, b.y - 5 * U, b.w + 10 * U, b.h + 10 * U); ctx.setLineDash([]); }
+      if (sel === i) cadre(b);
     } else if (it.t === "note") {
       const e = etiquetteAnnot(ctx, it.txt || "Note", it.x * W, it.y * H, U, "centre", W, H); e.dessiner();
       boites[i] = { x: e.x, y: e.y, w: e.w, h: e.h };
-      if (sel === i) { ctx.setLineDash([10 * U, 7 * U]); ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4 * U; ctx.strokeRect(e.x - 5 * U, e.y - 5 * U, e.w + 10 * U, e.h + 10 * U); ctx.setLineDash([]); }
+      if (sel === i) cadre(e);
     }
   });
   ctx.restore();
@@ -1104,6 +1132,8 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
   const [temp, setTemp] = useState(null);
   const [pret, setPret] = useState(false);
   const [quitter, setQuitter] = useState(false);
+  const [couleur, setCouleur] = useState("#dc2626");
+  const [epaisseur, setEpaisseur] = useState(2);
   const modifie = JSON.stringify(items) !== JSON.stringify(depart || []);
   useEffect(() => { loadImg(src).then((im) => { imgRef.current = im; const cv = cvRef.current; if (cv) { cv.width = im.naturalWidth; cv.height = im.naturalHeight; } setPret(true); }).catch(() => {}); }, [src]);
   useEffect(() => {
@@ -1114,19 +1144,19 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
   }, [items, sel, temp, pret]);
   const memo = () => setHist((h) => h.concat([items.map((x) => ({ ...x }))]).slice(-40));
   const pos = (e) => { const cv = cvRef.current, r = cv.getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)), px: (e.clientX - r.left) * cv.width / r.width, py: (e.clientY - r.top) * cv.height / r.height }; };
+  const distSeg = (px, py, x1, y1, x2, y2) => { const dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy || 1; const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / L)); return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy)); };
   const toucher = (p) => {
     const cv = cvRef.current, U = Math.max(cv.width, cv.height) / 1000;
-    const ordre = items.map((_, i) => i).sort((a, b) => ({ ligne: 0, perso: 1, note: 2 })[items[b].t] - ({ ligne: 0, perso: 1, note: 2 })[items[a].t]);
+    const ordre = items.map((_, i) => i).sort((a, b) => ANNOT_COUCHE[items[b].t] - ANNOT_COUCHE[items[a].t]);
     for (const i of ordre) {
       const b = boites.current[i]; if (!b) continue;
-      if (b.ligne) {
-        const [x1, y1, x2, y2] = b.ligne, dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy || 1;
-        const t = Math.max(0, Math.min(1, ((p.px - x1) * dx + (p.py - y1) * dy) / L));
-        if (Math.hypot(p.px - (x1 + t * dx), p.py - (y1 + t * dy)) < 22 * U) return i;
-      } else if (p.px >= b.x - 8 * U && p.px <= b.x + b.w + 8 * U && p.py >= b.y - 8 * U && p.py <= b.y + b.h + 8 * U) return i;
+      if (b.ligne) { const [x1, y1, x2, y2] = b.ligne; if (distSeg(p.px, p.py, x1, y1, x2, y2) < 22 * U) return i; }
+      else if (b.pts) { for (let k = 1; k < b.pts.length; k++) if (distSeg(p.px, p.py, b.pts[k - 1][0], b.pts[k - 1][1], b.pts[k][0], b.pts[k][1]) < 22 * U) return i; }
+      else if (p.px >= b.x - 14 * U && p.px <= b.x + b.w + 14 * U && p.py >= b.y - 14 * U && p.py <= b.y + b.h + 14 * U) return i;
     }
     return null;
   };
+  const DESSIN = ["r", "v", "stylo", "rect", "ovale", "rond"];
   const down = (e) => {
     e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {}
     const p = pos(e), cv = cvRef.current, U = Math.max(cv.width, cv.height) / 1000;
@@ -1136,33 +1166,56 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
       setTimeout(() => { const el = document.getElementById("annotTxt"); if (el) el.focus(); }, 60);
       return;
     }
-    if (mode === "r" || mode === "v") { glisse.current = { trait: true, x: p.x, y: p.y }; setTemp({ t: "ligne", x1: p.x, y1: p.y, x2: p.x, y2: p.y, c: mode }); return; }
-    // mode main : choisir / deplacer
-    if (sel !== null && items[sel] && items[sel].t === "ligne") {
-      const it = items[sel], W = cv.width, H = cv.height;
-      if (Math.hypot(p.px - it.x1 * W, p.py - it.y1 * H) < 26 * U) { memo(); glisse.current = { i: sel, bout: 1 }; return; }
-      if (Math.hypot(p.px - it.x2 * W, p.py - it.y2 * H) < 26 * U) { memo(); glisse.current = { i: sel, bout: 2 }; return; }
+    if (DESSIN.indexOf(mode) >= 0) {
+      glisse.current = { trait: true, x: p.x, y: p.y };
+      if (mode === "r" || mode === "v") setTemp({ t: "ligne", x1: p.x, y1: p.y, x2: p.x, y2: p.y, c: mode });
+      else if (mode === "stylo") setTemp({ t: "stylo", pts: [[p.x, p.y]], c: couleur, e: epaisseur });
+      else setTemp({ t: mode === "rect" ? "rect" : "ovale", x1: p.x, y1: p.y, x2: p.x, y2: p.y, c: couleur, e: epaisseur, rond: mode === "rond" });
+      return;
+    }
+    // mode main : choisir / deplacer / agrandir
+    const it0 = sel !== null ? items[sel] : null;
+    if (it0 && (it0.t === "ligne" || it0.t === "rect" || it0.t === "ovale")) {
+      const W = cv.width, H = cv.height;
+      if (Math.hypot(p.px - it0.x1 * W, p.py - it0.y1 * H) < 26 * U) { memo(); glisse.current = { i: sel, bout: 1 }; return; }
+      if (Math.hypot(p.px - it0.x2 * W, p.py - it0.y2 * H) < 26 * U) { memo(); glisse.current = { i: sel, bout: 2 }; return; }
     }
     const i = toucher(p);
     setSel(i);
-    if (i !== null) { memo(); glisse.current = { i, x: p.x, y: p.y, orig: { ...items[i] } }; }
+    if (i !== null) { memo(); glisse.current = { i, x: p.x, y: p.y, orig: JSON.parse(JSON.stringify(items[i])) }; if (items[i].c && items[i].c.length > 1) { setCouleur(items[i].c); setEpaisseur(items[i].e || 2); } }
   };
   const move = (e) => {
     const g = glisse.current; if (!g) return;
     const p = pos(e);
-    if (g.trait) { setTemp((t) => (t ? { ...t, x2: p.x, y2: p.y } : t)); return; }
+    if (g.trait) {
+      setTemp((t) => {
+        if (!t) return t;
+        if (t.t === "stylo") { const d = t.pts[t.pts.length - 1]; return Math.hypot(p.x - d[0], p.y - d[1]) > 0.003 ? { ...t, pts: t.pts.concat([[p.x, p.y]]) } : t; }
+        if (t.rond) {
+          // rond : meme largeur et hauteur a l'ecran
+          const cv = cvRef.current, W = cv.width, H = cv.height, dx = (p.x - t.x1) * W, dy = (p.y - t.y1) * H, s = Math.max(Math.abs(dx), Math.abs(dy));
+          return { ...t, x2: Math.max(0, Math.min(1, t.x1 + Math.sign(dx || 1) * s / W)), y2: Math.max(0, Math.min(1, t.y1 + Math.sign(dy || 1) * s / H)) };
+        }
+        return { ...t, x2: p.x, y2: p.y };
+      });
+      return;
+    }
     setItems((l) => l.map((it, k) => {
       if (k !== g.i) return it;
       if (g.bout === 1) return { ...it, x1: p.x, y1: p.y };
       if (g.bout === 2) return { ...it, x2: p.x, y2: p.y };
       const dx = p.x - g.x, dy = p.y - g.y, o = g.orig, c = (v) => Math.max(0, Math.min(1, v));
-      return it.t === "ligne" ? { ...it, x1: c(o.x1 + dx), y1: c(o.y1 + dy), x2: c(o.x2 + dx), y2: c(o.y2 + dy) } : { ...it, x: c(o.x + dx), y: c(o.y + dy) };
+      if (it.t === "stylo") return { ...it, pts: o.pts.map(([x, y]) => [c(x + dx), c(y + dy)]) };
+      if (it.t === "ligne" || it.t === "rect" || it.t === "ovale") return { ...it, x1: c(o.x1 + dx), y1: c(o.y1 + dy), x2: c(o.x2 + dx), y2: c(o.y2 + dy) };
+      return { ...it, x: c(o.x + dx), y: c(o.y + dy) };
     }));
   };
   const up = () => {
     const g = glisse.current; glisse.current = null;
     if (g && g.trait && temp) {
-      if (Math.hypot(temp.x2 - temp.x1, temp.y2 - temp.y1) > 0.03) { memo(); setItems((l) => l.concat([temp])); setSel(items.length); }
+      const t = { ...temp }; delete t.rond;
+      const assez = t.t === "stylo" ? t.pts.length >= 2 : Math.hypot(t.x2 - t.x1, t.y2 - t.y1) > 0.025;
+      if (assez) { memo(); setItems((l) => l.concat([t])); setSel(items.length); }
       setTemp(null);
     }
   };
@@ -1170,8 +1223,12 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
   const majSel = (patch) => setItems((l) => l.map((it, k) => (k === sel ? { ...it, ...patch } : it)));
   const suppr = () => { if (sel === null) return; memo(); setItems((l) => l.filter((_, k) => k !== sel)); setSel(null); };
   const it = sel !== null ? items[sel] : null;
-  const outils = [["main", "👆", "Déplacer"], ["perso", "🧍", "Voisin"], ["r", "🟥", "Tir interdit"], ["v", "🟩", "Tir autorisé"], ["note", "📝", "Note"]];
-  const aide = { main: "Touche un élément pour le choisir, puis fais-le glisser.", perso: "Touche la photo là où se trouve le voisin.", r: "Trace un trait rouge : direction de tir interdite.", v: "Trace un trait vert : direction de tir autorisée.", note: "Touche la photo là où poser la note." }[mode];
+  const libre = it && (it.t === "stylo" || it.t === "rect" || it.t === "ovale");
+  const choisirCouleur = (c) => { setCouleur(c); if (libre) { memo(); majSel({ c }); } };
+  const choisirEpaisseur = (n) => { setEpaisseur(n); if (libre) { memo(); majSel({ e: n }); } };
+  const outils = [["main", "👆", "Déplacer"], ["perso", "🧍", "Voisin"], ["r", "🟥", "Tir interdit"], ["v", "🟩", "Tir autorisé"], ["note", "📝", "Note"], ["stylo", "🖊️", "Stylo"], ["rect", "▭", "Rectangle"], ["ovale", "⬭", "Ovale"], ["rond", "◯", "Rond"]];
+  const aide = { main: "Touche un élément pour le choisir, puis fais-le glisser. Les poignées rondes agrandissent les formes.", perso: "Touche la photo là où se trouve le voisin.", r: "Trace un trait rouge : direction de tir interdite.", v: "Trace un trait vert : direction de tir autorisée.", note: "Touche la photo là où poser la note.", stylo: "Dessine librement avec le doigt.", rect: "Glisse pour tracer un rectangle.", ovale: "Glisse pour tracer un ovale.", rond: "Glisse pour tracer un rond." }[mode];
+  const montrerPalette = ["stylo", "rect", "ovale", "rond"].indexOf(mode) >= 0 || libre;
   return (<div className="fixed inset-0 z-[60] bg-stone-900 flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
     <div className="flex items-center justify-between gap-2 px-3 py-2 bg-stone-800">
       {quitter
@@ -1185,6 +1242,11 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
     <div className="flex gap-1 px-2 py-2 bg-stone-800 border-t border-stone-700 overflow-x-auto">
       {outils.map(([k, ico, lab]) => (<button key={k} onClick={() => { setMode(k); if (k !== "main") setSel(null); }} className={"shrink-0 flex flex-col items-center rounded-md px-2.5 py-1 text-[11px] " + (mode === k ? "bg-amber-500 text-stone-900 font-semibold" : "bg-stone-700 text-stone-100")}><span className="text-base leading-tight">{ico}</span>{lab}</button>))}
     </div>
+    {montrerPalette && (<div className="flex items-center gap-2 px-3 py-1.5 bg-stone-800 border-t border-stone-700 overflow-x-auto">
+      {ANNOT_COULEURS.map((c) => (<button key={c} onClick={() => choisirCouleur(c)} title="Couleur" className="shrink-0 w-7 h-7 rounded-full" style={{ background: c, border: (libre ? it.c : couleur) === c ? "3px solid #f59e0b" : "2px solid #57534e" }} />))}
+      <span className="w-px h-6 bg-stone-600 shrink-0 mx-1" />
+      {ANNOT_EPAISSEURS.map(([n, lab]) => (<button key={n} onClick={() => choisirEpaisseur(n)} className={"shrink-0 flex items-center gap-1 rounded-md px-2 py-1 text-[11px] " + (((libre ? it.e : epaisseur) || 2) === n ? "bg-amber-500 text-stone-900 font-semibold" : "bg-stone-700 text-stone-100")}><span className="inline-block rounded-full bg-current" style={{ width: 16, height: n === 1 ? 2 : n === 2 ? 4 : 7 }} />{lab}</button>))}
+    </div>)}
     <p className="px-3 py-1 text-[11px] text-stone-300 bg-stone-800">{aide}</p>
     <div className="flex-1 min-h-0 flex items-center justify-center p-2">
       <canvas ref={cvRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} style={{ maxWidth: "100%", maxHeight: "100%", touchAction: "none", borderRadius: 6, background: "#292524" }} />
@@ -1196,6 +1258,7 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
       </div>)}
       <div className="flex items-center gap-2">
         {it.t === "ligne" && (<><button onClick={() => majSel({ c: "r" })} className={"text-xs rounded px-2 py-1 " + (it.c === "r" ? "bg-red-700 text-white" : "bg-stone-700 text-stone-200")}>🟥 Interdit</button><button onClick={() => majSel({ c: "v" })} className={"text-xs rounded px-2 py-1 " + (it.c === "v" ? "bg-green-700 text-white" : "bg-stone-700 text-stone-200")}>🟩 Autorisé</button></>)}
+        {libre && <span className="text-[11px] text-stone-300">Couleur et épaisseur : choisis-les au-dessus.</span>}
         <button onClick={suppr} className="ml-auto text-xs font-semibold text-red-300 border border-red-400 rounded px-2 py-1">Supprimer</button>
       </div>
     </div>)}
