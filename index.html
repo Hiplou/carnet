@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.22";
+const APP_VERSION = "v4.23";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -6146,6 +6146,9 @@ function CarnetApp({ session, onSignOut }) {
   const [dirty, setDirty] = useState(false);
   const [showPub, setShowPub] = useState(false);
   const [ghStatus, setGhStatus] = useState("idle");
+  // Diagnostic de sauvegarde : raison exacte de l'echec et poids du carnet (les photos pesent lourd).
+  const [saveErr, setSaveErr] = useState(null);
+  const saveTaille = useRef(0);
   const [ghMsg, setGhMsg] = useState("");
   const [saveStatus, setSaveStatus] = useState(STORAGE_OK ? "idle" : "nostorage");
   const [dismissBanner, setDismissBanner] = useState(false);
@@ -6226,13 +6229,27 @@ function CarnetApp({ session, onSignOut }) {
     try {
       const s = stateRef.current;
       const payload = { version: 3, savedAt: Date.now(), participants: s.participants, terrains: s.terrains, journees: s.journees, safety: s.safety };
+      let taille = 0; try { taille = JSON.stringify(payload).length; } catch (e) {}
+      saveTaille.current = taille;
       const { error } = await SB.from("carnets").upsert({ user_id: session.user.id, data: payload, updated_at: new Date().toISOString() });
       if (error) throw error;
       try { await window.storage.set("cb_supa_" + session.user.id, JSON.stringify(payload)); } catch (e) {}
-      setGhStatus("saved"); return true;
-    } catch (e) { setGhStatus("error"); return false; }
+      setSaveErr(null); setGhStatus("saved"); return true;
+    } catch (e) {
+      const msg = (e && (e.message || e.error_description || e.hint)) || String(e || "erreur inconnue");
+      setSaveErr({ msg: String(msg).slice(0, 200), code: (e && (e.code || e.status)) || "", taille: saveTaille.current, hors: typeof navigator !== "undefined" && navigator.onLine === false, t: Date.now() });
+      setGhStatus("error"); return false;
+    }
   };
 
+  // En cas d'echec, nouvel essai automatique toutes les 20 secondes (et des que la connexion revient).
+  useEffect(() => {
+    if (ghStatus !== "error" || !cloudOk) return;
+    const t = setTimeout(() => { saveNow(); }, 20000);
+    const enLigne = () => saveNow();
+    window.addEventListener("online", enLigne);
+    return () => { clearTimeout(t); window.removeEventListener("online", enLigne); };
+  }, [ghStatus, saveErr, cloudOk]);
   // Sauvegarde automatique dans ton compte Supabase (debounce)
   useEffect(() => {
     if (!loaded) return;
@@ -6400,7 +6417,9 @@ function CarnetApp({ session, onSignOut }) {
       </div>
     </div></header>
 
-    {saveBad && (<div className="bg-red-100 border-b border-red-300 text-red-900 text-sm px-4 py-2.5"><div className="max-w-3xl mx-auto flex items-start gap-2"><AlertTriangle size={17} className="shrink-0 mt-0.5" /><span className="flex-1">{!cloudOk ? <span><b>Carnet non chargé</b> — rien ne sera enregistré. Recharge la page.</span> : <span><b>Rien n'est enregistré.</b> Vérifie ta connexion, tes dernières modifications ne sont pas sauvegardées.</span>}</span></div></div>)}
+    {saveBad && (<div className="bg-red-100 border-b border-red-300 text-red-900 text-sm px-4 py-2.5"><div className="max-w-3xl mx-auto flex items-start gap-2"><AlertTriangle size={17} className="shrink-0 mt-0.5" /><span className="flex-1">{!cloudOk ? <span><b>Carnet non chargé</b> — rien ne sera enregistré. Recharge la page.</span> : <span><b>Rien n'est enregistré.</b> {saveErr && saveErr.hors ? "Tu n'es pas connecté à Internet." : (saveErr && saveErr.taille > 12e6) ? "Ton carnet est devenu très lourd (surtout les photos) : l'envoi n'a pas abouti." : "Tes dernières modifications ne sont pas sauvegardées."} Ne ferme pas la page : nouvel essai automatique toutes les 20 secondes.
+          {saveErr && <span className="block text-[11px] text-red-800 mt-1">Détail : {saveErr.code ? saveErr.code + " — " : ""}{saveErr.msg} · poids du carnet : {(saveErr.taille / 1e6).toFixed(1)} Mo</span>}</span>}</span>
+        {cloudOk && <button onClick={() => saveNow()} disabled={ghStatus === "saving"} className="shrink-0 text-xs font-semibold bg-red-700 text-white rounded-md px-2.5 py-1 disabled:opacity-50">{ghStatus === "saving" ? "Envoi…" : "Réessayer"}</button>}</div></div>)}
 
     <nav className="bg-stone-800 px-4"><div className="max-w-3xl mx-auto flex gap-1 overflow-x-auto">{tabs.map(({ id, label, icon: Icon }) => (<button key={id} onClick={() => setTab(id)} className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap ${tab === id ? "bg-stone-100 text-stone-900" : "text-stone-300 hover:text-stone-50"}`}><Icon size={15} /> {label}</button>))}</div></nav>
 
