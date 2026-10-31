@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.23";
+const APP_VERSION = "v4.25";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1020,7 +1020,7 @@ function normAnnot(o) {
   if (!o || typeof o !== "object") return null;
   const c = (v) => Math.max(0, Math.min(1, Number(v) || 0));
   const coul = ANNOT_COULEURS.indexOf(o.c) >= 0 ? o.c : "#dc2626", ep = [1, 2, 3].indexOf(o.e) >= 0 ? o.e : 2;
-  if (o.t === "perso" || o.t === "note" || o.t === "maison") return { t: o.t, x: c(o.x), y: c(o.y), txt: String(o.txt || "").slice(0, 80) };
+  if (o.t === "perso" || o.t === "note" || o.t === "maison" || o.t === "piquet") return { t: o.t, x: c(o.x), y: c(o.y), txt: String(o.txt || "").slice(0, 80) };
   if (o.t === "ligne") return { t: "ligne", x1: c(o.x1), y1: c(o.y1), x2: c(o.x2), y2: c(o.y2), c: o.c === "v" ? "v" : "r" };
   if (o.t === "rect" || o.t === "ovale") return { t: o.t, x1: c(o.x1), y1: c(o.y1), x2: c(o.x2), y2: c(o.y2), c: coul, e: ep };
   if (o.t === "stylo" && Array.isArray(o.pts)) { const pts = o.pts.slice(0, 600).map((p) => [Math.round(c(p[0]) * 10000) / 10000, Math.round(c(p[1]) * 10000) / 10000]); return pts.length >= 2 ? { t: "stylo", pts, c: coul, e: ep } : null; }
@@ -1047,7 +1047,7 @@ function etiquetteAnnot(ctx, txt, x, y, U, mode, W, H) {
     lignes.forEach((l, k) => ctx.fillText(l, bx + pad, by + pad * 0.6 + lh * (k + 0.5)));
   } };
 }
-const ANNOT_COUCHE = { stylo: 0, rect: 0, ovale: 0, ligne: 0, perso: 1, maison: 1, note: 2 };
+const ANNOT_COUCHE = { stylo: 0, rect: 0, ovale: 0, ligne: 0, perso: 1, maison: 1, piquet: 1, note: 2 };
 // Dessine toutes les annotations ; renvoie la boite de chaque element (pour les toucher a l'ecran).
 function dessinerAnnotations(ctx, W, H, items, sel) {
   const U = Math.max(W, H) / 1000, boites = [];
@@ -1098,6 +1098,23 @@ function dessinerAnnotations(ctx, W, H, items, sel) {
       if (it.txt) { const e = etiquetteAnnot(ctx, it.txt, px + 26 * U, py - 42 * U, U, "gauche", W, H); e.dessiner(); const x0 = Math.min(b.x, e.x), y0 = Math.min(b.y, e.y); b = { x: x0, y: y0, w: Math.max(b.x + b.w, e.x + e.w) - x0, h: Math.max(b.y + b.h, e.y + e.h) - y0 }; }
       boites[i] = b;
       if (sel === i) cadre(b);
+    } else if (it.t === "piquet") {
+      // poste sans mirador : un piquet plante, fanion jaune avec le numero ; le pied est au point pose
+      const px = it.x * W, py = it.y * H, haut = 120 * U, txt = it.txt || "?";
+      ctx.font = "bold " + (28 * U) + "px Helvetica, Arial, sans-serif";
+      const fw = Math.max(70 * U, ctx.measureText(txt).width + 46 * U);
+      const sens = px + fw > W - 4 * U ? -1 : 1;   // pres du bord droit, le fanion part vers la gauche
+      ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(px, py + 2 * U, 18 * U, 6 * U, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 13 * U; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py - haut); ctx.stroke();
+      ctx.strokeStyle = "#1c1917"; ctx.lineWidth = 7 * U; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py - haut); ctx.stroke();
+      const ht = py - haut, hb = py - haut + 44 * U, hm = (ht + hb) / 2;
+      ctx.beginPath(); ctx.moveTo(px, ht); ctx.lineTo(px + sens * (fw - 18 * U), ht); ctx.lineTo(px + sens * fw, hm); ctx.lineTo(px + sens * (fw - 18 * U), hb); ctx.lineTo(px, hb); ctx.closePath();
+      ctx.fillStyle = "#facc15"; ctx.fill(); ctx.lineWidth = 4 * U; ctx.strokeStyle = "#1c1917"; ctx.stroke();
+      ctx.fillStyle = "#1c1917"; ctx.textBaseline = "middle"; ctx.textAlign = sens > 0 ? "left" : "right";
+      ctx.fillText(txt, px + sens * 14 * U, hm + 1 * U); ctx.textAlign = "left";
+      const b = sens > 0 ? { x: px - 14 * U, y: ht - 6 * U, w: fw + 20 * U, h: haut + 16 * U } : { x: px - fw - 6 * U, y: ht - 6 * U, w: fw + 20 * U, h: haut + 16 * U };
+      boites[i] = b;
+      if (sel === i) cadre(b);
     } else if (it.t === "maison") {
       // maison : toit rouge, murs blancs, contour sombre ; le bas de la maison est au point pose
       const px = it.x * W, py = it.y * H, k = 4 * U;
@@ -1136,7 +1153,7 @@ function AnnotThumb({ src, items, onClick }) {
   useEffect(() => { let vivant = true; aplatirPhoto(src, items, 260, 0.7).then((u) => { if (vivant) setUrl(u); }).catch(() => {}); return () => { vivant = false; }; }, [src, JSON.stringify(items || [])]);
   return <button onClick={onClick} className="block" title="Annoter la photo"><img src={url} alt="" className="w-16 h-16 object-cover rounded border border-stone-300" /></button>;
 }
-function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
+function PhotoAnnoteur({ src, items: depart, voisins, poste, onSave, onClose }) {
   const cvRef = useRef(null), imgRef = useRef(null), boites = useRef([]), glisse = useRef(null);
   const [items, setItems] = useState(() => (depart || []).map((x) => ({ ...x })));
   const [hist, setHist] = useState([]);
@@ -1173,8 +1190,10 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
   const down = (e) => {
     e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {}
     const p = pos(e), cv = cvRef.current, U = Math.max(cv.width, cv.height) / 1000;
-    if (mode === "perso" || mode === "note" || mode === "maison") {
-      memo(); const n = { t: mode, x: p.x, y: p.y, txt: "" };
+    if (mode === "perso" || mode === "note" || mode === "maison" || mode === "piquet") {
+      // le piquet prend d'office le numero du poste (modifiable ensuite)
+      const num = mode === "piquet" ? (((String(poste || "").match(/\d+/) || [])[0]) || String(poste || "").slice(0, 12)) : "";
+      memo(); const n = { t: mode, x: p.x, y: p.y, txt: num };
       setItems((l) => l.concat([n])); setSel(items.length); setMode("main");
       setTimeout(() => { const el = document.getElementById("annotTxt"); if (el) el.focus(); }, 60);
       return;
@@ -1239,8 +1258,8 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
   const libre = it && (it.t === "stylo" || it.t === "rect" || it.t === "ovale");
   const choisirCouleur = (c) => { setCouleur(c); if (libre) { memo(); majSel({ c }); } };
   const choisirEpaisseur = (n) => { setEpaisseur(n); if (libre) { memo(); majSel({ e: n }); } };
-  const outils = [["main", "👆", "Déplacer"], ["perso", "🧍", "Voisin"], ["maison", "🏠", "Maison"], ["r", "🟥", "Tir interdit"], ["v", "🟩", "Tir autorisé"], ["note", "📝", "Note"], ["stylo", "🖊️", "Stylo"], ["rect", "▭", "Rectangle"], ["ovale", "⬭", "Ovale"], ["rond", "◯", "Rond"]];
-  const aide = { main: "Touche un élément pour le choisir, puis fais-le glisser. Les poignées rondes agrandissent les formes.", perso: "Touche la photo là où se trouve le voisin.", maison: "Touche la photo là où se trouve la maison (ou un bâtiment).", r: "Trace un trait rouge : direction de tir interdite.", v: "Trace un trait vert : direction de tir autorisée.", note: "Touche la photo là où poser la note.", stylo: "Dessine librement avec le doigt.", rect: "Glisse pour tracer un rectangle.", ovale: "Glisse pour tracer un ovale.", rond: "Glisse pour tracer un rond." }[mode];
+  const outils = [["main", "👆", "Déplacer"], ["perso", "🧍", "Voisin"], ["maison", "🏠", "Maison"], ["piquet", "🚩", "Poste"], ["r", "🟥", "Tir interdit"], ["v", "🟩", "Tir autorisé"], ["note", "📝", "Note"], ["stylo", "🖊️", "Stylo"], ["rect", "▭", "Rectangle"], ["ovale", "⬭", "Ovale"], ["rond", "◯", "Rond"]];
+  const aide = { main: "Touche un élément pour le choisir, puis fais-le glisser. Les poignées rondes agrandissent les formes.", perso: "Touche la photo là où se trouve le voisin.", maison: "Touche la photo là où se trouve la maison (ou un bâtiment).", piquet: "Poste sans mirador : touche la photo à l'endroit exact du poste (le pied du piquet).", r: "Trace un trait rouge : direction de tir interdite.", v: "Trace un trait vert : direction de tir autorisée.", note: "Touche la photo là où poser la note.", stylo: "Dessine librement avec le doigt.", rect: "Glisse pour tracer un rectangle.", ovale: "Glisse pour tracer un ovale.", rond: "Glisse pour tracer un rond." }[mode];
   const montrerPalette = ["stylo", "rect", "ovale", "rond"].indexOf(mode) >= 0 || libre;
   return (<div className="fixed inset-0 z-[60] bg-stone-900 flex flex-col" style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
     <div className="flex items-center justify-between gap-2 px-3 py-2 bg-stone-800">
@@ -1265,8 +1284,8 @@ function PhotoAnnoteur({ src, items: depart, voisins, onSave, onClose }) {
       <canvas ref={cvRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} style={{ maxWidth: "100%", maxHeight: "100%", touchAction: "none", borderRadius: 6, background: "#292524" }} />
     </div>
     {it && (<div className="bg-stone-800 px-3 py-2 space-y-2 border-t border-stone-700">
-      {(it.t === "perso" || it.t === "note" || it.t === "maison") && (<div>
-        <input id="annotTxt" value={it.txt || ""} maxLength={80} onChange={(e) => majSel({ txt: e.target.value })} placeholder={it.t === "perso" ? "Texte à côté du voisin (ex. P5, voisin à 60 m)…" : it.t === "maison" ? "Texte à côté de la maison (ex. ferme habitée, 200 m)…" : "Texte de la note (ex. chemin, maison, ligne de crête)…"} className="w-full rounded-md px-2.5 py-2 text-sm bg-white text-stone-900" />
+      {(it.t === "perso" || it.t === "note" || it.t === "maison" || it.t === "piquet") && (<div>
+        <input id="annotTxt" value={it.txt || ""} maxLength={80} onChange={(e) => majSel({ txt: e.target.value })} placeholder={it.t === "perso" ? "Texte à côté du voisin (ex. P5, voisin à 60 m)…" : it.t === "maison" ? "Texte à côté de la maison (ex. ferme habitée, 200 m)…" : it.t === "piquet" ? "Texte du fanion (ex. 4, P4)…" : "Texte de la note (ex. chemin, maison, ligne de crête)…"} className="w-full rounded-md px-2.5 py-2 text-sm bg-white text-stone-900" />
         {it.t === "perso" && (voisins || []).length > 0 && (<div className="flex gap-1.5 flex-wrap mt-1.5">{voisins.map((v) => (<button key={v} onClick={() => majSel({ txt: v })} className="text-[11px] bg-stone-700 text-stone-100 rounded-full px-2 py-0.5">{v}</button>))}</div>)}
       </div>)}
       <div className="flex items-center gap-2">
@@ -1359,7 +1378,7 @@ function MiradorRow({ m, updateTrack, track, onDragStart, isDragging, inCommon, 
           <button onClick={() => fileRef.current?.click()} disabled={busy} className="w-16 h-16 rounded border-2 border-dashed border-stone-300 text-stone-400 flex items-center justify-center"><Plus size={18} /></button>
         </div>{busy && <p className="text-xs text-stone-400 mt-1">Préparation…</p>}
         {(m.photos || []).length > 0 && <p className="text-[10px] text-stone-400 mt-1">Touche une photo (ou ✏️) pour y placer le voisin, des notes et les angles de tir. Le chasseur la voit annotée.</p>}
-        {annot !== null && (m.photos || [])[annot] && <PhotoAnnoteur src={m.photos[annot]} items={notesDe(annot)} voisins={voisins} onSave={(items) => enregistrerNotes(annot, items)} onClose={() => setAnnot(null)} />}</div>
+        {annot !== null && (m.photos || [])[annot] && <PhotoAnnoteur src={m.photos[annot]} items={notesDe(annot)} voisins={voisins} poste={m.label} onSave={(items) => enregistrerNotes(annot, items)} onClose={() => setAnnot(null)} />}</div>
     </div>)}
   </div>);
 }
@@ -3286,7 +3305,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 .rolebtn{width:100%;margin-top:4px;background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:600}
 .rolebtn:active{background:#1d4ed8}
 .ro2{margin-top:14px;text-align:center;color:var(--stone-400);font-size:12px}
-.modal{position:fixed;inset:0;background:rgba(28,25,23,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px}.modalcard{background:#fff;border-radius:18px;max-width:340px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}.modalemo{font-size:44px;margin-bottom:6px}.modalcard h2{font-family:Georgia,serif;font-size:22px;margin:0 0 8px;color:#1c1917}.modalcard p{color:#57534e;font-size:15px;line-height:1.5;margin:0 0 18px}.modalbtn{background:#166534;color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:16px;font-weight:700;width:100%}.banner{background:#fffbeb;border:1px solid #fde68a}.banner .sec{color:#b45309}.tilegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.tile{text-align:left;background:#fff;border:1px solid #e7e5e4;border-radius:16px;padding:15px 14px;display:flex;flex-direction:column;gap:7px;min-height:104px;box-shadow:0 1px 2px rgba(0,0,0,.04);cursor:pointer;font-family:inherit;color:#1c1917}.tile:active{transform:scale(.97)}.tile .ico{font-size:27px;line-height:1}.tile .tl{font-size:16px;font-weight:800}.tile .hint{font-size:12px;color:#78716c;line-height:1.3}.tile.wide{flex-direction:row;align-items:center;min-height:auto;gap:12px;width:100%;margin-bottom:12px}.tile.wide .ico{font-size:25px}.tile.wide .txt{flex:1}.tile.wide .go{margin-left:auto;color:#a8a29e;font-size:20px}.tile.ret{background:linear-gradient(180deg,#fff,#f0fdf4);border-color:#a7f3d0}.sheet-back{position:fixed;inset:0;background:rgba(28,25,23,.5);display:none;align-items:flex-end;justify-content:center;z-index:45}.sheet-back.open{display:flex}.sheet{background:#fff;width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:8px 18px 26px;max-height:88vh;overflow:auto;animation:sheetup .22s ease}@keyframes sheetup{from{transform:translateY(28px)}to{transform:translateY(0)}}.grab{width:40px;height:5px;border-radius:999px;background:#e7e5e4;margin:8px auto 14px}.sheeth{font-size:22px;margin:0 0 12px}.close{width:100%;margin-top:18px;background:#166534;color:#fff;border:none;border-radius:13px;padding:14px;font-size:16px;font-weight:800}.hownote{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px 14px;font-size:14px;color:#14532d;line-height:1.5;margin-bottom:14px}.priv{font-size:12.5px;color:#78716c;display:flex;align-items:center;gap:6px;margin-top:12px}.conetoggle{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:15px;font-weight:700;color:#1c1917;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:10px 12px}.conetoggle input{width:20px;height:20px;accent-color:#166534}.conelegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12.5px;color:#57534e}.conelegend .lg{display:inline-flex;align-items:center;gap:6px}.conelegend .sw{width:15px;height:15px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15);flex-shrink:0}.conelegend .sw.green{background:rgba(134,239,172,.75)}.conelegend .sw.red{background:rgba(252,165,165,.85)}.conelegend .sw.hatch{background:repeating-linear-gradient(45deg,rgba(248,113,113,.6) 0 3px,#fff 3px 6px)}.talkiepill{margin-top:12px;font-size:14px;font-weight:800;color:#166534;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:7px 14px;align-items:center;gap:6px}.fbtraque{border:1px solid #e7e5e4;border-radius:12px;padding:12px;margin-bottom:12px;background:#fff}.fbtraque.fbdone{background:#f0fdf4;border-color:#a7f3d0}.fbtraque.fbediting{border-color:#fca5a5}.fbsentrow{display:flex;align-items:center;justify-content:space-between;margin-top:8px}.fbok{color:#166534;font-weight:800;font-size:15px}.fbmod{background:#fff;border:1px solid #d6d3d1;border-radius:9px;padding:8px 14px;font-size:14px;font-weight:700;color:#57534e}.fbwarn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;margin:8px 0}.fbsendall{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:800;margin:4px 0 8px}.fbpost{border-top:1px dashed #e7e5e4;margin-top:10px;padding-top:10px}.fbpost-t{font-weight:800;color:#1c1917;font-size:14px;margin:0 0 6px}.fbtraque .fbsend{width:100%;margin-top:10px}.fbrien{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:16px;font-size:17px;font-weight:800;margin:6px 0 14px}.fbmini{background:none;border:none;color:#b45309;font-size:14px;font-weight:700;text-decoration:underline;padding:8px 0;margin-top:4px}.fbadv{margin-top:6px}.fbwarnov{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;margin-bottom:12px}.counter{gap:12px;touch-action:manipulation}.cbtn{min-width:54px;min-height:54px;font-size:26px;touch-action:manipulation}.cval{min-height:54px;font-size:22px;min-width:66px;border:2px solid #d6d3d1;border-radius:10px;text-align:center;font-weight:800;touch-action:manipulation}.counter.sm .cbtn{min-width:44px;min-height:44px;font-size:22px}.counter.sm .cval{min-height:44px;font-size:19px;min-width:54px}.fbtqhead{width:100%;display:flex;align-items:center;gap:10px;background:transparent;border:none;padding:10px 2px;font-size:17px;font-weight:800;color:#1c1917;text-align:left}.fbhname{flex:1}.fbbadge{font-size:12px;font-weight:800;border-radius:999px;padding:3px 9px;white-space:nowrap}.fbbadge.todo{background:#f5f5f4;color:#78716c}.fbbadge.done{background:#dcfce7;color:#166534}.fbchev{font-size:13px;color:#a8a29e}.fbtqbody{padding:2px 0 4px}.fbgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.fbsq{aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fff;border:2px solid #e7e5e4;border-radius:16px;padding:12px;text-align:center;cursor:pointer;font-family:inherit}.fbsq.done{background:#f0fdf4;border-color:#a7f3d0}.fbsqdot{width:16px;height:16px;border-radius:50%}.fbsqname{font-size:17px;font-weight:800;color:#1c1917;line-height:1.15}.fbsqbadge{font-size:12px;font-weight:700;color:#78716c}.fbsq.done .fbsqbadge{color:#166534}.fbback{background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:11px 15px;font-size:15px;font-weight:700;color:#57534e;margin-bottom:12px}.fbformhd{display:flex;align-items:center;gap:8px;font-family:Georgia,serif;font-size:20px;font-weight:700;margin-bottom:10px;color:#1c1917}</style></head><body>
+.modal{position:fixed;inset:0;background:rgba(28,25,23,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px}.modalcard{background:#fff;border-radius:18px;max-width:340px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}.modalemo{font-size:44px;margin-bottom:6px}.modalcard h2{font-family:Georgia,serif;font-size:22px;margin:0 0 8px;color:#1c1917}.modalcard p{color:#57534e;font-size:15px;line-height:1.5;margin:0 0 18px}.modalbtn{background:#166534;color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:16px;font-weight:700;width:100%}.banner{background:#fffbeb;border:1px solid #fde68a}.banner .sec{color:#b45309}.tilegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.tile{text-align:left;background:#fff;border:1px solid #e7e5e4;border-radius:16px;padding:15px 14px;display:flex;flex-direction:column;gap:7px;min-height:104px;box-shadow:0 1px 2px rgba(0,0,0,.04);cursor:pointer;font-family:inherit;color:#1c1917}.tile:active{transform:scale(.97)}.tile .ico{font-size:27px;line-height:1}.tile .tl{font-size:16px;font-weight:800}.tile .hint{font-size:12px;color:#78716c;line-height:1.3}.tile.wide{flex-direction:row;align-items:center;min-height:auto;gap:12px;width:100%;margin-bottom:12px}.tile.wide .ico{font-size:25px}.tile.wide .txt{flex:1}.tile.wide .go{margin-left:auto;color:#a8a29e;font-size:20px}.tile.ret{background:linear-gradient(180deg,#fff,#f0fdf4);border-color:#a7f3d0}.sheet-back{position:fixed;inset:0;background:rgba(28,25,23,.5);display:none;align-items:flex-end;justify-content:center;z-index:45}.sheet-back.open{display:flex}.sheet{background:#fff;width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:8px 18px 26px;max-height:88vh;overflow:auto;animation:sheetup .22s ease}@keyframes sheetup{from{transform:translateY(28px)}to{transform:translateY(0)}}.grab{width:40px;height:5px;border-radius:999px;background:#e7e5e4;margin:8px auto 14px}.sheeth{font-size:22px;margin:0 0 12px}.close{width:100%;margin-top:18px;background:#166534;color:#fff;border:none;border-radius:13px;padding:14px;font-size:16px;font-weight:800}.hownote{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px 14px;font-size:14px;color:#14532d;line-height:1.5;margin-bottom:14px}.priv{font-size:12.5px;color:#78716c;display:flex;align-items:center;gap:6px;margin-top:12px}.conetoggle{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:15px;font-weight:700;color:#1c1917;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:10px 12px}.conetoggle input{width:20px;height:20px;accent-color:#166534}.conelegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12.5px;color:#57534e}.conelegend .lg{display:inline-flex;align-items:center;gap:6px}.conelegend .sw{width:15px;height:15px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15);flex-shrink:0}.conelegend .sw.green{background:rgba(134,239,172,.75)}.conelegend .sw.red{background:rgba(252,165,165,.85)}.conelegend .sw.hatch{background:repeating-linear-gradient(45deg,rgba(248,113,113,.6) 0 3px,#fff 3px 6px)}.talkiepill{margin-top:12px;font-size:14px;font-weight:800;color:#166534;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:7px 14px;align-items:center;gap:6px}.fbtraque{border:1px solid #e7e5e4;border-radius:12px;padding:12px;margin-bottom:12px;background:#fff}.fbtraque.fbdone{background:#f0fdf4;border-color:#a7f3d0}.fbtraque.fbediting{border-color:#fca5a5}.fbsentrow{display:flex;align-items:center;justify-content:space-between;margin-top:8px}.fbok{color:#166534;font-weight:800;font-size:15px}.fbmod{background:#fff;border:1px solid #d6d3d1;border-radius:9px;padding:8px 14px;font-size:14px;font-weight:700;color:#57534e}.fbwarn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;margin:8px 0}.fbsendall{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:800;margin:4px 0 8px}.fbpost{border-top:1px dashed #e7e5e4;margin-top:10px;padding-top:10px}.fbpost-t{font-weight:800;color:#1c1917;font-size:14px;margin:0 0 6px}.fbtraque .fbsend{width:100%;margin-top:10px}.fbrien{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:16px;font-size:17px;font-weight:800;margin:6px 0 14px}.fbmini{background:none;border:none;color:#b45309;font-size:14px;font-weight:700;text-decoration:underline;padding:8px 0;margin-top:4px}.fbadv{margin-top:6px}.fbwarnov{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;margin-bottom:12px}.counter{gap:12px;touch-action:manipulation}.cbtn{min-width:54px;min-height:54px;font-size:26px;touch-action:manipulation}.cval{min-height:54px;font-size:22px;min-width:66px;border:2px solid #d6d3d1;border-radius:10px;text-align:center;font-weight:800;touch-action:manipulation}.counter.sm .cbtn{min-width:44px;min-height:44px;font-size:22px}.counter.sm .cval{min-height:44px;font-size:19px;min-width:54px}.fbtqhead{width:100%;display:flex;align-items:center;gap:10px;background:transparent;border:none;padding:10px 2px;font-size:17px;font-weight:800;color:#1c1917;text-align:left}.fbhname{flex:1}.fbbadge{font-size:12px;font-weight:800;border-radius:999px;padding:3px 9px;white-space:nowrap}.fbbadge.todo{background:#f5f5f4;color:#78716c}.fbbadge.done{background:#dcfce7;color:#166534}.fbchev{font-size:13px;color:#a8a29e}.fbtqbody{padding:2px 0 4px}.fbgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.fbsq{aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fff;border:2px solid #e7e5e4;border-radius:16px;padding:12px;text-align:center;cursor:pointer;font-family:inherit}.fbsq.done{background:#f0fdf4;border-color:#a7f3d0}.fbsqdot{width:16px;height:16px;border-radius:50%}.fbsqname{font-size:17px;font-weight:800;color:#1c1917;line-height:1.15}.fbsqbadge{font-size:12px;font-weight:700;color:#78716c}.fbsq.done .fbsqbadge{color:#166534}.fbback{background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:11px 15px;font-size:15px;font-weight:700;color:#57534e;margin-bottom:12px}.fbformhd{display:flex;align-items:center;gap:8px;font-family:Georgia,serif;font-size:20px;font-weight:700;margin-bottom:10px;color:#1c1917}.gpsm{position:absolute;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#2563eb;border:2px solid #fff;box-shadow:0 0 0 1px #2563eb;z-index:3;cursor:pointer}.gpsm.moi{box-shadow:0 0 0 1px #2563eb,0 0 0 9px rgba(37,99,235,.22)}.gpsm.rab{background:transparent;border:0;box-shadow:none;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #ea580c;filter:drop-shadow(0 0 1.5px #fff)}.gpsm.vieux{opacity:.45}.gpsbulle{position:absolute;transform:translate(-50%,-135%);background:#1c1917;color:#fff;font-size:12px;line-height:1.35;padding:5px 9px;border-radius:8px;white-space:nowrap;z-index:6;pointer-events:none}.gpsgo{width:100%;background:#2563eb;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:800;margin-top:8px}.gpsstop{width:100%;background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:12px;padding:12px;font-size:15px;font-weight:700;margin-top:12px}.gpsetat{background:#eff6ff;color:#1e40af;border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.45}.gpswarn{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:10px;padding:8px 10px;font-size:12.5px;margin-top:10px}.gpssel{width:100%;padding:11px;border:1px solid #d6d3d1;border-radius:10px;font-size:15px;margin:4px 0 6px;background:#fff}.gpslab{font-size:13px;font-weight:700;color:#44403c;display:block;margin-top:6px}.gpsmsg{color:#b91c1c;font-size:13px;margin:6px 0 0}.gpshors{font-size:12px;color:#78716c;margin:6px 0 0}.gpsul{margin:8px 0 0;padding-left:18px}#gpsMap .marker .lbl{display:none}#gpsMap .marker.mine .lbl{display:block}.gpsleg{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:12.5px;color:#57534e}.gpsleg span{display:inline-flex;align-items:center;gap:6px}.gpsleg .gpsm{position:static;transform:none;display:inline-block;cursor:default}</style></head><body>
 <div id="welcome" class="modal"><div class="modalcard"><div class="modalemo">👋</div><h2>Bienvenue !</h2><p>Pour voir <b>ton poste</b>, <b>ta traque</b> et tes consignes, appuie sur <b>ton prénom</b> dans la liste ci-dessous.</p><button id="welcomeBtn" class="modalbtn">👍 J'ai compris</button></div></div><div id="retourHelp" class="modal" style="display:none"><div class="modalcard"><div class="modalemo">📋</div><h2>Comment faire ton retour</h2><p>Pour réaliser ton retour : <b>sélectionne la traque</b>. Si tu as tiré, indique le <b>nombre de balles par poste</b>. Et si tu as <b>prélevé un animal</b>, indique-le.</p><button id="retourHelpBtn" class="modalbtn">👍 J'ai compris</button></div></div>
 <div id="pick" class="pickwrap"><div class="pickcard">
 <div class="pickhead"><span class="emo">🦌</span><div><h1 id="pickTitle">Carnet de Battue</h1><p id="subpick"></p></div></div>
@@ -3301,6 +3320,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 <div class="card banner" id="attribsCard" style="display:none"><div class="pad"><h3 class="sec">🎯 Attributions du jour</h3><div id="attribs"></div></div></div>\n
 <div class="tilegrid"><button class="tile" onclick="openSheet('carte')"><span class="ico">🗺️</span><span class="tl">Ma carte</span><span class="hint">Où est mon poste</span></button><button class="tile" onclick="openSheet('poste')"><span class="ico">📸</span><span class="tl">Mon poste</span><span class="hint">Photo &amp; consignes</span></button><button class="tile" onclick="openSheet('annonces')"><span class="ico">📻</span><span class="tl">Annonces</span><span class="hint">Sonneries &amp; infos</span></button><button class="tile" onclick="openSheet('securite')"><span class="ico">🛡️</span><span class="tl">Sécurité</span><span class="hint">Consignes à respecter</span></button></div>
 <button class="tile wide ret" onclick="openSheet('retour')"><span class="ico">📋</span><span class="txt"><span class="tl">Envoyer mon retour</span><br><span class="hint">Dis à l'organisateur ce que tu as vu / tiré</span></span><span class="go">→</span></button>
+<button class="tile wide" id="gpsTile" onclick="openGps()" style="display:none"><span class="ico">📡</span><span class="txt"><span class="tl">Suivi GPS live</span><br><span class="hint">Où sont les chasseurs et les traqueurs</span></span><span class="go">→</span></button>
 <button class="tile wide" onclick="openJeu()" style="margin-top:10px"><span class="ico">🐗</span><span class="txt"><span class="tl">La Course du Sanglier</span><br><span class="hint">Un peu long à ton poste ? Fais un score.</span></span><span class="go">→</span></button>
 <div class="card" id="chefCard" style="display:none"><div class="pad"><h3 class="sec">👨‍✈️ Tu es chef de ligne</h3><p class="maphint">Postes sous ta responsabilité :</p><div id="chefPosts"></div><div id="chefTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0"></div><div class="map" id="chefMap" style="margin-top:8px;display:none"></div></div></div>
 <footer>Document en lecture seule — transmis par l'organisateur.</footer>
@@ -3338,6 +3358,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 </div>
 <button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-retour" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">📋 Ton retour</h2><div class="hownote">👉 Après ta traque, dis à l'organisateur ce qui s'est passé : indique tes balles tirées et l'état du mirador, poste par poste, puis envoie.</div><div id="feedbackCard"><div id="fbList"></div></div><div class="priv">🔒 Ton retour est privé, envoyé uniquement à l'organisateur.</div><button class="close" onclick="closeSheet()">Fermer</button></div></div></div>
+<div class="sheet-back" id="sheet-gps" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">📡 Suivi GPS live</h2><div id="gpsBody"></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <script>var DATA = `;
 
 const SHARED_TAIL = `;
@@ -3369,7 +3390,7 @@ var MAP_I=0;
 function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+imgDe(t)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();(function(){var dep=t.deposes||[],dpt=t.departs||[],tr=t.transport||{};var utilises={};for(var q in tr){if(tr[q]&&tr[q].departId)utilises[tr[q].departId]=1;}function poser(d,couleur,icone){if(!isFinite(d.gx)||!isFinite(d.gy))return;var lx=(d.gx-c.x)/c.w*100,ly=(d.gy-c.y)/c.h*100;if(lx<-5||lx>105||ly<-5||ly>105)return;var el=document.createElement('div');el.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;z-index:2';el.innerHTML="<span style='width:13px;height:13px;border-radius:50%;background:"+couleur+";border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)'></span>"+"<span style='font-size:9px;line-height:1.1;background:rgba(255,255,255,.85);color:#1c1917;padding:1px 4px;border-radius:4px;white-space:nowrap'>"+icone+" "+d.nom+"</span>";map.appendChild(el);}if(SHOW_DEPOSE&&typeof me!=='undefined'&&me&&me.id){var moi=me.id,maV=null,vv=t.voitures||[];for(var w=0;w<vv.length;w++){if(vv[w].conducteurId===moi){maV=vv[w];break;}var pz=vv[w].passagers||[];for(var y=0;y<pz.length;y++){if(pz[y].id===moi){maV=vv[w];break;}}if(maV)break;}var ptDe=function(id){if(!id)return null;for(var i=0;i<dep.length;i++){if(dep[i].id===id)return dep[i];}return null;};var trouve=ptDe((tr[moi]||{}).deposeId)||ptDe(maV&&maV.deposeId);if(trouve)poser(trouve,'#1c1917','\u{1F17F}\u{FE0F}');}if(SHOW_DEPART)for(var j2=0;j2<dpt.length;j2++)poser(dpt[j2],'#166534','\u{1F6A9}');})();(function(){if(!SHOW_ZONE)return;var z=t.zone||[];if(z.length<2)return;var pts=z.map(function(q){return ((q.gx-c.x)/c.w*100)+' '+((q.gy-c.y)/c.h*100);});var d='M '+pts.join(' L ')+((t.zoneFermee&&z.length>=3)?' Z':'');var NSZ='http://www.w3.org/2000/svg';var sv=document.createElementNS(NSZ,'svg');sv.setAttribute('viewBox','0 0 100 100');sv.setAttribute('preserveAspectRatio','none');sv.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';var col=t.color||'#dc2626';function trait(couleur,ep,op){var pa=document.createElementNS(NSZ,'path');pa.setAttribute('d',d);pa.setAttribute('fill','none');pa.setAttribute('stroke',couleur);pa.setAttribute('stroke-width',ep);pa.setAttribute('stroke-linejoin','round');pa.setAttribute('stroke-linecap','round');pa.setAttribute('opacity',op);pa.setAttribute('vector-effect','non-scaling-stroke');return pa;}sv.appendChild(trait('#ffffff','5','.55'));sv.appendChild(trait(col,'3.5','.85'));map.appendChild(sv);})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}(function(){var tr2=t.transport||{},moi=(me&&me.id)||"",dep2=t.deposes||[],maV2=null,vv2=t.voitures||[];for(var w1=0;w1<vv2.length;w1++){if(vv2[w1].conducteurId===moi){maV2=vv2[w1];break;}var pz2=vv2[w1].passagers||[];for(var y1=0;y1<pz2.length;y1++){if(pz2[y1].id===moi){maV2=vv2[w1];break;}}if(maV2)break;}var idDep=((tr2[moi]||{}).deposeId)||(maV2&&maV2.deposeId)||"",okDep=false;for(var i2=0;i2<dep2.length;i2++){if(dep2[i2].id===idDep)okDep=true;}var okDepart=(t.departs||[]).length>0;var mid2=myMir(index),okCone=false;(t.miradors||[]).forEach(function(m){if(m.id===mid2&&m.tir&&m.tir.zones&&m.tir.zones.length)okCone=true;});var okZone=((t.zone||[]).length>=2),okRdv=false;(function(){var mine=null,ps=(me&&me.posts)||[];for(var q2=0;q2<ps.length;q2++){if(ps[q2].traqueIndex===index){mine=ps[q2];break;}}var wanted=(mine&&mine.chefId)||"",lst=t.rdv||[];if(!wanted&&((me&&me.chefMids)||[]).length){for(var z2=0;z2<lst.length;z2++){if(me&&me.name&&lst[z2].chefName===me.name){wanted=lst[z2].chefId;break;}}}if(!wanted)return;for(var w2=0;w2<lst.length;w2++){if(lst[w2].chefId===wanted)okRdv=true;}})();function majCase(id,ok,val){var el=$(id);if(!el)return;el.disabled=!ok;el.checked=!!(ok&&val);var lb=el.parentElement;if(lb)lb.className="conetoggle"+(ok?"":" off");}majCase("deposeToggle",okDep,SHOW_DEPOSE);majCase("departToggle",okDepart,SHOW_DEPART);majCase("coneToggle",okCone,SHOW_CONES);majCase("rdvToggle",okRdv,SHOW_RDV);majCase("zoneToggle",okZone,SHOW_ZONE);})();activerZoom(map);}
 function selectTraque(i){["tabs","mapTabs","postTabs"].forEach(function(id){var c=$(id);if(!c)return;var ks=c.children;for(var k=0;k<ks.length;k++)ks[k].classList.toggle("active",k===i);});renderMap(i);renderPostInfo(i);setHeroFor(i);}
 function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
-function setHeroFor(index){var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
+function setHeroFor(index){if(!me||!me.posts)return;var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
 function aesc(x){return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 
 
@@ -3787,6 +3808,111 @@ function jeuStart(pseudo) {
   step();
 }
 /* ================================================================ */
+/* ===================== Suivi GPS en direct ===================== */
+/* Chacun choisit de partager sa position ; pour voir les autres, il faut partager la sienne.
+   L'accord vaut pour la journee, jusqu'a 18 h ; ensuite tout s'arrete et s'efface. */
+var GPS={watch:null,last:null,sent:0,sentPos:null,poll:null,tick:null,stopT:null,idx:-1,gens:[],decal:0,err:"",envoiOk:null,bulle:-1};
+function gpsCle(){return "cdc_gps_"+DATA.gpsJ;}
+function gpsFin(){var d=new Date();d.setHours(18,0,0,0);return d.getTime();}
+function gpsEtat(){try{var o=JSON.parse(localStorage.getItem(gpsCle())||"null");if(o&&o.exp>Date.now())return o;}catch(e){}return null;}
+function gpsSauve(o){try{if(o)localStorage.setItem(gpsCle(),JSON.stringify(o));else localStorage.removeItem(gpsCle());}catch(e){}}
+function gpsId(){var a="abcdefghijkmnopqrstuvwxyz23456789",s="";for(var i=0;i<18;i++)s+=a.charAt(Math.floor(Math.random()*a.length));return s;}
+function gpsMerc(lat,lon){var R=6378137;return {x:R*lon*Math.PI/180,y:R*Math.log(Math.tan(Math.PI/4+lat*Math.PI/360))};}
+function gpsDist(a,b){var R=6371000,dl=(b.lat-a.lat)*Math.PI/180,dn=(b.lon-a.lon)*Math.PI/180;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dn/2)*Math.sin(dn/2);return 2*R*Math.asin(Math.sqrt(x));}
+function gpsAge(ms){var s=Math.max(0,Math.round(ms/1000));return s<60?("il y a "+s+" s"):("il y a "+Math.round(s/60)+" min");}
+function gpsInit(){if(!DATA.gps||!DATA.gpsJ||!DATA.gpsUrl)return;var t=$("gpsTile");if(t)t.style.display="";var o=gpsEtat();if(o)gpsDemarrer(o);}
+function openGps(){openSheet("gps");gpsRendre();gpsLancerPoll();}
+function gpsMsg(m){var e=$("gpsMsg");if(e)e.textContent=m;}
+function gpsPartager(){
+  if(Date.now()>=gpsFin()){gpsMsg("Le suivi est terminé pour aujourd'hui (après 18 h).");return;}
+  if(!navigator.geolocation){gpsMsg("Ce téléphone ne donne pas sa position.");return;}
+  var nom=me?me.name:"",role=me?"c":"r";
+  if(!me){var s=$("gpsQui");nom=s?String(s.value||"").trim():"";if(!nom){gpsMsg("Choisis d'abord ton nom.");return;}}
+  var o={q:gpsId(),nom:nom,role:role,exp:gpsFin()};gpsSauve(o);gpsDemarrer(o);gpsRendre();gpsLancerPoll();
+}
+function gpsDemarrer(o){
+  if(GPS.watch!==null||!navigator.geolocation)return;
+  GPS.watch=navigator.geolocation.watchPosition(function(p){GPS.err="";GPS.last={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy||0,t:Date.now()};gpsEnvoyer(false);gpsMajEtat();},function(e){GPS.err=(e&&e.code===1)?"refus":"indispo";gpsMajEtat();},{enableHighAccuracy:true,maximumAge:10000,timeout:30000});
+  clearTimeout(GPS.stopT);GPS.stopT=setTimeout(function(){gpsArreter();},Math.max(1000,o.exp-Date.now()));
+  if(!GPS.tick)GPS.tick=setInterval(function(){gpsEnvoyer(false);gpsMajEtat();},10000);
+}
+function gpsEnvoyer(force){
+  var o=gpsEtat();if(!o||!GPS.last)return;var now=Date.now();
+  var bouge=GPS.sentPos?gpsDist(GPS.sentPos,GPS.last):999;
+  if(!force&&GPS.sent&&now-GPS.sent<20000&&!(bouge>15&&now-GPS.sent>6000))return;
+  var premier=!GPS.sent;GPS.sent=now;GPS.sentPos=GPS.last;
+  fetch(DATA.gpsUrl+"/pos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({j:DATA.gpsJ,q:o.q,n:o.nom,r:o.role,lat:GPS.last.lat,lon:GPS.last.lon,acc:Math.round(GPS.last.acc),exp:o.exp})})
+    .then(function(r){GPS.envoiOk=r.ok;gpsMajEtat();if(premier)gpsCharger();}).catch(function(){GPS.envoiOk=false;gpsMajEtat();});
+}
+function gpsArreter(){
+  var o=gpsEtat();
+  if(GPS.watch!==null){try{navigator.geolocation.clearWatch(GPS.watch);}catch(e){}GPS.watch=null;}
+  clearInterval(GPS.tick);GPS.tick=null;clearTimeout(GPS.stopT);clearInterval(GPS.poll);GPS.poll=null;
+  if(o){try{fetch(DATA.gpsUrl+"/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({j:DATA.gpsJ,q:o.q}),keepalive:true}).catch(function(){});}catch(e){}}
+  gpsSauve(null);GPS.last=null;GPS.sent=0;GPS.sentPos=null;GPS.gens=[];GPS.envoiOk=null;gpsRendre();
+}
+function gpsOuvert(){var sh=$("sheet-gps");return !!(sh&&sh.classList.contains("open"));}
+function gpsLancerPoll(){clearInterval(GPS.poll);gpsCharger();GPS.poll=setInterval(function(){if(!gpsOuvert()){clearInterval(GPS.poll);GPS.poll=null;return;}gpsCharger();gpsMajEtat();},20000);}
+function gpsCharger(){
+  var o=gpsEtat();if(!o)return;
+  fetch(DATA.gpsUrl+"/liste?j="+encodeURIComponent(DATA.gpsJ)+"&q="+encodeURIComponent(o.q),{cache:"no-store"})
+    .then(function(r){return r.json();}).then(function(d){if(d&&d.ok){GPS.gens=d.gens||[];GPS.decal=Date.now()-(d.now||Date.now());gpsCarte();}}).catch(function(){});
+}
+function gpsIdx(){if(GPS.idx>=0&&GPS.idx<DATA.traques.length)return GPS.idx;if(me&&me.posts&&me.posts.length)return me.posts[0].traqueIndex;return 0;}
+function gpsMajEtat(){
+  var e=$("gpsEtat");if(!e)return;var t;
+  if(GPS.err==="refus")t="Le téléphone refuse de donner ta position. Autorise la localisation pour ce site (iPhone : Réglages › Safari › Position), puis rouvre cette page.";
+  else if(GPS.err==="indispo"&&!GPS.last)t="Position introuvable pour l'instant (pas de signal GPS ?). Nouvel essai en cours…";
+  else if(!GPS.last)t="Recherche de ta position…";
+  else t="Ta position est partagée jusqu'à 18 h · mise à jour "+gpsAge(Date.now()-GPS.last.t)+" · précision ± "+Math.round(GPS.last.acc)+" m"+(GPS.envoiOk===false?"<br><b>⚠ Envoi impossible pour le moment (réseau).</b>":"")+"<br><span style='color:#475569'>Garde cette page ouverte : écran éteint, ta position n'est plus mise à jour.</span>";
+  e.innerHTML=t;
+}
+function gpsRendre(){
+  var box=$("gpsBody");if(!box)return;var o=gpsEtat();
+  if(!o){
+    var h="<div class='hownote'>Pour voir où sont les chasseurs et les traqueurs, partage d'abord ta position.<ul class='gpsul'><li>Visible seulement par les participants de cette journée.</li><li>Valable aujourd'hui jusqu'à 18 h, puis arrêtée et effacée automatiquement.</li><li>Mise à jour tant que cette page reste ouverte, écran allumé.</li><li>Tu peux arrêter à tout moment.</li></ul></div>";
+    if(!me){h+="<label class='gpslab'>Qui es-tu ?</label><select id='gpsQui' class='gpssel'><option value=''>Choisis ton nom</option>"+(DATA.rabatteurs||[]).map(function(n){return "<option>"+aesc(n)+"</option>";}).join("")+"</select>";}
+    h+=Date.now()>=gpsFin()?"<p class='gpswarn'>Le suivi est terminé pour aujourd'hui (après 18 h).</p>":"<button class='gpsgo' onclick='gpsPartager()'>📍 Partager ma position jusqu'à 18 h</button>";
+    h+="<p class='gpsmsg' id='gpsMsg'></p>";
+    box.innerHTML=h;return;
+  }
+  var i0=gpsIdx(),tabs="";
+  DATA.traques.forEach(function(t,i){tabs+="<button class='tab"+(i===i0?" active":"")+"' onclick='GPS.idx="+i+";gpsRendre()'>"+aesc(t.name)+"</button>";});
+  box.innerHTML="<div class='gpsetat' id='gpsEtat'></div><div class='tabs' style='margin:10px 0'>"+tabs+"</div><div class='map' id='gpsMap'></div><p class='gpshors' id='gpsHors'></p>"
+    +"<div class='gpsleg'><span><i class='gpsm'></i>Chasseur</span><span><i class='gpsm rab'></i>Traqueur</span><span><i class='gpsm moi'></i>Toi</span><span style='opacity:.5'><i class='gpsm'></i>Position de plus de 5 min</span></div>"
+    +"<div class='gpswarn'>⚠️ Positions <b>indicatives</b> (GPS à 5–20 m près, avec du retard). Ne t'en sers <b>jamais</b> pour décider d'un tir.</div>"
+    +"<button class='gpsstop' onclick='gpsArreter()'>Arrêter le partage</button>";
+  gpsMajEtat();gpsCarte();
+}
+function gpsCarte(){
+  var map=$("gpsMap");if(!map)return;var ti=gpsIdx();var t=DATA.traques[ti];if(!t)return;var c=t.crop;
+  map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";
+  var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;
+  bg.style.backgroundImage="url('"+imgDe(t)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);
+  var mm=myMir(ti);
+  (t.miradors||[]).forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var el=document.createElement("div");el.className="marker"+(m.id===mm?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot' style='width:10px;height:10px'></span><span class='lbl'>"+aesc(m.label||"")+"</span>";map.appendChild(el);});
+  var geo=(DATA.geo||{})[t.sec],hors=0,info=$("gpsHors");
+  if(!geo){if(info)info.textContent="Cette carte n'a pas de coordonnées GPS : les positions ne peuvent pas y être placées.";activerZoom(map);return;}
+  var now=Date.now()-GPS.decal;
+  GPS.gens.forEach(function(g,k){
+    var p=gpsMerc(g.lat,g.lon);var gx=(p.x-geo.x1)/(geo.x2-geo.x1)*100,gy=(geo.y2-p.y)/(geo.y2-geo.y1)*100;
+    var lx=(gx-c.x)/c.w*100,ly=(gy-c.y)/c.h*100;
+    if(lx<0||lx>100||ly<0||ly>100){hors++;return;}
+    var el=document.createElement("div");var vieux=(now-g.t)>300000;
+    el.className="gpsm"+(g.role==="r"?" rab":"")+(g.moi?" moi":"")+(vieux?" vieux":"");el.style.left=lx+"%";el.style.top=ly+"%";
+    el.onclick=function(ev){ev.stopPropagation();GPS.bulle=k;gpsBulle(map,g,lx,ly,now);};
+    map.appendChild(el);
+    if(GPS.bulle===k)gpsBulle(map,g,lx,ly,now);
+  });
+  if(info)info.textContent=hors?(hors+" personne(s) hors de cette carte — choisis une autre traque ci-dessus."):"";
+  activerZoom(map);
+}
+function gpsBulle(map,g,lx,ly,now){
+  var b=map.querySelector(".gpsbulle");if(!b){b=document.createElement("div");b.className="gpsbulle";map.appendChild(b);}
+  b.innerHTML="<b>"+aesc(g.moi?"Toi":(g.nom||"?"))+"</b><br>"+(g.role==="r"?"Traqueur · ":"")+gpsAge(now-g.t)+(g.acc?" · ± "+Math.round(g.acc)+" m":"");
+  b.style.left=lx+"%";b.style.top=ly+"%";
+  clearTimeout(GPS.bulleT);GPS.bulleT=setTimeout(function(){GPS.bulle=-1;if(b.parentNode)b.parentNode.removeChild(b);},3500);
+}
 var RETOUR_HELP=false;function openSheet(k){var el=document.getElementById("sheet-"+k);if(el)el.classList.add("open");if(k==="retour"&&!RETOUR_HELP){RETOUR_HELP=true;var rh=document.getElementById("retourHelp");if(rh)rh.style.display="flex";}}
 function closeSheet(){var ls=document.querySelectorAll(".sheet-back");for(var i=0;i<ls.length;i++)ls[i].classList.remove("open");}
 var SHOW_CONES=false;\nvar SHOW_ZONE=false;\nvar SHOW_DEPART=true;\nvar SHOW_DEPOSE=true;
@@ -3863,11 +3989,11 @@ function enterRabatteurs(){setupRabatteurs();}
 function fillLists(){var so=$("sonneries");DATA.sonneries.forEach(function(s){var li=document.createElement("li");li.innerHTML="<span class='ev'>"+s.evenement+"</span><span>"+s.signal+"</span>";so.appendChild(li);});var co=$("consignes");DATA.consignes.forEach(function(x){var li=document.createElement("li");li.className="rule";li.innerHTML="<span class='p'>•</span><span>"+x+"</span>";co.appendChild(li);});}
 if(DATA.orgName){try{document.title=DATA.orgName;}catch(e){}var pt=$("pickTitle");if(pt)pt.textContent=DATA.orgName;}
 function setupRabatteurs(){me=null;$("pick").style.display="none";$("appview").style.display="block";var hero=document.querySelector("#appview .hero");if(hero)hero.style.display="none";var fc=$("feedbackCard");if(fc)fc.style.display="none";var bk=$("back");if(bk)bk.style.display="";$("myName").textContent="🥁 Rabatteurs";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var mh=document.querySelector(".maphint");if(mh)mh.textContent="Vue d'ensemble des traques · lecture seule";buildTabs(0);renderAttribs();window.scrollTo(0,0);}
-renderPicker();fillLists();var wb=document.getElementById("welcomeBtn");if(wb)wb.onclick=function(){var w=document.getElementById("welcome");if(w)w.style.display="none";};var rhb=document.getElementById("retourHelpBtn");if(rhb)rhb.onclick=function(){var r=document.getElementById("retourHelp");if(r)r.style.display="none";};
+renderPicker();fillLists();try{gpsInit();}catch(e){}var wb=document.getElementById("welcomeBtn");if(wb)wb.onclick=function(){var w=document.getElementById("welcome");if(w)w.style.display="none";};var rhb=document.getElementById("retourHelpBtn");if(rhb)rhb.onclick=function(){var r=document.getElementById("retourHelp");if(r)r.style.display="none";};
 if(DATA.image){var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR=im.naturalWidth/im.naturalHeight;var mp=$("map");if(mp&&mp.innerHTML!=="")renderMap(MAP_I);}};im.src=DATA.image;}
 </scr` + `ipt></body></html>`;
 
-function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId, photosAnn) {
+function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId, photosAnn, gpsActif) {
   const posted = {};
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: (photosAnn && photosAnn[mid]) || m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "", chefId: (journee.chefLignes && journee.chefLignes[mid]) || "" }); }); });
   const chefLignesData = journee.chefLignes || {};
@@ -3881,7 +4007,11 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
     Object.keys(ids).forEach((id) => { const p = participants.find((x) => x.id === id); if (p) gens[id] = { n: p.name || "", t: String(p.phone || "").trim() }; });
     return { respId: journee.responsableId || "", gens: gens };
   })();
-  const DATA = { date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "",
+  // Suivi GPS : coordonnees des cartes (captures IGN) pour placer les positions, et cle secrete de la journee.
+  const geoSec = {};
+  (terrain.secteurs || []).forEach((s) => { if (s && s.geo && isFinite(s.geo.x1) && (terrain.tracks || []).some((t) => t.secteurId === s.id)) geoSec[s.id] = { x1: s.geo.x1, y1: s.geo.y1, x2: s.geo.x2, y2: s.geo.y2 }; });
+  const gpsInfos = (gpsActif && journee.gpsCle && Object.keys(geoSec).length) ? { gps: true, gpsJ: journee.gpsCle, gpsUrl: GPS_URL, geo: geoSec } : { gps: false };
+  const DATA = { ...gpsInfos, date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "",
     images: (function () {
       // Une carte peut servir a dix traques : on ne l'envoie qu'une fois.
       const utiles = {}; (terrain.tracks || []).forEach((t) => { if (t.secteurId) utiles[t.secteurId] = true; });
@@ -4296,6 +4426,13 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
           <div className="grid grid-cols-2 gap-3">
             <Tile open={open} onToggle={toggle} id="groupe" emoji="🏹" title="Nom du groupe" sub="Titre de la page chasseurs" />
             <Tile open={open} onToggle={toggle} id="save" emoji="💾" title="Sauvegarde" sub="Exporter · Importer" />
+            <Tile open={open} onToggle={toggle} id="gps" emoji="📡" title="Suivi GPS live" sub={github.gpsActif ? "Activé" : "Désactivé"} />
+            <Panel open={open} id="gps">
+              <p className="text-sm text-stone-600">Sur la page des chasseurs, une tuile « Suivi GPS live » permet à chacun de partager sa position jusqu'à 18 h et de voir celle des autres. Nécessite le Worker <b>battue-gps</b> sur <b>gps.carnetdechasse.fr</b>.</p>
+              <label className="flex items-center gap-2 mt-3 text-sm text-stone-800"><input type="checkbox" checked={!!github.gpsActif} onChange={() => setGithub({ ...github, gpsActif: !github.gpsActif })} className="w-4 h-4 accent-emerald-700" />Activer le suivi GPS sur les pages publiées</label>
+              <button onClick={async () => { try { const r = await fetch(GPS_URL + "/ping", { cache: "no-store" }); const d = await r.json(); flash(d && d.ok ? "Worker GPS en place ✓" : "Le Worker répond mais la base n'est pas prête"); } catch (e) { flash("Worker GPS introuvable"); } }} className="mt-3 text-sm font-medium bg-white border border-stone-300 rounded-lg px-3 py-1.5">Tester le Worker</button>
+              <p className="text-[11px] text-stone-400 mt-2">Après l'avoir activé, republie la journée pour que la tuile apparaisse. Seules les cartes capturées depuis l'IGN dans l'app peuvent afficher les positions.</p>
+            </Panel>
             <Panel open={open} id="groupe">
             <label className="text-[11px] uppercase tracking-wide text-stone-400">Nom affiché aux chasseurs</label>
             <input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="ex : Société de chasse de…" className="w-full border border-stone-300 rounded-lg px-3 py-2 mt-1.5 text-sm bg-white" />
@@ -5250,7 +5387,14 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   };
   const urlDe = (j) => "https://poste.carnetdechasse.fr/b/" + slugJournee(j) + "/";
   const pubUrl = "https://poste.carnetdechasse.fr/b/" + pubSlug + "/";
-  const publish = async (journee) => {
+  const publish = async (journee0) => {
+    // Cle secrete pour le suivi GPS de cette journee (creee une seule fois, gardee ensuite).
+    let journee = journee0;
+    if (!journee.gpsCle) {
+      const a = "abcdefghijkmnopqrstuvwxyz23456789"; let cle = ""; for (let i = 0; i < 20; i++) cle += a.charAt(Math.floor(Math.random() * a.length));
+      journee = { ...journee0, gpsCle: cle };
+      setJournees((prev) => prev.map((x) => (x.id === journee0.id ? { ...x, gpsCle: cle } : x)));
+    }
     const terrain = terrains.find((t) => t.id === journee.terrainId);
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
     setPub({ status: "publishing" });
@@ -5262,7 +5406,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
         photosAnn[mm.id] = [];
         for (let k = 0; k < (mm.photos || []).length; k++) { try { photosAnn[mm.id].push(await aplatirPhoto(mm.photos[k], (mm.photoNotes || [])[k] || [], 1100, 0.62)); } catch (e) { photosAnn[mm.id].push(mm.photos[k]); } }
       }
-      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId, photosAnn);
+      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId, photosAnn, !!github.gpsActif);
       const token = "PUBTS-" + Date.now();
       const stamped = html + "\n<!--" + token + "-->";
       const fn = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
@@ -5913,6 +6057,8 @@ function buildDinnerPrintHtml(participants) {
 // ---------- Application ----------
 const K = { participants: "cdb2:participants", journees: "cdb2:journees", terrainIndex: "cdb2:terrain-index", terrainPrefix: "cdb2:terrain:", imgPrefix: "cdb2:img:", mimgPrefix: "cdb2:mimg:", safety: "cdb2:safety", github: "cdb2:github", localAt: "cdb2:localAt", cloudAt: "cdb2:cloudAt" };
 const DEFAULT_FACTEUR = "https://battue-facteur.hippolyte-houdard.workers.dev/";
+// Worker « battue-gps » (positions en direct), installe a part du facteur.
+const GPS_URL = "https://gps.carnetdechasse.fr";
 const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", fnUrl: DEFAULT_FACTEUR, orgName: "" };
 const STORAGE_OK = typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
 
