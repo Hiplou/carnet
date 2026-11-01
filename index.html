@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.31";
+const APP_VERSION = "v4.33";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -1826,22 +1826,45 @@ function nouvelId(prefixe) { return prefixe + "-" + Date.now().toString(36) + Ma
 // Régénère tous les identifiants : sans ça, un territoire copié pourrait entrer
 // en collision avec un territoire existant et mélanger les journées passées.
 function copierTerritoire(t) {
-  return {
+  const nouveauxIds = {};
+  const res = {
     id: nouvelId("t"),
     name: (t.name || "Territoire") + " (copie)",
     vueEnsemble: t.vueEnsemble || null,
     vueGeo: t.vueGeo || null,
+    imageCouverture: t.imageCouverture || null,
     secteurs: (t.secteurs || []).map((s) => ({ ...s })),
-    consignesCommunes: (t.consignesCommunes || []).map((c) => ({ id: nouvelId("cc"), text: c.text || "", miradorIds: [] })),
+    consignesCommunes: [],
     planChasse: t.planChasse || {},
     tracks: (t.tracks || []).map((tr) => ({
       id: nouvelId("tr"),
       name: tr.name || "Traque",
       color: tr.color || "#dc2626",
       crop: tr.crop || null,
+      secteurId: tr.secteurId || "",
       zone: Array.isArray(tr.zone) ? tr.zone.map((p) => ({ gx: p.gx, gy: p.gy })) : [], zoneFermee: !!tr.zoneFermee, deposes: (tr.deposes || []).map((d) => ({ ...d })), departs: (tr.departs || []).map((d) => ({ ...d })),
-      miradors: (tr.miradors || []).map((m) => Object.assign({}, m, { id: nouvelId("m"), useCommon: false }))
+      miradors: (tr.miradors || []).map((m) => { const id = nouvelId("m"); nouveauxIds[m.id] = id; return Object.assign({}, m, { id, useCommon: false }); })
     }))
+  };
+  // Les consignes communes suivent leurs postes (nouveaux identifiants).
+  res.consignesCommunes = (t.consignesCommunes || []).map((c) => ({ id: nouvelId("cc"), text: c.text || "", miradorIds: (c.miradorIds || []).map((x) => nouveauxIds[x]).filter(Boolean) }));
+  return res;
+}
+// Partage d'une partie d'un territoire : seulement les traques choisies, les cartes qu'elles utilisent
+// et la vue d'ensemble ; le plan de chasse n'est pas partage.
+function extraireTraques(t, ids) {
+  const garde = {}; (ids || []).forEach((id) => { garde[id] = true; });
+  const tracks = (t.tracks || []).filter((tr) => garde[tr.id]);
+  const premierSec = ((t.secteurs || [])[0] || {}).id;
+  const secUtiles = {}; tracks.forEach((tr) => { secUtiles[tr.secteurId || premierSec] = true; });
+  const mids = {}; tracks.forEach((tr) => (tr.miradors || []).forEach((m) => { mids[m.id] = true; }));
+  return {
+    ...t,
+    name: (t.name || "Territoire") + " (" + tracks.length + " traque" + (tracks.length > 1 ? "s" : "") + ")",
+    tracks,
+    secteurs: (t.secteurs || []).filter((sc) => secUtiles[sc.id]),
+    consignesCommunes: (t.consignesCommunes || []).map((c) => ({ ...c, miradorIds: (c.miradorIds || []).filter((x) => mids[x]) })).filter((c) => c.miradorIds.length),
+    planChasse: undefined,
   };
 }
 
@@ -1858,40 +1881,6 @@ function allegerTerritoire(t, niveau) {
   return out;
 }
 function poidsDe(obj) { try { return JSON.stringify(obj).length; } catch (e) { return 0; } }
-// Partage d'un territoire trop lourd : on reduit les photos des postes (jamais les cartes)
-// seulement dans la copie envoyee, de plus en plus fort jusqu'a passer sous la limite.
-function reduirePhotoPartage(src, maxDim, q) {
-  return new Promise((resolve) => {
-    if (typeof src !== "string" || src.slice(0, 11) !== "data:image/") { resolve(src); return; }
-    const img = new Image();
-    img.onload = () => { try { const r = Math.min(1, maxDim / Math.max(img.width, img.height)); const w = Math.max(1, Math.round(img.width * r)), h = Math.max(1, Math.round(img.height * r)); const cv = document.createElement("canvas"); cv.width = w; cv.height = h; const cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, w, h); cx.drawImage(img, 0, 0, w, h); const out = cv.toDataURL("image/jpeg", q); resolve(out.length < src.length ? out : src); } catch (e) { resolve(src); } };
-    img.onerror = () => resolve(src);
-    img.src = src;
-  });
-}
-async function territoirePourPartage(t, limite, onProgres) {
-  if (poidsDe(t) <= limite) return { t, reduit: false };
-  const niveaux = [[1100, 0.55], [900, 0.5], [750, 0.45], [600, 0.4]];
-  const nb = (t.tracks || []).reduce((a, tr) => a + (tr.miradors || []).reduce((b, m) => b + (m.photos || []).length, 0), 0);
-  let essai = t;
-  for (let n = 0; n < niveaux.length; n++) {
-    const [maxDim, q] = niveaux[n];
-    let fait = 0;
-    const tracks = [];
-    for (const tr of (t.tracks || [])) {
-      const miradors = [];
-      for (const m of (tr.miradors || [])) {
-        const photos = [];
-        for (const p of (m.photos || [])) { photos.push(await reduirePhotoPartage(p, maxDim, q)); fait++; if (onProgres) onProgres(fait, nb, n + 1); }
-        miradors.push({ ...m, photos });
-      }
-      tracks.push({ ...tr, miradors });
-    }
-    essai = { ...t, tracks };
-    if (poidsDe(essai) <= limite) return { t: essai, reduit: true };
-  }
-  return { t: essai, reduit: true, encoreTrop: true };
-}
 function ko(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + " Mo" : Math.round(n / 1024) + " Ko"; }
 
 function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
@@ -1902,6 +1891,9 @@ function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [niveau, setNiveau] = useState("complet");   // complet | postes | tout
+  const [quoi, setQuoi] = useState("territoire");    // territoire | traques
+  const [selTr, setSelTr] = useState([]);
+  const aPartager = (t) => (quoi === "traques" ? extraireTraques(t, selTr) : t);
   const LIMITE = 24 * 1024 * 1024;
 
   const facteur = () => (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
@@ -1923,21 +1915,49 @@ function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
     return d;
   };
 
+  // Partage sans limite de poids : le territoire part en morceaux d'environ 800 Ko vers le Worker battue-gps.
+  const MORCEAU = 800000;
+  const jeton = async () => {
+    let sess = null;
+    try { sess = (await SB.auth.getSession()).data.session; } catch (e) {}
+    if (!sess || !sess.access_token) throw new Error("Session expirée — reconnecte-toi.");
+    return sess;
+  };
+  const appelGps = async (route, corps, sess) => {
+    const r = await fetch(GPS_URL + route, corps ? { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sess.access_token }, body: JSON.stringify(corps) } : { headers: { "Authorization": "Bearer " + sess.access_token }, cache: "no-store" });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) { const e = new Error(({ introuvable: "Code inconnu ou expiré.", connexion: "Session expirée — reconnecte-toi.", trop: "Tu as déjà 10 partages en cours : attends qu'ils expirent (7 jours)." })[d.reason] || ("Erreur " + r.status)); e.reason = d.reason || ""; e.status = r.status; throw e; }
+    return d;
+  };
   const envoyer = async () => {
     const t = terrains.find((x) => x.id === choisi);
     if (!t) { setMsg("Choisis d'abord un territoire."); return; }
     setBusy(true); setMsg(""); setCode(null);
     try {
-      let aEnvoyer = allegerTerritoire(t, niveau);
-      if (niveau === "complet" && poidsDe(aEnvoyer) > LIMITE) {
-        const r = await territoirePourPartage(aEnvoyer, LIMITE, (fait, nb) => setMsg("Préparation des photos pour l'envoi… " + fait + "/" + nb));
-        if (r.encoreTrop) throw new Error("Même avec les photos réduites, ce territoire reste trop lourd (les cartes pèsent beaucoup). Choisis « Sans les photos des postes ».");
-        aEnvoyer = r.t;
-        setMsg("Envoi du territoire (" + ko(poidsDe(aEnvoyer)) + ")…");
+      const sess = await jeton();
+      if (quoi === "traques" && !selTr.length) throw new Error("Coche au moins une traque à partager.");
+      let aEnvoyer = allegerTerritoire(aPartager(t), niveau);
+      // Images pas encore revenues sur cet appareil : on les recupere pour que la copie soit complete.
+      try { aEnvoyer = (await resoudreImages(aEnvoyer, sess.user.id, true)).v; } catch (e) {}
+      const texte = JSON.stringify(aEnvoyer);
+      const n = Math.max(1, Math.ceil(texte.length / MORCEAU));
+      let deb;
+      try { deb = await appelGps("/share/debut", { n, taille: texte.length, nom: aEnvoyer.name || t.name || "" }, sess); }
+      catch (e) {
+        // Worker pas encore a jour : ancien partage (24 Mo maximum) si le territoire y tient.
+        if (e.reason === "connexion" || e.reason === "trop") throw e;
+        if (texte.length > LIMITE) throw new Error("Le partage sans limite n'est pas encore installé : il faut mettre à jour la base et le Worker battue-gps (voir le guide).");
+        const d = await appel("/share/create", { territoire: aEnvoyer });
+        setCode(d); return;
       }
-      const d = await appel("/share/create", { territoire: aEnvoyer });
+      for (let i = 0; i < n; i++) {
+        setMsg("Envoi du territoire… " + (i + 1) + "/" + n + " (" + ko(texte.length) + ")");
+        let ok = false;
+        for (let essai = 0; essai < 3 && !ok; essai++) { try { await appelGps("/share/morceau", { code: deb.code, cle: deb.cle, i, data: texte.slice(i * MORCEAU, (i + 1) * MORCEAU) }, sess); ok = true; } catch (e) { if (essai === 2) throw new Error("Envoi interrompu (réseau ?). Réessaie."); } }
+      }
+      const fin = await appelGps("/share/fin", { code: deb.code, cle: deb.cle }, sess);
       setMsg("");
-      setCode(d);
+      setCode({ code: fin.code, jours: fin.jours, taille: fin.taille });
     } catch (e) { setMsg((e && e.message) || String(e)); }
     finally { setBusy(false); }
   };
@@ -1947,8 +1967,24 @@ function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
     if (c.length < 4) { setMsg("Saisis le code reçu."); return; }
     setBusy(true); setMsg("");
     try {
-      const d = await appel("/share/get", { code: c });
-      const copie = copierTerritoire(d.territoire);
+      let territoire = null;
+      const sess = await jeton();
+      try {
+        const inf = await appelGps("/share/infos?code=" + encodeURIComponent(c), null, sess);
+        let texte = "";
+        for (let i = 0; i < inf.n; i++) {
+          setMsg("Récupération du territoire… " + (i + 1) + "/" + inf.n + " (" + ko(inf.taille) + ")");
+          let m = null;
+          for (let essai = 0; essai < 3 && !m; essai++) { try { m = await appelGps("/share/morceau?code=" + encodeURIComponent(c) + "&i=" + i + "&lect=" + encodeURIComponent(inf.lect), null, sess); } catch (e) { if (essai === 2) throw new Error("Récupération interrompue (réseau ?). Réessaie."); } }
+          texte += m.data;
+        }
+        territoire = JSON.parse(texte);
+      } catch (e) {
+        // Code inconnu du nouveau partage : c'est peut-etre un ancien code (avant la v4.32).
+        if (e.reason !== "introuvable" && e.status !== 404 && e.status !== 500) throw e;
+        territoire = (await appel("/share/get", { code: c })).territoire;
+      }
+      const copie = copierTerritoire(territoire);
       setTerrains((prev) => [...prev, copie]);
       setMsg("✅ « " + copie.name + " » a été ajouté à tes territoires.");
       setSaisie("");
@@ -1986,42 +2022,64 @@ function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
 
         {onglet === "envoyer" && (<div className="bg-white rounded-xl border border-stone-200 p-4 space-y-3">
           <p className="text-sm text-stone-600">Choisis le territoire à transmettre. Tu obtiendras un code à donner à l'autre organisateur.</p>
-          <select value={choisi} onChange={(e) => { setChoisi(e.target.value); setCode(null); setNiveau("complet"); setMsg(""); }} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+          <select value={choisi} onChange={(e) => { setChoisi(e.target.value); setCode(null); setNiveau("complet"); setMsg(""); setQuoi("territoire"); setSelTr([]); }} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
             <option value="">Choisir un territoire…</option>
             {[...terrains].sort((a, b) => byNom(a.name || "", b.name || "")).map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.tracks || []).length} traque(s))</option>)}
           </select>
           {choisi && (() => {
-            const t = terrains.find((x) => x.id === choisi);
-            if (!t) return null;
+            const t0 = terrains.find((x) => x.id === choisi);
+            if (!t0) return null;
+            const traques = t0.tracks || [];
+            const basculer = (id) => setSelTr((p) => (p.indexOf(id) >= 0 ? p.filter((x) => x !== id) : [...p, id]));
+            const choixQuoi = (<div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setQuoi("territoire")} className={`rounded-lg border p-2.5 text-left ${quoi === "territoire" ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white"}`}>
+                  <div className="text-sm font-medium text-stone-800">{quoi === "territoire" ? "✓ " : ""}Tout le territoire</div>
+                  <div className="text-[11px] text-stone-400 mt-0.5">{traques.length} traque(s), plan de chasse compris</div>
+                </button>
+                <button onClick={() => setQuoi("traques")} className={`rounded-lg border p-2.5 text-left ${quoi === "traques" ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white"}`}>
+                  <div className="text-sm font-medium text-stone-800">{quoi === "traques" ? "✓ " : ""}Choisir des traques</div>
+                  <div className="text-[11px] text-stone-400 mt-0.5">Seulement celles que tu coches</div>
+                </button>
+              </div>
+              {quoi === "traques" && (<div className="border border-stone-200 rounded-lg p-2.5 space-y-1">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-[12px] text-stone-500">{selTr.length} / {traques.length} cochée(s)</span>
+                  <button onClick={() => setSelTr(selTr.length === traques.length ? [] : traques.map((x) => x.id))} className="text-[12px] text-emerald-800 underline">{selTr.length === traques.length ? "Tout décocher" : "Tout cocher"}</button>
+                </div>
+                {traques.map((tr) => (<label key={tr.id} className="flex items-center gap-2.5 py-1.5 text-sm text-stone-800 cursor-pointer">
+                  <input type="checkbox" checked={selTr.indexOf(tr.id) >= 0} onChange={() => basculer(tr.id)} className="w-4 h-4 accent-emerald-700" />
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ background: tr.color || "#dc2626" }} />
+                  <span className="flex-1">{tr.name || "Traque"}</span>
+                  <span className="text-[11px] text-stone-400">{(tr.miradors || []).length} poste(s)</span>
+                </label>))}
+                <p className="text-[11px] text-stone-500 pt-1.5 border-t border-stone-100">La personne reçoit un nouveau territoire avec ces traques, leurs postes, leurs photos, leurs cartes et la vue d'ensemble. Le plan de chasse n'est pas partagé.</p>
+              </div>)}
+            </div>);
+            if (quoi === "traques" && !selTr.length) return choixQuoi;
+            const t = aPartager(t0);
             const pComplet = poidsDe(t);
             const pPostes = poidsDe(allegerTerritoire(t, "postes"));
             const pTout = poidsDe(allegerTerritoire(t, "tout"));
             const tropLourd = pComplet > LIMITE;
-            // Seules les cartes trop lourdes empechent vraiment l'envoi complet (les photos des postes seront reduites).
-            const cartesTrop = pPostes > LIMITE;
+
             const options = [
-              { k: "complet", t: "Tout envoyer", d: tropLourd ? "Carte, toutes les photos des postes (réduites pour l'envoi), traques et plan de chasse" : "Carte, photos des postes, traques et plan de chasse", p: pComplet, reduit: tropLourd && !cartesTrop },
+              { k: "complet", t: "Tout envoyer", d: "Carte, photos des postes, traques et plan de chasse", p: pComplet },
               { k: "postes", t: "Sans les photos des postes", d: "La carte du territoire est conservée", p: pPostes },
               { k: "tout", t: "Sans aucune photo", d: "Traques, postes et plan de chasse uniquement", p: pTout }
             ];
             return (<div className="space-y-2">
-              {tropLourd && !cartesTrop && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-3">
-                <p className="text-[13px] text-emerald-900"><b>Tout part en une fois.</b> Les photos des postes ({ko(pComplet - pPostes)}) seront réduites pour l'envoi afin de passer sous {ko(LIMITE)}.</p>
-                <p className="text-[12px] text-emerald-800 mt-1">Tes photos à toi ne changent pas. Les cartes ne sont jamais réduites.</p>
-              </div>)}
-              {cartesTrop && (<div className="bg-amber-50 border border-amber-300 rounded-lg p-3">
-                <p className="text-[13px] text-amber-900"><b>Ce territoire est trop lourd</b> ({ko(pComplet)}) : ses cartes dépassent à elles seules {ko(LIMITE)}.</p>
-                <p className="text-[12px] text-amber-800 mt-1">Choisis « Sans aucune photo » : les traques, les postes et le plan de chasse sont <b>toujours</b> conservés.</p>
-              </div>)}
+              {choixQuoi}
+              {tropLourd && (<p className="text-[12px] text-stone-500">Territoire lourd ({ko(pComplet)}) : il part en plusieurs morceaux, en pleine qualité. Compte une minute en Wi-Fi.</p>)}
               <div className="space-y-1.5">
                 {options.map((o) => {
-                  const trop = o.p > LIMITE && !o.reduit;
+                  const trop = false;
                   const on = niveau === o.k;
                   return (<button key={o.k} onClick={() => !trop && setNiveau(o.k)} disabled={trop}
                     className={`w-full text-left rounded-lg border p-2.5 transition-colors ${on ? "border-emerald-600 bg-emerald-50" : trop ? "border-stone-200 bg-stone-50 opacity-60" : "border-stone-200 bg-white"}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-stone-800">{on ? "✓ " : ""}{o.t}</span>
-                      <span className={`text-[11px] shrink-0 ${trop ? "text-red-600" : o.reduit ? "text-emerald-700" : "text-stone-400"}`}>{o.reduit ? "photos réduites" : ko(o.p)}{trop ? " · trop lourd" : ""}</span>
+                      <span className="text-[11px] shrink-0 text-stone-400">{ko(o.p)}</span>
                     </div>
                     <div className="text-[11px] text-stone-400 mt-0.5">{o.d}</div>
                   </button>);
@@ -2029,12 +2087,12 @@ function PartageTerritoire({ terrains, setTerrains, github, onClose }) {
               </div>
             </div>);
           })()}
-          <button onClick={envoyer} disabled={busy || !choisi} className="w-full bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium py-2.5 rounded-lg">{busy ? "Envoi en cours…" : "Obtenir un code"}</button>
+          <button onClick={envoyer} disabled={busy || !choisi || (quoi === "traques" && !selTr.length)} className="w-full bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-stone-50 text-sm font-medium py-2.5 rounded-lg">{busy ? "Envoi en cours…" : "Obtenir un code"}</button>
 
           {code && (<div className="bg-emerald-50 border border-emerald-300 rounded-lg p-4 text-center">
             <p className="text-[11px] uppercase tracking-widest text-emerald-700">Code de partage</p>
             <p className="font-serif text-3xl text-emerald-900 tracking-wider my-2">{code.code}</p>
-            <p className="text-[11px] text-stone-500 mb-3">Valable {code.jours} jours · {Math.round(code.taille / 1024)} Ko</p>
+            <p className="text-[11px] text-stone-500 mb-3">Valable {code.jours} jours · {ko(code.taille || 0)}</p>
             <button onClick={partagerCode} className="w-full flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 text-stone-50 text-sm font-medium py-2.5 rounded-lg"><Send size={14} /> Envoyer sur WhatsApp</button>
           </div>)}
         </div>)}
