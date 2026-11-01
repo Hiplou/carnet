@@ -288,7 +288,7 @@ function normTerrain(t) { const tracks = (t.tracks || []).map(normTrack); let cc
   if (!secteurs.length) secteurs = [{ id: "sec-1", nom: "Secteur 1", image: t.planImage || null }];
   const idsSec = secteurs.map((s) => s.id);
   tracks.forEach((tr) => { if (idsSec.indexOf(tr.secteurId) < 0) tr.secteurId = secteurs[0].id; });
-  return { id: t.id, name: t.name || "Territoire", vueEnsemble: t.vueEnsemble || null, vueGeo: (t.vueGeo && isFinite(t.vueGeo.x1)) ? t.vueGeo : null, secteurs, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc, imageCouverture: (typeof t.imageCouverture === "string" && t.imageCouverture.indexOf("data:image") === 0) ? t.imageCouverture : null }; }
+  return { id: t.id, name: t.name || "Territoire", vueEnsemble: t.vueEnsemble || null, vueGeo: (t.vueGeo && isFinite(t.vueGeo.x1)) ? t.vueGeo : null, secteurs, tracks, planChasse: normPlan(t.planChasse), consignesCommunes: cc, imageCouverture: (typeof t.imageCouverture === "string" && (t.imageCouverture.indexOf("data:image") === 0 || t.imageCouverture.indexOf("cdcimg:") === 0)) ? t.imageCouverture : null }; }
 function nomKey(s) { const p = (s || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : (s || ""); }
 function byNom(a, b) { return nomKey(a).localeCompare(nomKey(b), "fr", { sensitivity: "base" }) || (a || "").localeCompare(b || "", "fr", { sensitivity: "base" }); }
 function splitFullName(full) { const parts = (full || "").trim().split(/\s+/).filter(Boolean); if (!parts.length) return { prenom: "", nom: "" }; if (parts.length === 1) return { prenom: parts[0], nom: "" }; return { prenom: parts[0], nom: parts.slice(1).join(" ") }; }
@@ -366,7 +366,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.25";
+const APP_VERSION = "v4.30";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3305,7 +3305,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 .rolebtn{width:100%;margin-top:4px;background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:600}
 .rolebtn:active{background:#1d4ed8}
 .ro2{margin-top:14px;text-align:center;color:var(--stone-400);font-size:12px}
-.modal{position:fixed;inset:0;background:rgba(28,25,23,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px}.modalcard{background:#fff;border-radius:18px;max-width:340px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}.modalemo{font-size:44px;margin-bottom:6px}.modalcard h2{font-family:Georgia,serif;font-size:22px;margin:0 0 8px;color:#1c1917}.modalcard p{color:#57534e;font-size:15px;line-height:1.5;margin:0 0 18px}.modalbtn{background:#166534;color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:16px;font-weight:700;width:100%}.banner{background:#fffbeb;border:1px solid #fde68a}.banner .sec{color:#b45309}.tilegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.tile{text-align:left;background:#fff;border:1px solid #e7e5e4;border-radius:16px;padding:15px 14px;display:flex;flex-direction:column;gap:7px;min-height:104px;box-shadow:0 1px 2px rgba(0,0,0,.04);cursor:pointer;font-family:inherit;color:#1c1917}.tile:active{transform:scale(.97)}.tile .ico{font-size:27px;line-height:1}.tile .tl{font-size:16px;font-weight:800}.tile .hint{font-size:12px;color:#78716c;line-height:1.3}.tile.wide{flex-direction:row;align-items:center;min-height:auto;gap:12px;width:100%;margin-bottom:12px}.tile.wide .ico{font-size:25px}.tile.wide .txt{flex:1}.tile.wide .go{margin-left:auto;color:#a8a29e;font-size:20px}.tile.ret{background:linear-gradient(180deg,#fff,#f0fdf4);border-color:#a7f3d0}.sheet-back{position:fixed;inset:0;background:rgba(28,25,23,.5);display:none;align-items:flex-end;justify-content:center;z-index:45}.sheet-back.open{display:flex}.sheet{background:#fff;width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:8px 18px 26px;max-height:88vh;overflow:auto;animation:sheetup .22s ease}@keyframes sheetup{from{transform:translateY(28px)}to{transform:translateY(0)}}.grab{width:40px;height:5px;border-radius:999px;background:#e7e5e4;margin:8px auto 14px}.sheeth{font-size:22px;margin:0 0 12px}.close{width:100%;margin-top:18px;background:#166534;color:#fff;border:none;border-radius:13px;padding:14px;font-size:16px;font-weight:800}.hownote{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px 14px;font-size:14px;color:#14532d;line-height:1.5;margin-bottom:14px}.priv{font-size:12.5px;color:#78716c;display:flex;align-items:center;gap:6px;margin-top:12px}.conetoggle{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:15px;font-weight:700;color:#1c1917;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:10px 12px}.conetoggle input{width:20px;height:20px;accent-color:#166534}.conelegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12.5px;color:#57534e}.conelegend .lg{display:inline-flex;align-items:center;gap:6px}.conelegend .sw{width:15px;height:15px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15);flex-shrink:0}.conelegend .sw.green{background:rgba(134,239,172,.75)}.conelegend .sw.red{background:rgba(252,165,165,.85)}.conelegend .sw.hatch{background:repeating-linear-gradient(45deg,rgba(248,113,113,.6) 0 3px,#fff 3px 6px)}.talkiepill{margin-top:12px;font-size:14px;font-weight:800;color:#166534;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:7px 14px;align-items:center;gap:6px}.fbtraque{border:1px solid #e7e5e4;border-radius:12px;padding:12px;margin-bottom:12px;background:#fff}.fbtraque.fbdone{background:#f0fdf4;border-color:#a7f3d0}.fbtraque.fbediting{border-color:#fca5a5}.fbsentrow{display:flex;align-items:center;justify-content:space-between;margin-top:8px}.fbok{color:#166534;font-weight:800;font-size:15px}.fbmod{background:#fff;border:1px solid #d6d3d1;border-radius:9px;padding:8px 14px;font-size:14px;font-weight:700;color:#57534e}.fbwarn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;margin:8px 0}.fbsendall{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:800;margin:4px 0 8px}.fbpost{border-top:1px dashed #e7e5e4;margin-top:10px;padding-top:10px}.fbpost-t{font-weight:800;color:#1c1917;font-size:14px;margin:0 0 6px}.fbtraque .fbsend{width:100%;margin-top:10px}.fbrien{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:16px;font-size:17px;font-weight:800;margin:6px 0 14px}.fbmini{background:none;border:none;color:#b45309;font-size:14px;font-weight:700;text-decoration:underline;padding:8px 0;margin-top:4px}.fbadv{margin-top:6px}.fbwarnov{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;margin-bottom:12px}.counter{gap:12px;touch-action:manipulation}.cbtn{min-width:54px;min-height:54px;font-size:26px;touch-action:manipulation}.cval{min-height:54px;font-size:22px;min-width:66px;border:2px solid #d6d3d1;border-radius:10px;text-align:center;font-weight:800;touch-action:manipulation}.counter.sm .cbtn{min-width:44px;min-height:44px;font-size:22px}.counter.sm .cval{min-height:44px;font-size:19px;min-width:54px}.fbtqhead{width:100%;display:flex;align-items:center;gap:10px;background:transparent;border:none;padding:10px 2px;font-size:17px;font-weight:800;color:#1c1917;text-align:left}.fbhname{flex:1}.fbbadge{font-size:12px;font-weight:800;border-radius:999px;padding:3px 9px;white-space:nowrap}.fbbadge.todo{background:#f5f5f4;color:#78716c}.fbbadge.done{background:#dcfce7;color:#166534}.fbchev{font-size:13px;color:#a8a29e}.fbtqbody{padding:2px 0 4px}.fbgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.fbsq{aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fff;border:2px solid #e7e5e4;border-radius:16px;padding:12px;text-align:center;cursor:pointer;font-family:inherit}.fbsq.done{background:#f0fdf4;border-color:#a7f3d0}.fbsqdot{width:16px;height:16px;border-radius:50%}.fbsqname{font-size:17px;font-weight:800;color:#1c1917;line-height:1.15}.fbsqbadge{font-size:12px;font-weight:700;color:#78716c}.fbsq.done .fbsqbadge{color:#166534}.fbback{background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:11px 15px;font-size:15px;font-weight:700;color:#57534e;margin-bottom:12px}.fbformhd{display:flex;align-items:center;gap:8px;font-family:Georgia,serif;font-size:20px;font-weight:700;margin-bottom:10px;color:#1c1917}.gpsm{position:absolute;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#2563eb;border:2px solid #fff;box-shadow:0 0 0 1px #2563eb;z-index:3;cursor:pointer}.gpsm.moi{box-shadow:0 0 0 1px #2563eb,0 0 0 9px rgba(37,99,235,.22)}.gpsm.rab{background:transparent;border:0;box-shadow:none;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #ea580c;filter:drop-shadow(0 0 1.5px #fff)}.gpsm.vieux{opacity:.45}.gpsbulle{position:absolute;transform:translate(-50%,-135%);background:#1c1917;color:#fff;font-size:12px;line-height:1.35;padding:5px 9px;border-radius:8px;white-space:nowrap;z-index:6;pointer-events:none}.gpsgo{width:100%;background:#2563eb;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:800;margin-top:8px}.gpsstop{width:100%;background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:12px;padding:12px;font-size:15px;font-weight:700;margin-top:12px}.gpsetat{background:#eff6ff;color:#1e40af;border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.45}.gpswarn{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:10px;padding:8px 10px;font-size:12.5px;margin-top:10px}.gpssel{width:100%;padding:11px;border:1px solid #d6d3d1;border-radius:10px;font-size:15px;margin:4px 0 6px;background:#fff}.gpslab{font-size:13px;font-weight:700;color:#44403c;display:block;margin-top:6px}.gpsmsg{color:#b91c1c;font-size:13px;margin:6px 0 0}.gpshors{font-size:12px;color:#78716c;margin:6px 0 0}.gpsul{margin:8px 0 0;padding-left:18px}#gpsMap .marker .lbl{display:none}#gpsMap .marker.mine .lbl{display:block}.gpsleg{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:12.5px;color:#57534e}.gpsleg span{display:inline-flex;align-items:center;gap:6px}.gpsleg .gpsm{position:static;transform:none;display:inline-block;cursor:default}</style></head><body>
+.modal{position:fixed;inset:0;background:rgba(28,25,23,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px}.modalcard{background:#fff;border-radius:18px;max-width:340px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}.modalemo{font-size:44px;margin-bottom:6px}.modalcard h2{font-family:Georgia,serif;font-size:22px;margin:0 0 8px;color:#1c1917}.modalcard p{color:#57534e;font-size:15px;line-height:1.5;margin:0 0 18px}.modalbtn{background:#166534;color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:16px;font-weight:700;width:100%}.banner{background:#fffbeb;border:1px solid #fde68a}.banner .sec{color:#b45309}.tilegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.tile{text-align:left;background:#fff;border:1px solid #e7e5e4;border-radius:16px;padding:15px 14px;display:flex;flex-direction:column;gap:7px;min-height:104px;box-shadow:0 1px 2px rgba(0,0,0,.04);cursor:pointer;font-family:inherit;color:#1c1917}.tile:active{transform:scale(.97)}.tile .ico{font-size:27px;line-height:1}.tile .tl{font-size:16px;font-weight:800}.tile .hint{font-size:12px;color:#78716c;line-height:1.3}.tile.wide{flex-direction:row;align-items:center;min-height:auto;gap:12px;width:100%;margin-bottom:12px}.tile.wide .ico{font-size:25px}.tile.wide .txt{flex:1}.tile.wide .go{margin-left:auto;color:#a8a29e;font-size:20px}.tile.ret{background:linear-gradient(180deg,#fff,#f0fdf4);border-color:#a7f3d0}.sheet-back{position:fixed;inset:0;background:rgba(28,25,23,.5);display:none;align-items:flex-end;justify-content:center;z-index:45}.sheet-back.open{display:flex}.sheet{background:#fff;width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:8px 18px 26px;max-height:88vh;overflow:auto;animation:sheetup .22s ease}@keyframes sheetup{from{transform:translateY(28px)}to{transform:translateY(0)}}.grab{width:40px;height:5px;border-radius:999px;background:#e7e5e4;margin:8px auto 14px}.sheeth{font-size:22px;margin:0 0 12px}.close{width:100%;margin-top:18px;background:#166534;color:#fff;border:none;border-radius:13px;padding:14px;font-size:16px;font-weight:800}.hownote{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px 14px;font-size:14px;color:#14532d;line-height:1.5;margin-bottom:14px}.priv{font-size:12.5px;color:#78716c;display:flex;align-items:center;gap:6px;margin-top:12px}.conetoggle{display:flex;align-items:center;gap:9px;margin-top:12px;font-size:15px;font-weight:700;color:#1c1917;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:10px 12px}.conetoggle input{width:20px;height:20px;accent-color:#166534}.conelegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12.5px;color:#57534e}.conelegend .lg{display:inline-flex;align-items:center;gap:6px}.conelegend .sw{width:15px;height:15px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.15);flex-shrink:0}.conelegend .sw.green{background:rgba(134,239,172,.75)}.conelegend .sw.red{background:rgba(252,165,165,.85)}.conelegend .sw.hatch{background:repeating-linear-gradient(45deg,rgba(248,113,113,.6) 0 3px,#fff 3px 6px)}.talkiepill{margin-top:12px;font-size:14px;font-weight:800;color:#166534;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:7px 14px;align-items:center;gap:6px}.fbtraque{border:1px solid #e7e5e4;border-radius:12px;padding:12px;margin-bottom:12px;background:#fff}.fbtraque.fbdone{background:#f0fdf4;border-color:#a7f3d0}.fbtraque.fbediting{border-color:#fca5a5}.fbsentrow{display:flex;align-items:center;justify-content:space-between;margin-top:8px}.fbok{color:#166534;font-weight:800;font-size:15px}.fbmod{background:#fff;border:1px solid #d6d3d1;border-radius:9px;padding:8px 14px;font-size:14px;font-weight:700;color:#57534e}.fbwarn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:9px;padding:8px 10px;font-size:13px;font-weight:600;margin:8px 0}.fbsendall{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:800;margin:4px 0 8px}.fbpost{border-top:1px dashed #e7e5e4;margin-top:10px;padding-top:10px}.fbpost-t{font-weight:800;color:#1c1917;font-size:14px;margin:0 0 6px}.fbtraque .fbsend{width:100%;margin-top:10px}.fbrien{width:100%;background:#166534;color:#fff;border:none;border-radius:12px;padding:16px;font-size:17px;font-weight:800;margin:6px 0 14px}.fbmini{background:none;border:none;color:#b45309;font-size:14px;font-weight:700;text-decoration:underline;padding:8px 0;margin-top:4px}.fbadv{margin-top:6px}.fbwarnov{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;margin-bottom:12px}.counter{gap:12px;touch-action:manipulation}.cbtn{min-width:54px;min-height:54px;font-size:26px;touch-action:manipulation}.cval{min-height:54px;font-size:22px;min-width:66px;border:2px solid #d6d3d1;border-radius:10px;text-align:center;font-weight:800;touch-action:manipulation}.counter.sm .cbtn{min-width:44px;min-height:44px;font-size:22px}.counter.sm .cval{min-height:44px;font-size:19px;min-width:54px}.fbtqhead{width:100%;display:flex;align-items:center;gap:10px;background:transparent;border:none;padding:10px 2px;font-size:17px;font-weight:800;color:#1c1917;text-align:left}.fbhname{flex:1}.fbbadge{font-size:12px;font-weight:800;border-radius:999px;padding:3px 9px;white-space:nowrap}.fbbadge.todo{background:#f5f5f4;color:#78716c}.fbbadge.done{background:#dcfce7;color:#166534}.fbchev{font-size:13px;color:#a8a29e}.fbtqbody{padding:2px 0 4px}.fbgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.fbsq{aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fff;border:2px solid #e7e5e4;border-radius:16px;padding:12px;text-align:center;cursor:pointer;font-family:inherit}.fbsq.done{background:#f0fdf4;border-color:#a7f3d0}.fbsqdot{width:16px;height:16px;border-radius:50%}.fbsqname{font-size:17px;font-weight:800;color:#1c1917;line-height:1.15}.fbsqbadge{font-size:12px;font-weight:700;color:#78716c}.fbsq.done .fbsqbadge{color:#166534}.fbback{background:#f5f5f4;border:1px solid #e7e5e4;border-radius:10px;padding:11px 15px;font-size:15px;font-weight:700;color:#57534e;margin-bottom:12px}.fbformhd{display:flex;align-items:center;gap:8px;font-family:Georgia,serif;font-size:20px;font-weight:700;margin-bottom:10px;color:#1c1917}.gpsm{position:absolute;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#2563eb;border:2px solid #fff;box-shadow:0 0 0 1px #2563eb;z-index:3;cursor:pointer}.gpsm.moi{box-shadow:0 0 0 1px #2563eb,0 0 0 9px rgba(37,99,235,.22)}.gpsm.rab{background:transparent;border:0;box-shadow:none;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #ea580c;filter:drop-shadow(0 0 1.5px #fff)}.gpsm.vieux{opacity:.45}.gpsbulle{position:absolute;transform:translate(-50%,-135%);background:#1c1917;color:#fff;font-size:12px;line-height:1.35;padding:5px 9px;border-radius:8px;white-space:nowrap;z-index:6;pointer-events:none}.gpsgo{width:100%;background:#2563eb;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:800;margin-top:8px}.gpsstop{width:100%;background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:12px;padding:12px;font-size:15px;font-weight:700;margin-top:12px}.gpsetat{background:#eff6ff;color:#1e40af;border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.45}.gpswarn{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:10px;padding:8px 10px;font-size:12.5px;margin-top:10px}.gpssel{width:100%;padding:11px;border:1px solid #d6d3d1;border-radius:10px;font-size:15px;margin:4px 0 6px;background:#fff}.chatlist{max-height:50vh;min-height:150px;overflow:auto;background:#f5f5f4;border:1px solid #e7e5e4;border-radius:14px;padding:10px 8px;margin:6px 0 10px;-webkit-overflow-scrolling:touch}.cjour{text-align:center;font-size:11px;color:#a8a29e;margin:8px 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.cm{max-width:84%;width:max-content;margin:0 0 6px;padding:7px 10px 8px;border-radius:14px;background:#fff;border:1px solid #e7e5e4;font-size:15px;line-height:1.35;color:#1c1917;overflow-wrap:anywhere}.cm.moi{margin-left:auto;background:#dcfce7;border-color:#bbf7d0}.cm.org{background:#fffbeb;border-color:#fcd34d}.cm.sel{box-shadow:0 0 0 2px #f59e0b}.cmh{font-size:12px;color:#78716c;margin-bottom:2px}.cmh b{color:#1c1917}.cmorg{display:inline-block;background:#d97706;color:#fff;font-size:10px;font-weight:800;border-radius:6px;padding:1px 5px;margin-left:4px;vertical-align:1px}.cmact{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}.cmact button,.chatadm button{flex:1;border:1px solid #d6d3d1;background:#fff;border-radius:8px;padding:8px;font-size:13px;font-weight:600;color:#44403c}.cmact button.arm,.chatadm button.arm{background:#b91c1c;border-color:#b91c1c;color:#fff}.chatform{display:flex;gap:8px;align-items:flex-end}.chatform textarea{flex:1;min-width:0;border:1px solid #d6d3d1;border-radius:12px;padding:10px 12px;font-size:16px;font-family:inherit;resize:none;height:44px;max-height:120px;background:#fff}.chatform button{background:#166534;color:#fff;border:0;border-radius:12px;padding:12px 15px;font-size:15px;font-weight:700}.chatform button:disabled{opacity:.5}.chaterr{color:#b91c1c;font-size:13px;margin:6px 0 0}.chatnote{font-size:13px;color:#57534e;margin:2px 0 4px}.chatnote button{background:none;border:0;color:#166534;text-decoration:underline;font-size:13px;padding:0 0 0 4px}.chatorga{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px;font-size:13px;color:#92400e;margin:4px 0 6px}.chatvide{text-align:center;color:#a8a29e;font-size:14px;padding:34px 10px}.chatbadge{background:#dc2626;color:#fff;border-radius:999px;font-size:12px;font-weight:800;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;flex:none}.chattoast{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:60;background:#1c1917;color:#fafaf9;border-radius:14px;padding:10px 14px;font-size:14px;max-width:92vw;box-shadow:0 10px 30px rgba(0,0,0,.3);display:none;cursor:pointer}.chatadm{margin-top:12px;border-top:1px solid #e7e5e4;padding-top:10px}.chatadm h4{margin:0 0 6px;font-size:13px;color:#44403c}.chatbl{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f4;font-size:14px}.chatbl span{flex:1}.chatbl button{flex:none}.gpslab{font-size:13px;font-weight:700;color:#44403c;display:block;margin-top:6px}.gpsmsg{color:#b91c1c;font-size:13px;margin:6px 0 0}.gpshors{font-size:12px;color:#78716c;margin:6px 0 0}.gpsul{margin:8px 0 0;padding-left:18px}#gpsMap .marker .lbl{display:none}#gpsMap .marker.mine .lbl{display:block}.gpsleg{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:12.5px;color:#57534e}.gpsleg span{display:inline-flex;align-items:center;gap:6px}.gpsleg .gpsm{position:static;transform:none;display:inline-block;cursor:default}</style></head><body>
 <div id="welcome" class="modal"><div class="modalcard"><div class="modalemo">👋</div><h2>Bienvenue !</h2><p>Pour voir <b>ton poste</b>, <b>ta traque</b> et tes consignes, appuie sur <b>ton prénom</b> dans la liste ci-dessous.</p><button id="welcomeBtn" class="modalbtn">👍 J'ai compris</button></div></div><div id="retourHelp" class="modal" style="display:none"><div class="modalcard"><div class="modalemo">📋</div><h2>Comment faire ton retour</h2><p>Pour réaliser ton retour : <b>sélectionne la traque</b>. Si tu as tiré, indique le <b>nombre de balles par poste</b>. Et si tu as <b>prélevé un animal</b>, indique-le.</p><button id="retourHelpBtn" class="modalbtn">👍 J'ai compris</button></div></div>
 <div id="pick" class="pickwrap"><div class="pickcard">
 <div class="pickhead"><span class="emo">🦌</span><div><h1 id="pickTitle">Carnet de Battue</h1><p id="subpick"></p></div></div>
@@ -3320,6 +3320,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 <div class="card banner" id="attribsCard" style="display:none"><div class="pad"><h3 class="sec">🎯 Attributions du jour</h3><div id="attribs"></div></div></div>\n
 <div class="tilegrid"><button class="tile" onclick="openSheet('carte')"><span class="ico">🗺️</span><span class="tl">Ma carte</span><span class="hint">Où est mon poste</span></button><button class="tile" onclick="openSheet('poste')"><span class="ico">📸</span><span class="tl">Mon poste</span><span class="hint">Photo &amp; consignes</span></button><button class="tile" onclick="openSheet('annonces')"><span class="ico">📻</span><span class="tl">Annonces</span><span class="hint">Sonneries &amp; infos</span></button><button class="tile" onclick="openSheet('securite')"><span class="ico">🛡️</span><span class="tl">Sécurité</span><span class="hint">Consignes à respecter</span></button></div>
 <button class="tile wide ret" onclick="openSheet('retour')"><span class="ico">📋</span><span class="txt"><span class="tl">Envoyer mon retour</span><br><span class="hint">Dis à l'organisateur ce que tu as vu / tiré</span></span><span class="go">→</span></button>
+<button class="tile wide" id="chatTile" onclick="openChat()" style="display:none"><span class="ico">💬</span><span class="txt"><span class="tl">Chat de la journée</span><br><span class="hint" id="chatHint">Discute avec les chasseurs et les rabatteurs</span></span><span class="chatbadge" id="chatBadge" style="display:none"></span><span class="go">→</span></button>
 <button class="tile wide" id="gpsTile" onclick="openGps()" style="display:none"><span class="ico">📡</span><span class="txt"><span class="tl">Suivi GPS live</span><br><span class="hint">Où sont les chasseurs et les traqueurs</span></span><span class="go">→</span></button>
 <button class="tile wide" onclick="openJeu()" style="margin-top:10px"><span class="ico">🐗</span><span class="txt"><span class="tl">La Course du Sanglier</span><br><span class="hint">Un peu long à ton poste ? Fais un score.</span></span><span class="go">→</span></button>
 <div class="card" id="chefCard" style="display:none"><div class="pad"><h3 class="sec">👨‍✈️ Tu es chef de ligne</h3><p class="maphint">Postes sous ta responsabilité :</p><div id="chefPosts"></div><div id="chefTabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0"></div><div class="map" id="chefMap" style="margin-top:8px;display:none"></div></div></div>
@@ -3358,6 +3359,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 </div>
 <button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <div class="sheet-back" id="sheet-retour" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">📋 Ton retour</h2><div class="hownote">👉 Après ta traque, dis à l'organisateur ce qui s'est passé : indique tes balles tirées et l'état du mirador, poste par poste, puis envoie.</div><div id="feedbackCard"><div id="fbList"></div></div><div class="priv">🔒 Ton retour est privé, envoyé uniquement à l'organisateur.</div><button class="close" onclick="closeSheet()">Fermer</button></div></div></div>
+<div class="sheet-back" id="sheet-chat" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">💬 Chat de la journée</h2><div id="chatInfo"></div><div id="chatList" class="chatlist" style="display:none"></div><div id="chatForm" class="chatform" style="display:none"><textarea id="chatTxt" maxlength="500" placeholder="Écris un message…" oninput="chatAuto(this)"></textarea><button id="chatBtn" onclick="chatEnvoyer()">Envoyer</button></div><p id="chatErr" class="chaterr"></p><div id="chatAdmin"></div><button class="close" onclick="closeSheet()">Fermer</button></div></div><div id="chatToast" class="chattoast" onclick="openChat()"></div>
 <div class="sheet-back" id="sheet-gps" onclick="if(event.target===this)closeSheet()"><div class="sheet"><div class="grab"></div><h2 class="sheeth">📡 Suivi GPS live</h2><div id="gpsBody"></div><button class="close" onclick="closeSheet()">Fermer</button></div></div>
 <script>var DATA = `;
 
@@ -3913,6 +3915,174 @@ function gpsBulle(map,g,lx,ly,now){
   b.style.left=lx+"%";b.style.top=ly+"%";
   clearTimeout(GPS.bulleT);GPS.bulleT=setTimeout(function(){GPS.bulle=-1;if(b.parentNode)b.parentNode.removeChild(b);},3500);
 }
+/* ---------- Chat de la journee ---------- */
+var CHAT={msgs:[],dernier:0,vide:0,lu:0,poll:null,etat:"",orga:false,moi:"",sel:0,arme:"",bloques:null,envoi:false,charge:false,encore:false,init:false,bas:true,toastT:null};
+function chatK(s){return "cdc_chat_"+s+"_"+DATA.chatJ;}
+function chatLs(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v);}catch(e){}return null;}
+var CHAT_APP=null;
+function chatAleat(n){var a="abcdefghijkmnopqrstuvwxyz23456789",s="";for(var i=0;i<n;i++)s+=a.charAt(Math.floor(Math.random()*a.length));return s;}
+function chatAppareil(){if(CHAT_APP)return CHAT_APP;var v=chatLs("cdc_appareil");if(!v||v.length<12){v=chatAleat(22);chatLs("cdc_appareil",v);}CHAT_APP=v;return v;}
+function chatOrgCle(){return chatLs(chatK("org"));}
+function chatQui(){if(me&&me.name)return {n:me.name,r:"c"};var n=chatLs(chatK("nom"));if(n)return {n:n,r:"r"};if(chatOrgCle())return {n:"Organisateur",r:"c"};return null;}
+function chatOuvert(){var sh=$("sheet-chat");return !!(sh&&sh.classList.contains("open"));}
+function chatErr(m){var e=$("chatErr");if(e)e.textContent=m||"";}
+function chatAuto(ta){ta.style.height="44px";ta.style.height=Math.min(120,Math.max(44,ta.scrollHeight+2))+"px";}
+function chatPost(route,b){return fetch(DATA.chatUrl+route,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}).then(function(r){return r.json();});}
+function chatInit(){
+  if(!DATA.chat||!DATA.chatJ||!DATA.chatUrl)return;
+  var m=String(location.hash||"").match(/org=([a-zA-Z0-9_-]+)/);
+  if(m){chatLs(chatK("org"),m[1]);try{history.replaceState(null,"",location.pathname+location.search);}catch(e){}}
+  var t=$("chatTile");if(t)t.style.display="";
+  CHAT.lu=parseInt(chatLs(chatK("lu"))||"0",10)||0;
+  chatCharger();
+  setInterval(function(){if(document.hidden||chatOuvert())return;chatCharger();},30000);
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)chatCharger();});
+}
+function openChat(){
+  var to=$("chatToast");if(to)to.style.display="none";
+  closeSheet();openSheet("chat");CHAT.bas=true;CHAT.sel=0;CHAT.arme="";chatErr("");chatRendre();chatMarquerLu();chatBadge();chatCharger();
+  clearInterval(CHAT.poll);CHAT.poll=setInterval(function(){if(!chatOuvert()){clearInterval(CHAT.poll);CHAT.poll=null;return;}if(!document.hidden)chatCharger();},5000);
+}
+function chatCharger(){
+  if(!DATA.chat||!DATA.chatJ||!DATA.chatUrl)return;
+  var q=chatQui();if(!q){if(chatOuvert())chatRendre();return;}
+  if(CHAT.charge){CHAT.encore=true;return;}CHAT.charge=true;
+  var k=chatOrgCle();
+  var u=DATA.chatUrl+"/chat/liste?j="+encodeURIComponent(DATA.chatJ)+"&a="+encodeURIComponent(chatAppareil())+"&n="+encodeURIComponent(q.n)+"&depuis="+CHAT.dernier+(k?"&k="+encodeURIComponent(k):"");
+  fetch(u,{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){chatRecu(d,k);}).catch(function(){chatRecu(null,k);});
+}
+function chatRecu(d,k){
+  CHAT.charge=false;
+  var avantEtat=CHAT.etat,change=false;
+  if(!d){CHAT.etat=CHAT.init?"reseau-ok":"reseau";}
+  else if(!d.ok){CHAT.etat=d.reason||"erreur";if(d.reason==="bloque"){CHAT.msgs=[];CHAT.dernier=0;}change=true;}
+  else{
+    CHAT.etat="ok";CHAT.moi=d.moi||"";
+    if(k&&!d.orga){chatLs(chatK("org"),null);}
+    if(CHAT.orga!==!!d.orga){CHAT.orga=!!d.orga;change=true;}
+    if((d.vide||0)>CHAT.vide){CHAT.vide=d.vide;CHAT.msgs=CHAT.msgs.filter(function(x){return x.id>d.vide;});change=true;}
+    var sp={};(d.suppr||[]).forEach(function(i){sp[i]=1;});
+    var n0=CHAT.msgs.length;CHAT.msgs=CHAT.msgs.filter(function(x){return !sp[x.id];});if(CHAT.msgs.length!==n0)change=true;
+    var vus={};CHAT.msgs.forEach(function(x){vus[x.id]=1;});
+    var nouveaux=[];
+    (d.msgs||[]).forEach(function(x){if(!vus[x.id]&&!sp[x.id]&&x.id>CHAT.vide){CHAT.msgs.push(x);nouveaux.push(x);}if(x.id>CHAT.dernier)CHAT.dernier=x.id;});
+    if(nouveaux.length)change=true;
+    if(CHAT.msgs.length>600)CHAT.msgs=CHAT.msgs.slice(-600);
+    if(CHAT.init&&nouveaux.length&&!chatOuvert()){var der=null;for(var i=nouveaux.length-1;i>=0;i--){if(nouveaux[i].aid!==CHAT.moi&&nouveaux[i].id>CHAT.lu){der=nouveaux[i];break;}}if(der)chatToast(der);}
+    CHAT.init=true;
+    if(chatOuvert())chatMarquerLu();
+  }
+  if(chatOuvert()&&(change||avantEtat!==CHAT.etat))chatRendre();
+  chatBadge();
+  if(CHAT.encore){CHAT.encore=false;chatCharger();}
+}
+function chatMarquerLu(){var m=0;CHAT.msgs.forEach(function(x){if(x.id>m)m=x.id;});if(m>CHAT.lu){CHAT.lu=m;chatLs(chatK("lu"),String(m));}}
+function chatNonLus(){var n=0;CHAT.msgs.forEach(function(x){if(x.id>CHAT.lu&&x.aid!==CHAT.moi)n++;});return n;}
+function chatBadge(){
+  var b=$("chatBadge"),h=$("chatHint");if(!b)return;
+  var n=(CHAT.etat==="ok"||CHAT.etat==="reseau-ok")?chatNonLus():0;
+  b.style.display=n?"":"none";b.textContent=n>99?"99+":String(n);
+  if(h)h.textContent=CHAT.etat==="bloque"?"Tu as été retiré de ce chat":(n?(n===1?"1 nouveau message":n+" nouveaux messages"):"Discute avec les chasseurs et les rabatteurs");
+}
+function chatToast(x){
+  var t=$("chatToast");if(!t)return;
+  var txt=String(x.txt||"");if(txt.length>70)txt=txt.slice(0,70)+"…";
+  t.innerHTML="💬 <b>"+aesc(x.nom)+"</b> : "+aesc(txt);t.style.display="block";
+  clearTimeout(CHAT.toastT);CHAT.toastT=setTimeout(function(){t.style.display="none";},6000);
+}
+var CHAT_JOURS=["dim.","lun.","mar.","mer.","jeu.","ven.","sam."],CHAT_MOIS=["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
+function chatJour(t){var d=new Date(t),a=new Date();if(d.toDateString()===a.toDateString())return "Aujourd'hui";var h=new Date(a.getTime()-86400000);if(d.toDateString()===h.toDateString())return "Hier";return CHAT_JOURS[d.getDay()]+" "+d.getDate()+" "+CHAT_MOIS[d.getMonth()];}
+function chatHeure(t){var d=new Date(t);return d.getHours()+":"+(d.getMinutes()<10?"0":"")+d.getMinutes();}
+function chatTexte(s){return aesc(s).split(String.fromCharCode(10)).join("<br>");}
+function chatRendre(){
+  if(!chatOuvert())return;
+  var info=$("chatInfo"),list=$("chatList"),form=$("chatForm"),adm=$("chatAdmin");if(!info||!list||!form)return;
+  var q=chatQui();
+  if(!q){
+    var r=DATA.rabatteurs||[],h="<p class='chatnote'>Pour écrire et lire les messages, dis-nous qui tu es.</p><label class='gpslab'>Qui es-tu ?</label>";
+    if(r.length)h+="<select id='chatQui' class='gpssel'><option value=''>Choisis ton nom</option>"+r.map(function(n){return "<option>"+aesc(n)+"</option>";}).join("")+"</select>";
+    else h+="<input id='chatQui' class='gpssel' maxlength='40' placeholder='Ton prénom et ton nom'>";
+    h+="<button class='rolebtn' style='background:#166534;margin-top:8px' onclick='chatChoisir()'>Entrer dans le chat</button>";
+    info.innerHTML=h;list.style.display="none";form.style.display="none";if(adm)adm.innerHTML="";return;
+  }
+  if(CHAT.etat==="bloque"){info.innerHTML="<div class='chatorga' style='background:#fef2f2;border-color:#fecaca;color:#991b1b'>⛔ L'organisateur t'a retiré de ce chat.</div>";list.style.display="none";form.style.display="none";if(adm)adm.innerHTML="";return;}
+  if(CHAT.etat==="ferme"){info.innerHTML="<p class='chatvide'>Le chat n'est pas encore ouvert pour cette journée.</p>";list.style.display="none";form.style.display="none";if(adm)adm.innerHTML="";return;}
+  if(!CHAT.init&&CHAT.etat!=="reseau"){info.innerHTML="<p class='chatnote'>Chargement des messages…</p>";list.style.display="none";form.style.display="none";return;}
+  var hi="";
+  if(CHAT.orga)hi+="<div class='chatorga'>👑 <b>Mode organisateur</b> — touche un message pour le supprimer ou retirer la personne du chat.</div>";
+  hi+="<p class='chatnote'>Tu écris en tant que <b>"+aesc(q.n)+"</b>"+((!me&&chatLs(chatK("nom")))?"<button onclick='chatChanger()'>changer</button>":"")+"</p>";
+  if(CHAT.etat==="reseau"||CHAT.etat==="reseau-ok")hi+="<p class='chatnote' style='color:#b45309'>⚠ Pas de réseau pour le moment, nouvel essai automatique…</p>";
+  info.innerHTML=hi;list.style.display="";form.style.display="";
+  chatRendreListe();chatRendreAdmin();
+}
+function chatRendreListe(){
+  var list=$("chatList");if(!list)return;
+  var bas=CHAT.bas||(list.scrollHeight-list.scrollTop-list.clientHeight<70);
+  if(!CHAT.msgs.length){list.innerHTML="<p class='chatvide'>Aucun message pour l'instant.<br>Lance la discussion !</p>";CHAT.bas=false;return;}
+  var h="",jour="";
+  CHAT.msgs.forEach(function(x){
+    var j=chatJour(x.t);if(j!==jour){jour=j;h+="<div class='cjour'>"+j+"</div>";}
+    var moi=x.aid===CHAT.moi,cls="cm"+(moi?" moi":"")+(x.o?" org":"")+(CHAT.sel===x.id?" sel":"");
+    h+="<div class='"+cls+"'"+(CHAT.orga?" onclick='chatTap("+x.id+")'":"")+"><div class='cmh'>"+(moi?"Toi":((x.o&&x.nom==="Organisateur")?"":((x.role==="r"?"🥁 ":"🦌 ")+"<b>"+aesc(x.nom)+"</b>")))+(x.o?"<span class='cmorg'"+((!moi&&x.nom==="Organisateur")?" style='margin-left:0'":"")+">Organisateur</span>":"")+" · "+chatHeure(x.t)+"</div><div>"+chatTexte(x.txt)+"</div>";
+    if(CHAT.orga&&CHAT.sel===x.id){
+      h+="<div class='cmact'><button class='"+(CHAT.arme==="s"+x.id?"arm":"")+"' onclick='event.stopPropagation();chatAction(&quot;s&quot;,"+x.id+")'>"+(CHAT.arme==="s"+x.id?"Confirmer la suppression":"🗑 Supprimer le message")+"</button>";
+      if(!moi&&!x.o)h+="<button class='"+(CHAT.arme==="b"+x.id?"arm":"")+"' onclick='event.stopPropagation();chatAction(&quot;b&quot;,"+x.id+")'>"+(CHAT.arme==="b"+x.id?"Confirmer : retirer "+aesc(x.nom):"⛔ Retirer "+aesc(x.nom)+" du chat")+"</button>";
+      h+="</div>";
+    }
+    h+="</div>";
+  });
+  list.innerHTML=h;
+  if(bas){list.scrollTop=list.scrollHeight;}
+  CHAT.bas=false;
+}
+function chatRendreAdmin(){
+  var adm=$("chatAdmin");if(!adm)return;
+  if(!CHAT.orga){adm.innerHTML="";return;}
+  var h="<div class='chatadm'><h4>⛔ Personnes retirées du chat</h4>";
+  if(CHAT.bloques===null)h+="<button onclick='chatVoirBloques()'>Voir la liste</button>";
+  else if(!CHAT.bloques.length)h+="<p class='chatnote'>Personne pour l'instant.</p>";
+  else CHAT.bloques.forEach(function(g){h+="<div class='chatbl'><span>"+aesc(g.nom||"Sans nom")+"</span><button onclick='chatDebloquer(&quot;"+aesc(g.aid)+"&quot;)'>Réintégrer</button></div>";});
+  h+="<h4 style='margin-top:14px'>🧹 Tout effacer</h4><button class='"+(CHAT.arme==="vider"?"arm":"")+"' onclick='chatVider()'>"+(CHAT.arme==="vider"?"Confirmer : effacer tous les messages":"Vider le chat de cette journée")+"</button></div>";
+  adm.innerHTML=h;
+}
+function chatTap(id){if(!CHAT.orga)return;CHAT.sel=(CHAT.sel===id?0:id);CHAT.arme="";chatRendreListe();}
+function chatChoisir(){var s=$("chatQui");var n=s?String(s.value||"").trim():"";if(!n){chatErr("Choisis d'abord ton nom.");return;}chatErr("");chatLs(chatK("nom"),n.slice(0,40));CHAT.init=false;CHAT.etat="";chatRendre();chatCharger();}
+function chatChanger(){chatLs(chatK("nom"),null);chatRendre();}
+function chatEnvoyer(){
+  var q=chatQui(),ta=$("chatTxt"),bt=$("chatBtn");if(!q||!ta)return;
+  var t=String(ta.value||"").trim();if(!t||CHAT.envoi)return;
+  CHAT.envoi=true;if(bt)bt.disabled=true;chatErr("");
+  var k=chatOrgCle(),b={j:DATA.chatJ,a:chatAppareil(),n:q.n,r:q.r,txt:t};if(k)b.k=k;
+  chatPost("/chat/msg",b).then(function(d){
+    CHAT.envoi=false;if(bt)bt.disabled=false;
+    if(d&&d.ok){ta.value="";chatAuto(ta);CHAT.bas=true;chatCharger();return;}
+    var r=d&&d.reason,mm={vite:"Doucement : attends une seconde entre deux messages.",bloque:"L'organisateur t'a retiré de ce chat.",plein:"Le chat de cette journée est plein.",ferme:"Le chat n'est pas encore ouvert."};
+    chatErr(mm[r]||"Envoi impossible pour le moment.");
+    if(r==="bloque"){CHAT.etat="bloque";CHAT.msgs=[];chatRendre();chatBadge();}
+  }).catch(function(){CHAT.envoi=false;if(bt)bt.disabled=false;chatErr("Pas de réseau : ton message n'est pas parti. Réessaie.");});
+}
+function chatAction(type,id){
+  var cle=type+id;if(CHAT.arme!==cle){CHAT.arme=cle;chatRendreListe();return;}
+  CHAT.arme="";var x=null;CHAT.msgs.forEach(function(m){if(m.id===id)x=m;});if(!x)return;
+  var k=chatOrgCle();
+  if(type==="s"){
+    CHAT.msgs=CHAT.msgs.filter(function(m){return m.id!==id;});CHAT.sel=0;chatRendreListe();
+    chatPost("/chat/suppr",{j:DATA.chatJ,k:k,id:id}).then(function(d){if(!d||!d.ok)chatErr("Suppression impossible.");}).catch(function(){chatErr("Pas de réseau : la suppression n'est pas passée.");});
+  }else{
+    CHAT.sel=0;chatRendreListe();
+    chatPost("/chat/bloque",{j:DATA.chatJ,k:k,aid:x.aid,nom:x.nom}).then(function(d){if(d&&d.ok){chatErr("");if(CHAT.bloques!==null)chatVoirBloques();else{CHAT.bloques=null;chatVoirBloques();}}else chatErr("Impossible de retirer cette personne.");}).catch(function(){chatErr("Pas de réseau : réessaie.");});
+  }
+}
+function chatVoirBloques(){
+  var k=chatOrgCle();if(!k)return;
+  fetch(DATA.chatUrl+"/chat/bloques?j="+encodeURIComponent(DATA.chatJ)+"&k="+encodeURIComponent(k),{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){if(d&&d.ok){CHAT.bloques=d.gens||[];chatRendreAdmin();}}).catch(function(){chatErr("Pas de réseau : réessaie.");});
+}
+function chatDebloquer(aid){chatPost("/chat/debloque",{j:DATA.chatJ,k:chatOrgCle(),aid:aid}).then(function(){chatVoirBloques();}).catch(function(){chatErr("Pas de réseau : réessaie.");});}
+function chatVider(){
+  if(CHAT.arme!=="vider"){CHAT.arme="vider";chatRendreAdmin();return;}
+  CHAT.arme="";
+  chatPost("/chat/vider",{j:DATA.chatJ,k:chatOrgCle()}).then(function(d){if(d&&d.ok){CHAT.msgs=[];chatRendre();chatCharger();}else chatErr("Impossible de vider le chat.");}).catch(function(){chatErr("Pas de réseau : réessaie.");});
+}
 var RETOUR_HELP=false;function openSheet(k){var el=document.getElementById("sheet-"+k);if(el)el.classList.add("open");if(k==="retour"&&!RETOUR_HELP){RETOUR_HELP=true;var rh=document.getElementById("retourHelp");if(rh)rh.style.display="flex";}}
 function closeSheet(){var ls=document.querySelectorAll(".sheet-back");for(var i=0;i<ls.length;i++)ls[i].classList.remove("open");}
 var SHOW_CONES=false;\nvar SHOW_ZONE=false;\nvar SHOW_DEPART=true;\nvar SHOW_DEPOSE=true;
@@ -3982,18 +4152,18 @@ function maPosition(){
     h.textContent="Position refusee ou introuvable. Autorise la localisation dans ton navigateur.";
   },{enableHighAccuracy:true,timeout:15000,maximumAge:0});
 }
-function selectHunter(i){me=DATA.chasseurs[i];renderHero();var def=(me.posts[0]?me.posts[0].traqueIndex:0);buildTabs(def);$("pick").style.display="none";$("appview").style.display="block";window.scrollTo(0,0);}
+function selectHunter(i){me=DATA.chasseurs[i];renderHero();try{chatCharger();}catch(e){}var def=(me.posts[0]?me.posts[0].traqueIndex:0);buildTabs(def);$("pick").style.display="none";$("appview").style.display="block";window.scrollTo(0,0);}
 function backToPick(){if(!FB_SENT&&fbHasData()&&!window.confirm("Tu n'as pas envoyé ton retour (balles / mirador). Changer de nom quand même ?"))return;FB_SENT=true;$("appview").style.display="none";$("pick").style.display="flex";window.scrollTo(0,0);}
 function renderPicker(){var box=$("names");box.innerHTML="";if(!DATA.chasseurs.length){box.innerHTML="<p class='empty'>Aucun poste attribué pour le moment.</p>";}DATA.chasseurs.forEach(function(cc,i){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🦌 "+cc.name;b.onclick=function(){selectHunter(i);};box.appendChild(b);});var rb=$("rabnames");if(rb){rb.innerHTML="";(DATA.rabatteurs||[]).forEach(function(nm){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🥁 "+nm;b.onclick=function(){enterRabatteurs();};rb.appendChild(b);});}$("subpick").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var tp=$("talkiePill");if(tp&&DATA.canal){tp.textContent="📻 Canal talkie : "+DATA.canal;tp.style.display="inline-flex";}}
 function enterRabatteurs(){setupRabatteurs();}
 function fillLists(){var so=$("sonneries");DATA.sonneries.forEach(function(s){var li=document.createElement("li");li.innerHTML="<span class='ev'>"+s.evenement+"</span><span>"+s.signal+"</span>";so.appendChild(li);});var co=$("consignes");DATA.consignes.forEach(function(x){var li=document.createElement("li");li.className="rule";li.innerHTML="<span class='p'>•</span><span>"+x+"</span>";co.appendChild(li);});}
 if(DATA.orgName){try{document.title=DATA.orgName;}catch(e){}var pt=$("pickTitle");if(pt)pt.textContent=DATA.orgName;}
-function setupRabatteurs(){me=null;$("pick").style.display="none";$("appview").style.display="block";var hero=document.querySelector("#appview .hero");if(hero)hero.style.display="none";var fc=$("feedbackCard");if(fc)fc.style.display="none";var bk=$("back");if(bk)bk.style.display="";$("myName").textContent="🥁 Rabatteurs";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var mh=document.querySelector(".maphint");if(mh)mh.textContent="Vue d'ensemble des traques · lecture seule";buildTabs(0);renderAttribs();window.scrollTo(0,0);}
-renderPicker();fillLists();try{gpsInit();}catch(e){}var wb=document.getElementById("welcomeBtn");if(wb)wb.onclick=function(){var w=document.getElementById("welcome");if(w)w.style.display="none";};var rhb=document.getElementById("retourHelpBtn");if(rhb)rhb.onclick=function(){var r=document.getElementById("retourHelp");if(r)r.style.display="none";};
+function setupRabatteurs(){me=null;setTimeout(function(){try{chatCharger();}catch(e){}},0);$("pick").style.display="none";$("appview").style.display="block";var hero=document.querySelector("#appview .hero");if(hero)hero.style.display="none";var fc=$("feedbackCard");if(fc)fc.style.display="none";var bk=$("back");if(bk)bk.style.display="";$("myName").textContent="🥁 Rabatteurs";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var mh=document.querySelector(".maphint");if(mh)mh.textContent="Vue d'ensemble des traques · lecture seule";buildTabs(0);renderAttribs();window.scrollTo(0,0);}
+renderPicker();fillLists();try{gpsInit();}catch(e){}try{chatInit();}catch(e){}var wb=document.getElementById("welcomeBtn");if(wb)wb.onclick=function(){var w=document.getElementById("welcome");if(w)w.style.display="none";};var rhb=document.getElementById("retourHelpBtn");if(rhb)rhb.onclick=function(){var r=document.getElementById("retourHelp");if(r)r.style.display="none";};
 if(DATA.image){var im=new Image();im.onload=function(){if(im.naturalWidth&&im.naturalHeight){AR=im.naturalWidth/im.naturalHeight;var mp=$("map");if(mp&&mp.innerHTML!=="")renderMap(MAP_I);}};im.src=DATA.image;}
 </scr` + `ipt></body></html>`;
 
-function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId, photosAnn, gpsActif) {
+function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgName, userId, photosAnn, gpsActif, chatActif) {
   const posted = {};
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: (photosAnn && photosAnn[mid]) || m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "", chefId: (journee.chefLignes && journee.chefLignes[mid]) || "" }); }); });
   const chefLignesData = journee.chefLignes || {};
@@ -4011,7 +4181,8 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   const geoSec = {};
   (terrain.secteurs || []).forEach((s) => { if (s && s.geo && isFinite(s.geo.x1) && (terrain.tracks || []).some((t) => t.secteurId === s.id)) geoSec[s.id] = { x1: s.geo.x1, y1: s.geo.y1, x2: s.geo.x2, y2: s.geo.y2 }; });
   const gpsInfos = (gpsActif && journee.gpsCle && Object.keys(geoSec).length) ? { gps: true, gpsJ: journee.gpsCle, gpsUrl: GPS_URL, geo: geoSec } : { gps: false };
-  const DATA = { ...gpsInfos, date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "",
+  const chatInfos = (chatActif && journee.gpsCle) ? { chat: true, chatJ: journee.gpsCle, chatUrl: GPS_URL } : { chat: false };
+  const DATA = { ...gpsInfos, ...chatInfos, date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "",
     images: (function () {
       // Une carte peut servir a dix traques : on ne l'envoie qu'une fois.
       const utiles = {}; (terrain.tracks || []).forEach((t) => { if (t.secteurId) utiles[t.secteurId] = true; });
@@ -4428,10 +4599,17 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
             <Tile open={open} onToggle={toggle} id="save" emoji="💾" title="Sauvegarde" sub="Exporter · Importer" />
             <Tile open={open} onToggle={toggle} id="gps" emoji="📡" title="Suivi GPS live" sub={github.gpsActif ? "Activé" : "Désactivé"} />
             <Panel open={open} id="gps">
-              <p className="text-sm text-stone-600">Sur la page des chasseurs, une tuile « Suivi GPS live » permet à chacun de partager sa position jusqu'à 18 h et de voir celle des autres. Nécessite le Worker <b>battue-gps</b> sur <b>gps.carnetdechasse.fr</b>.</p>
+              <p className="text-sm text-stone-600">Sur la page des chasseurs, une tuile « Suivi GPS live » permet à chacun de partager sa position jusqu'à 18 h et de voir celle des autres. Nécessite le Worker <b>battue-gps</b> (Cloudflare).</p>
               <label className="flex items-center gap-2 mt-3 text-sm text-stone-800"><input type="checkbox" checked={!!github.gpsActif} onChange={() => setGithub({ ...github, gpsActif: !github.gpsActif })} className="w-4 h-4 accent-emerald-700" />Activer le suivi GPS sur les pages publiées</label>
               <button onClick={async () => { try { const r = await fetch(GPS_URL + "/ping", { cache: "no-store" }); const d = await r.json(); flash(d && d.ok ? "Worker GPS en place ✓" : "Le Worker répond mais la base n'est pas prête"); } catch (e) { flash("Worker GPS introuvable"); } }} className="mt-3 text-sm font-medium bg-white border border-stone-300 rounded-lg px-3 py-1.5">Tester le Worker</button>
               <p className="text-[11px] text-stone-400 mt-2">Après l'avoir activé, republie la journée pour que la tuile apparaisse. Seules les cartes capturées depuis l'IGN dans l'app peuvent afficher les positions.</p>
+            </Panel>
+            <Tile open={open} onToggle={toggle} id="chat" emoji="💬" title="Chat des chasseurs" sub={github.chatActif ? "Activé" : "Désactivé"} />
+            <Panel open={open} id="chat">
+              <p className="text-sm text-stone-600">Sur la page des chasseurs, une tuile « Chat de la journée » permet aux chasseurs et aux rabatteurs de discuter ensemble. Un chat par journée, gardé jusqu'à ce que tu le vides. Utilise le même Worker que le suivi GPS (<b>battue-gps</b>).</p>
+              <label className="flex items-center gap-2 mt-3 text-sm text-stone-800"><input type="checkbox" checked={!!github.chatActif} onChange={() => setGithub({ ...github, chatActif: !github.chatActif })} className="w-4 h-4 accent-emerald-700" />Activer le chat sur les pages publiées</label>
+              <button onClick={async () => { try { const r = await fetch(GPS_URL + "/ping", { cache: "no-store" }); const d = await r.json(); flash(d && d.ok && d.chat ? "Chat prêt ✓" : (d && d.ok ? "Worker en place, mais la base n'a pas les tables du chat" : "Le Worker répond mais la base n'est pas prête")); } catch (e) { flash("Worker introuvable"); } }} className="mt-3 text-sm font-medium bg-white border border-stone-300 rounded-lg px-3 py-1.5">Tester le chat</button>
+              <p className="text-[11px] text-stone-400 mt-2">Après l'avoir activé, republie la journée : l'écran « Envoyer les postes » te donne alors ton lien organisateur, pour supprimer des messages ou retirer quelqu'un.</p>
             </Panel>
             <Panel open={open} id="groupe">
             <label className="text-[11px] uppercase tracking-wide text-stone-400">Nom affiché aux chasseurs</label>
@@ -4442,8 +4620,10 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
             <p className="text-sm text-stone-600 mb-3">Ton carnet est enregistré automatiquement. Tu peux aussi en garder une copie sur ton appareil.</p>
             {poids && poids.total > 0 && (() => {
               const pc = Math.min(100, Math.round(poids.total / (40 * 1048576) * 100));
-              const alerte = poids.total > 25 * 1048576;
-              const attention = poids.total > 12 * 1048576;
+              // Images rangees a part : seul le texte est envoye a chaque enregistrement.
+              const envoye = poids.stockage === "ko" ? poids.total : poids.texte;
+              const alerte = envoye > 25 * 1048576;
+              const attention = envoye > 12 * 1048576;
               return (<div className={`rounded-lg border p-3 mb-3 ${alerte ? "bg-red-50 border-red-200" : attention ? "bg-amber-50 border-amber-200" : "bg-stone-50 border-stone-200"}`}>
                 <div className="flex items-baseline justify-between mb-1.5">
                   <span className="text-[11px] uppercase tracking-widest text-stone-400">Poids de ton carnet</span>
@@ -4452,7 +4632,9 @@ function SettingsSheet({ github, setGithub, onClose, session, onSignOut, onExpor
                 <div className="h-1.5 bg-stone-200 rounded-full overflow-hidden mb-2">
                   <div className={`h-full rounded-full ${alerte ? "bg-red-600" : attention ? "bg-amber-600" : "bg-emerald-600"}`} style={{ width: pc + "%" }} />
                 </div>
-                <p className="text-[11px] text-stone-500">Dont {ko(poids.photos)} de photos ({poids.total > 0 ? Math.round(poids.photos / poids.total * 100) : 0} %) sur {poids.nbPhotos} image(s).</p>
+                <p className="text-[11px] text-stone-500">Dont {ko(poids.photos)} de photos et cartes ({poids.total > 0 ? Math.round(poids.photos / poids.total * 100) : 0} %) sur {poids.nbPhotos} image(s).</p>
+                {poids.stockage === "ok" && <p className="text-[11px] text-emerald-800 mt-1">✓ Images rangées à part, envoyées une seule fois. Chaque enregistrement n'envoie que {ko(poids.texte)}.</p>}
+                {poids.stockage === "ko" && <p className="text-[11px] text-amber-800 mt-1">Stockage des images pas encore installé : tout le carnet part à chaque enregistrement.</p>}
                 {attention && !alerte && <p className="text-[12px] text-amber-800 mt-1.5">Ton carnet s'alourdit. Pense à supprimer les photos de postes devenues inutiles.</p>}
                 {alerte && <p className="text-[12px] text-red-800 mt-1.5"><b>Carnet volumineux.</b> L'enregistrement peut ralentir. Allège les photos, ou archive les vieilles saisons via une sauvegarde.</p>}
               </div>);
@@ -5390,10 +5572,14 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   const publish = async (journee0) => {
     // Cle secrete pour le suivi GPS de cette journee (creee une seule fois, gardee ensuite).
     let journee = journee0;
-    if (!journee.gpsCle) {
-      const a = "abcdefghijkmnopqrstuvwxyz23456789"; let cle = ""; for (let i = 0; i < 20; i++) cle += a.charAt(Math.floor(Math.random() * a.length));
-      journee = { ...journee0, gpsCle: cle };
-      setJournees((prev) => prev.map((x) => (x.id === journee0.id ? { ...x, gpsCle: cle } : x)));
+    const aleat = (n) => { const a = "abcdefghijkmnopqrstuvwxyz23456789"; const r = new Uint32Array(n); crypto.getRandomValues(r); let c = ""; for (let i = 0; i < n; i++) c += a.charAt(r[i] % a.length); return c; };
+    const ajouts = {};
+    if (!journee.gpsCle) ajouts.gpsCle = aleat(20);
+    // Cle organisateur du chat : elle ne quitte jamais l'app, le Worker n'en garde que l'empreinte.
+    if (github.chatActif && !journee.chatAdmin) ajouts.chatAdmin = aleat(28);
+    if (Object.keys(ajouts).length) {
+      journee = { ...journee0, ...ajouts };
+      setJournees((prev) => prev.map((x) => (x.id === journee0.id ? { ...x, ...ajouts } : x)));
     }
     const terrain = terrains.find((t) => t.id === journee.terrainId);
     if (!terrain) { window.alert("Choisis d'abord un territoire pour cette journée."); return; }
@@ -5406,7 +5592,18 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
         photosAnn[mm.id] = [];
         for (let k = 0; k < (mm.photos || []).length; k++) { try { photosAnn[mm.id].push(await aplatirPhoto(mm.photos[k], (mm.photoNotes || [])[k] || [], 1100, 0.62)); } catch (e) { photosAnn[mm.id].push(mm.photos[k]); } }
       }
-      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId, photosAnn, !!github.gpsActif);
+      // Chat : on ouvre (ou on retrouve) le salon de la journee aupres du Worker GPS avant de publier.
+      let chatOk = false, chatErr = "";
+      if (github.chatActif) {
+        try {
+          const h = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(journee.chatAdmin)))).map((b) => b.toString(16).padStart(2, "0")).join("");
+          const rc = await fetch(GPS_URL + "/chat/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ j: journee.gpsCle, h }) });
+          const dc = await rc.json().catch(() => null);
+          chatOk = !!(dc && dc.ok);
+          if (!chatOk) chatErr = (dc && dc.reason === "pris") ? "Le chat de cette journée est déjà lié à une autre clé." : "Le Worker n'a pas pu ouvrir le chat.";
+        } catch (e) { chatErr = "Worker GPS introuvable : le chat n'apparaîtra pas sur la page."; }
+      }
+      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId, photosAnn, !!github.gpsActif, chatOk);
       const token = "PUBTS-" + Date.now();
       const stamped = html + "\n<!--" + token + "-->";
       const fn = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
@@ -5420,7 +5617,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
       let rep = null; try { rep = await rp.json(); } catch (e) {}
       const slugReel = (rep && rep.slug) ? String(rep.slug) : slugJournee(journee);
       if (slugReel !== journee.pubSlug) majJournee(journee.id, { pubSlug: slugReel });
-      setPub({ status: "live", url: "https://poste.carnetdechasse.fr/b/" + slugReel + "/" });
+      setPub({ status: "live", url: "https://poste.carnetdechasse.fr/b/" + slugReel + "/", chatErr });
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
   };
   const shareLinkWhatsApp = (lien) => { const link = lien || ((pub && pub.url) ? pub.url : pubUrl); const msg = "🦌 Battue — chasseurs & rabatteurs\nChacun choisit son rôle et son nom sur le lien (lecture seule) :\n" + link; window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank"); };
@@ -5786,6 +5983,15 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                         <button onClick={copyPubLink} className="flex-1 text-[12.5px] font-medium text-stone-600 bg-white border border-stone-300 rounded-lg py-2.5">📋 Copier le lien</button>
                         <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="flex-1 text-[12.5px] font-medium text-stone-600 bg-white border border-stone-300 disabled:opacity-50 rounded-lg py-2.5">↻ Mettre à jour</button>
                       </div>
+                      {pub.chatErr ? (<p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-2 leading-snug">💬 {pub.chatErr}</p>) : null}
+                      {github.chatActif && j.chatAdmin && !pub.chatErr ? (<div className="bg-amber-50 border border-amber-300 rounded-xl p-3 mt-2">
+                        <p className="text-[13px] font-bold text-amber-900">👑 Ton lien organisateur du chat</p>
+                        <p className="text-[11.5px] text-amber-800 mt-0.5 mb-2 leading-snug">Ouvre-le sur ton téléphone pour supprimer un message ou retirer quelqu'un du chat. <b>Ne l'envoie à personne</b> : il donne ces pouvoirs.</p>
+                        <div className="flex gap-2">
+                          <a href={urlDe(j) + "#org=" + j.chatAdmin} target="_blank" rel="noreferrer" className="flex-1 text-center text-[12.5px] font-semibold text-amber-900 bg-white border border-amber-300 rounded-lg py-2.5">Ouvrir</a>
+                          <button onClick={() => { const l = urlDe(j) + "#org=" + j.chatAdmin; if (navigator.clipboard) navigator.clipboard.writeText(l).then(() => window.alert("Lien organisateur copié ✓ Garde-le pour toi.")).catch(() => window.prompt("Copie le lien :", l)); else window.prompt("Copie le lien :", l); }} className="flex-1 text-[12.5px] font-semibold text-amber-900 bg-white border border-amber-300 rounded-lg py-2.5">📋 Copier</button>
+                        </div>
+                      </div>) : null}
                     </>) : (<>
                       <p className="text-xs text-stone-500 mt-1 mb-3 leading-snug">Pas encore publié. Une fois en ligne, chacun ouvre le lien et retrouve son poste, sa carte, ses consignes et sa voiture.</p>
                       <button onClick={() => publish(j)} disabled={pub.status === "publishing"} className="w-full bg-emerald-700 disabled:opacity-60 text-stone-50 text-[15px] font-bold py-3.5 rounded-xl">📤 Publier la page en ligne</button>
@@ -6058,13 +6264,111 @@ function buildDinnerPrintHtml(participants) {
 const K = { participants: "cdb2:participants", journees: "cdb2:journees", terrainIndex: "cdb2:terrain-index", terrainPrefix: "cdb2:terrain:", imgPrefix: "cdb2:img:", mimgPrefix: "cdb2:mimg:", safety: "cdb2:safety", github: "cdb2:github", localAt: "cdb2:localAt", cloudAt: "cdb2:cloudAt" };
 const DEFAULT_FACTEUR = "https://battue-facteur.hippolyte-houdard.workers.dev/";
 // Worker « battue-gps » (positions en direct), installe a part du facteur.
-const GPS_URL = "https://gps.carnetdechasse.fr";
+// Adresse workers.dev : le domaine carnetdechasse.fr n'est pas dans ce compte Cloudflare.
+const GPS_URL = "https://battue-gps.hippolyte-houdard.workers.dev";
 const DEFAULT_GITHUB = { token: "", owner: "Hiplou", repo: "battue", path: "index.html", fnUrl: DEFAULT_FACTEUR, orgName: "" };
 const STORAGE_OK = typeof window !== "undefined" && window.storage && typeof window.storage.set === "function";
 
 const SUPA_URL = "https://zbneklsactpgttkpzwiv.supabase.co";
 const SUPA_KEY = "sb_publishable_2x46K_6vwJ4OjBODiCycGA_JXScarw9";
 const SB = (typeof window !== "undefined" && window.supabase && window.supabase.createClient) ? window.supabase.createClient(SUPA_URL, SUPA_KEY) : null;
+
+// ---------- Images rangees a part (Supabase Storage, dossier prive de chaque compte) ----------
+// En memoire, l'app garde les images telles quelles (data:image/...) : rien ne change pour l'affichage,
+// l'impression ou la publication. Seul l'enregistrement change : chaque image est envoyee UNE fois dans
+// le stockage (nom = empreinte de son contenu), et le carnet n'envoie plus que "cdcimg:<empreinte>".
+const IMG_BUCKET = "images", IMG_REF = "cdcimg:", IMG_MIN = 3000;
+const IMGS = { hashDe: new Map(), ok: new Set(), enCours: new Map(), refuse: new Set(), ko: false, koMsg: "", essais: 0 };
+const estImageData = (v) => typeof v === "string" && v.length > IMG_MIN && v.slice(0, 11) === "data:image/";
+const estRefImage = (v) => typeof v === "string" && v.slice(0, IMG_REF.length) === IMG_REF;
+// Parcourt tout le carnet et remplace certaines chaines ; ne recree que les branches modifiees.
+function remplacerChaines(v, f) {
+  if (typeof v === "string") { const r = f(v); return r === undefined ? v : r; }
+  if (Array.isArray(v)) { let ch = false; const o = v.map((x) => { const y = remplacerChaines(x, f); if (y !== x) ch = true; return y; }); return ch ? o : v; }
+  if (v && typeof v === "object") { let ch = false; const o = {}; Object.keys(v).forEach((k) => { const y = remplacerChaines(v[k], f); if (y !== v[k]) ch = true; o[k] = y; }); return ch ? o : v; }
+  return v;
+}
+function listerChaines(v, test, acc) {
+  if (typeof v === "string") { if (test(v)) acc.add(v); return acc; }
+  if (Array.isArray(v)) { v.forEach((x) => listerChaines(x, test, acc)); return acc; }
+  if (v && typeof v === "object") Object.keys(v).forEach((k) => listerChaines(v[k], test, acc));
+  return acc;
+}
+async function empreinteImage(s) {
+  if (IMGS.hashDe.has(s)) return IMGS.hashDe.get(s);
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  const h = Array.from(new Uint8Array(b)).slice(0, 16).map((x) => x.toString(16).padStart(2, "0")).join("");
+  IMGS.hashDe.set(s, h); return h;
+}
+function dataUrlVersBlob(s) { const i = s.indexOf(","); const mime = (s.slice(5, i).split(";")[0]) || "image/jpeg"; const bin = atob(s.slice(i + 1)); const a = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) a[k] = bin.charCodeAt(k); return new Blob([a], { type: mime }); }
+function blobVersDataUrl(b) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(r.error || new Error("lecture")); r.readAsDataURL(b); }); }
+// Copie locale des images sur l'appareil (ouverture rapide, meme avec peu de reseau).
+const IMG_CACHE = (() => {
+  let p = null;
+  const ouvrir = () => p || (p = new Promise((res, rej) => { try { const r = indexedDB.open("cdc-images", 1); r.onupgradeneeded = () => { try { r.result.createObjectStore("img"); } catch (e) {} }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }));
+  return {
+    async get(k) { try { const db = await ouvrir(); return await new Promise((res) => { const q = db.transaction("img").objectStore("img").get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }); } catch (e) { return null; } },
+    async put(k, v) { try { const db = await ouvrir(); await new Promise((res) => { const t = db.transaction("img", "readwrite"); t.objectStore("img").put(v, k); t.oncomplete = () => res(); t.onerror = () => res(); t.onabort = () => res(); }); } catch (e) {} },
+  };
+})();
+// Erreur "le stockage n'est pas installe" (seau absent, regles absentes) et non simple coupure reseau.
+function erreurStockageInstallation(e) {
+  const st = Number(e && (e.statusCode || e.status)) || 0;
+  const m = String((e && (e.message || e.error)) || "");
+  if (/load failed|failed to fetch|network|timeout|abort/i.test(m)) return false;
+  return st === 400 || st === 401 || st === 403 || st === 404 || /bucket not found|row-level security|not found|unauthorized|policy/i.test(m);
+}
+async function envoyerImage(uid, h, s) {
+  if (IMGS.ok.has(h)) return true;
+  if (IMGS.enCours.has(h)) return IMGS.enCours.get(h);
+  const pr = (async () => {
+    // Deja dans la copie locale = deja envoyee lors d'une session precedente (reprise apres coupure).
+    const loc = await IMG_CACHE.get(uid + "/" + h);
+    if (loc) { IMGS.ok.add(h); return true; }
+    const blob = dataUrlVersBlob(s);
+    const { error } = await SB.storage.from(IMG_BUCKET).upload(uid + "/" + h, blob, { upsert: true, contentType: blob.type, cacheControl: "31536000" });
+    if (error) { const st = Number(error.statusCode || error.status) || 0; if (st === 413 || /maximum allowed size|too large|mime type/i.test(String(error.message || ""))) { IMGS.refuse.add(h); throw error; } if (erreurStockageInstallation(error)) { IMGS.ko = true; IMGS.koMsg = String(error.message || error.error || "stockage indisponible"); } throw error; }
+    IMGS.ok.add(h); IMG_CACHE.put(uid + "/" + h, s); return true;
+  })();
+  IMGS.enCours.set(h, pr);
+  try { return await pr; } finally { IMGS.enCours.delete(h); }
+}
+async function chargerImage(uid, h) {
+  const loc = await IMG_CACHE.get(uid + "/" + h);
+  if (loc) { IMGS.hashDe.set(loc, h); IMGS.ok.add(h); return loc; }
+  const { data, error } = await SB.storage.from(IMG_BUCKET).download(uid + "/" + h);
+  if (error || !data) throw error || new Error("image absente");
+  const s = await blobVersDataUrl(data);
+  IMGS.hashDe.set(s, h); IMGS.ok.add(h); IMG_CACHE.put(uid + "/" + h, s);
+  return s;
+}
+// A l'ouverture : chaque reference est remplacee par l'image (copie locale d'abord).
+// Celles qu'on n'a pas pu obtenir restent en reference : elles ne sont jamais perdues.
+async function resoudreImages(v, uid, enLigne) {
+  const refs = Array.from(listerChaines(v, estRefImage, new Set()));
+  if (!refs.length) return { v, manquantes: [] };
+  const trouve = new Map();
+  let i = 0;
+  const travail = async () => { while (i < refs.length) { const r = refs[i++]; const h = r.slice(IMG_REF.length); IMGS.ok.add(h); try { const loc = await IMG_CACHE.get(uid + "/" + h); if (loc) { IMGS.hashDe.set(loc, h); trouve.set(r, loc); } else if (enLigne) trouve.set(r, await chargerImage(uid, h)); } catch (e) {} } };
+  await Promise.all([travail(), travail(), travail(), travail()]);
+  return { v: remplacerChaines(v, (s) => (estRefImage(s) && trouve.has(s)) ? trouve.get(s) : undefined), manquantes: refs.filter((r) => !trouve.has(r)) };
+}
+// A l'enregistrement : envoie les nouvelles images, puis remplace celles qui sont en ligne par leur reference.
+async function preparerEnvoi(full, uid, onProgres) {
+  const datas = Array.from(listerChaines(full, estImageData, new Set()));
+  for (const s of datas) await empreinteImage(s);
+  let echecs = 0, poidsEchecs = 0;
+  if (!IMGS.ko) {
+    const aEnvoyer = datas.filter((s) => { const h = IMGS.hashDe.get(s); return !IMGS.ok.has(h) && !IMGS.refuse.has(h); });
+    let fait = 0, i = 0;
+    if (aEnvoyer.length && onProgres) onProgres(0, aEnvoyer.length);
+    const travail = async () => { while (i < aEnvoyer.length && !IMGS.ko) { const s = aEnvoyer[i++]; try { await envoyerImage(uid, IMGS.hashDe.get(s), s); } catch (e) { if (!IMGS.refuse.has(IMGS.hashDe.get(s))) { echecs++; poidsEchecs += s.length; } } fait++; if (onProgres) onProgres(fait, aEnvoyer.length); } };
+    await Promise.all([travail(), travail(), travail()]);
+    if (onProgres) onProgres(0, 0);
+  }
+  const payload = IMGS.ko ? full : remplacerChaines(full, (s) => { if (!estImageData(s)) return undefined; const h = IMGS.hashDe.get(s); return (h && IMGS.ok.has(h)) ? IMG_REF + h : undefined; });
+  return { payload, echecs, poidsEchecs, total: datas.length };
+}
 
 function AuthScreen() {
   const [mode, setMode] = useState("in");
@@ -6319,8 +6623,8 @@ function CarnetApp({ session, onSignOut }) {
     compter(tout);
     let total = 0;
     try { total = JSON.stringify(tout).length; } catch (e) { total = 0; }
-    return { total: total, photos: photos, nbPhotos: nbPhotos };
-  }, [showPub, participants, terrains, journees, safety]);
+    return { total: total, photos: photos, nbPhotos: nbPhotos, texte: Math.max(0, total - photos), stockage: IMGS.ko ? "ko" : (IMGS.ok.size ? "ok" : "?"), koMsg: IMGS.koMsg };
+  }, [showPub, participants, terrains, journees, safety, ghStatus]);
 
   useEffect(() => {
     (async () => {
@@ -6337,6 +6641,20 @@ function CarnetApp({ session, onSignOut }) {
           catch (e) { setCloudOk(false); setGhMsg("⚠ Serveur injoignable — carnet en lecture seule, rien ne sera enregistré."); }
         } else { setCloudOk(false); }
         if (d) {
+          // Images rangees a part : on les remet dans le carnet (copie locale d'abord, sinon telechargement).
+          let manquantes = [];
+          try { const rs = await resoudreImages(d, uid, false); d = rs.v; manquantes = rs.manquantes; } catch (e) {}
+          if (manquantes.length) {
+            // Les images pas encore sur cet appareil arrivent en arriere-plan.
+            (async () => {
+              const rs = await resoudreImages({ refs: manquantes }, uid, true).catch(() => null);
+              if (!rs) return;
+              const m = new Map(); manquantes.forEach((r, k) => { const v = rs.v.refs[k]; if (v && v !== r) m.set(r, v); });
+              if (!m.size) return;
+              const f = (s) => (estRefImage(s) && m.has(s)) ? m.get(s) : undefined;
+              setParticipants((p) => remplacerChaines(p, f)); setTerrains((p) => remplacerChaines(p, f)); setJournees((p) => remplacerChaines(p, f)); setSafety((p) => remplacerChaines(p, f));
+            })();
+          }
           setParticipants((d.participants || []).map(normParticipant));
           setTerrains((d.terrains || []).map(normTerrain));
           setJournees((d.journees || []).map(normJournee));
@@ -6368,22 +6686,38 @@ function CarnetApp({ session, onSignOut }) {
     setShowBandeau(true);
   }, [loaded, cloudOk, github.installVu, github.installProposee]);
 
+  // Un seul enregistrement a la fois ; une demande pendant un envoi en relance un juste apres.
+  const saveEnCours = useRef(null); const saveEncore = useRef(false);
+  const [imgProg, setImgProg] = useState(null);
   const saveNow = async () => {
+    if (saveEnCours.current) { saveEncore.current = true; return saveEnCours.current; }
+    const pr = saveNowUnique();
+    saveEnCours.current = pr;
+    let r = false; try { r = await pr; } finally { saveEnCours.current = null; }
+    if (saveEncore.current) { saveEncore.current = false; return saveNow(); }
+    return r;
+  };
+  const saveNowUnique = async () => {
     if (!SB || !session) return false;
     if (!cloudOk) { setGhStatus("error"); setGhMsg("⚠ Sauvegarde bloquée : le carnet n'a pas pu être chargé. Recharge la page."); return false; }
     setGhStatus("saving");
     try {
       const s = stateRef.current;
-      const payload = { version: 3, savedAt: Date.now(), participants: s.participants, terrains: s.terrains, journees: s.journees, safety: s.safety };
+      const full = { version: 3, savedAt: Date.now(), participants: s.participants, terrains: s.terrains, journees: s.journees, safety: s.safety };
+      const prep = await preparerEnvoi(full, session.user.id, (fait, total) => setImgProg(total ? { fait, total } : null));
+      // Trop d'images pas encore parties : on n'envoie pas un carnet enorme, on reessaie (ce qui est parti est garde).
+      // Apres 3 essais rates, on envoie quand meme (images restantes incluses) pour ne pas bloquer le texte.
+      if (prep.echecs && prep.poidsEchecs > 2e6 && !IMGS.ko && IMGS.essais < 3) { IMGS.essais++; const err = new Error("Envoi des images incomplet : " + prep.echecs + " restante(s) sur " + prep.total + ". Celles déjà envoyées sont gardées."); err.images = true; throw err; }
+      const payload = { ...prep.payload, version: IMGS.ko ? 3 : 4 };
       let taille = 0; try { taille = JSON.stringify(payload).length; } catch (e) {}
       saveTaille.current = taille;
       const { error } = await SB.from("carnets").upsert({ user_id: session.user.id, data: payload, updated_at: new Date().toISOString() });
       if (error) throw error;
       try { await window.storage.set("cb_supa_" + session.user.id, JSON.stringify(payload)); } catch (e) {}
-      setSaveErr(null); setGhStatus("saved"); return true;
+      IMGS.essais = 0; setSaveErr(null); setGhStatus("saved"); return true;
     } catch (e) {
       const msg = (e && (e.message || e.error_description || e.hint)) || String(e || "erreur inconnue");
-      setSaveErr({ msg: String(msg).slice(0, 200), code: (e && (e.code || e.status)) || "", taille: saveTaille.current, hors: typeof navigator !== "undefined" && navigator.onLine === false, t: Date.now() });
+      setSaveErr({ msg: String(msg).slice(0, 200), code: (e && (e.code || e.status)) || "", taille: saveTaille.current, hors: typeof navigator !== "undefined" && navigator.onLine === false, images: !!(e && e.images), t: Date.now() });
       setGhStatus("error"); return false;
     }
   };
@@ -6478,7 +6812,10 @@ function CarnetApp({ session, onSignOut }) {
   };
   const exportJson = async () => {
     try {
-      const blob = new Blob([JSON.stringify({ version: 2, participants, terrains, journees, safety })], { type: "application/json" });
+      // Les images pas encore revenues sur cet appareil sont recuperees pour que le fichier soit complet.
+      let contenu = { version: 2, participants, terrains, journees, safety };
+      try { contenu = (await resoudreImages(contenu, session.user.id, true)).v; } catch (e) {}
+      const blob = new Blob([JSON.stringify(contenu)], { type: "application/json" });
       const fname = `carnet-de-battue-${new Date().toISOString().slice(0, 10)}.json`;
       const file = new File([blob], fname, { type: "application/json" });
       if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: fname }); }
@@ -6557,13 +6894,13 @@ function CarnetApp({ session, onSignOut }) {
       <div className="flex items-center gap-2.5 shrink-0">
         <div className="flex items-center gap-1.5" title={saveBad ? "Tes modifications ne sont pas enregistrées" : "Tout est enregistré"}>
           {saveBad ? <AlertTriangle size={16} className="text-red-400" /> : <Cloud size={16} className={ghStatus === "saving" ? "text-stone-400" : "text-emerald-400"} />}
-          <span className={`text-[11px] ${saveBad ? "text-red-400" : ghStatus === "saving" ? "text-stone-400" : "text-emerald-400"}`}>{saveBad ? "Non enregistré" : ghStatus === "saving" ? "Enregistrement…" : "Enregistré"}</span>
+          <span className={`text-[11px] ${saveBad ? "text-red-400" : ghStatus === "saving" ? "text-stone-400" : "text-emerald-400"}`}>{saveBad ? "Non enregistré" : ghStatus === "saving" ? (imgProg ? "Images " + imgProg.fait + "/" + imgProg.total : "Enregistrement…") : "Enregistré"}</span>
         </div>
         <button onClick={() => setShowPub(true)} className="p-2 -mr-1 rounded-lg hover:bg-stone-800" title="Réglages"><Settings size={21} /></button>
       </div>
     </div></header>
 
-    {saveBad && (<div className="bg-red-100 border-b border-red-300 text-red-900 text-sm px-4 py-2.5"><div className="max-w-3xl mx-auto flex items-start gap-2"><AlertTriangle size={17} className="shrink-0 mt-0.5" /><span className="flex-1">{!cloudOk ? <span><b>Carnet non chargé</b> — rien ne sera enregistré. Recharge la page.</span> : <span><b>Rien n'est enregistré.</b> {saveErr && saveErr.hors ? "Tu n'es pas connecté à Internet." : (saveErr && saveErr.taille > 12e6) ? "Ton carnet est devenu très lourd (surtout les photos) : l'envoi n'a pas abouti." : "Tes dernières modifications ne sont pas sauvegardées."} Ne ferme pas la page : nouvel essai automatique toutes les 20 secondes.
+    {saveBad && (<div className="bg-red-100 border-b border-red-300 text-red-900 text-sm px-4 py-2.5"><div className="max-w-3xl mx-auto flex items-start gap-2"><AlertTriangle size={17} className="shrink-0 mt-0.5" /><span className="flex-1">{!cloudOk ? <span><b>Carnet non chargé</b> — rien ne sera enregistré. Recharge la page.</span> : <span><b>Rien n'est enregistré.</b> {saveErr && saveErr.hors ? "Tu n'es pas connecté à Internet." : (saveErr && saveErr.images) ? "Les images partent une seule fois dans ton stockage : l'envoi n'est pas terminé (réseau faible ?). Ensuite, chaque enregistrement sera léger." : (saveErr && saveErr.taille > 12e6) ? "Ton carnet est devenu très lourd (surtout les photos) : l'envoi n'a pas abouti." : "Tes dernières modifications ne sont pas sauvegardées."} Ne ferme pas la page : nouvel essai automatique toutes les 20 secondes.
           {saveErr && <span className="block text-[11px] text-red-800 mt-1">Détail : {saveErr.code ? saveErr.code + " — " : ""}{saveErr.msg} · poids du carnet : {(saveErr.taille / 1e6).toFixed(1)} Mo</span>}</span>}</span>
         {cloudOk && <button onClick={() => saveNow()} disabled={ghStatus === "saving"} className="shrink-0 text-xs font-semibold bg-red-700 text-white rounded-md px-2.5 py-1 disabled:opacity-50">{ghStatus === "saving" ? "Envoi…" : "Réessayer"}</button>}</div></div>)}
 
