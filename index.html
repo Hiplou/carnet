@@ -475,7 +475,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.35";
+const APP_VERSION = "v4.36";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -5506,7 +5506,7 @@ function SecWrap({ bare, children }) {
   return <SectionCard className="p-3 space-y-2">{children}</SectionCard>;
 }
 
-// ---------- Ecran « Poster les fusils » : placement manuel ou tirage au sort ----------
+// ---------- Ecran « Poster les fusils » : placement nominatif ou tirage au sort ----------
 const PRIO_COUL = { 1: "bg-emerald-800 text-white", 2: "bg-emerald-300 text-emerald-950", 3: "bg-amber-200 text-amber-900", 4: "bg-stone-200 text-stone-700" };
 function TirageSection({ journee, terrain, participants, presentIds, onMaj, onPlacer, onGenerer, onHasard, onQuitterTirage }) {
   const t = normTirage(journee.tirage);
@@ -5540,15 +5540,15 @@ function TirageSection({ journee, terrain, participants, presentIds, onMaj, onPl
   return (<div className="space-y-2.5">
     <p className="text-[11px] uppercase tracking-wide text-stone-400">Comment placer les chasseurs ?</p>
     <div className="grid grid-cols-2 gap-2">
-      <Carte on={!t.actif} onClick={() => changerMode(false)} titre="✋ Placement manuel" sous="Avec les noms : vous ou le hasard" k="manuel" />
+      <Carte on={!t.actif} onClick={() => changerMode(false)} titre="👤 Placement nominatif" sous="Chacun à son nom : vous ou le hasard" k="manuel" />
       <Carte on={t.actif} onClick={() => changerMode(true)} titre="🎲 Tirage au sort" sous="Cartons tirés le matin, anonyme" k="tirage" />
     </div>
-    <Bulle k="manuel"><b className="text-emerald-300">Placement manuel</b> — chaque chasseur est placé avec son nom. Vous le placez vous-même sur la carte, traque par traque, ou vous demandez à l'app de les placer au hasard puis vous corrigez. Les livrets et le lien affichent le nom de chacun.<div className="mt-2 pt-2 border-t border-stone-700 text-stone-300 text-[12.5px]">À choisir si vous voulez décider qui va où, ou faire un hasard nominatif que vous pouvez retoucher. Les armes et les besoins (fauteuil, canne) sont respectés.</div></Bulle>
+    <Bulle k="manuel"><b className="text-emerald-300">Placement nominatif</b> — chaque chasseur est placé avec son nom. Vous le placez vous-même sur la carte, traque par traque, ou vous demandez à l'app de les placer au hasard puis vous corrigez. Les livrets et le lien affichent le nom de chacun.<div className="mt-2 pt-2 border-t border-stone-700 text-stone-300 text-[12.5px]">À choisir si vous voulez décider qui va où, ou faire un hasard nominatif que vous pouvez retoucher. Les armes et les besoins (fauteuil, canne) sont respectés.</div></Bulle>
     <Bulle k="tirage"><b className="text-emerald-300">Tirage au sort</b> — l'app prépare à l'avance un numéro par chasseur présent. Chaque numéro a un poste dans <b>chaque traque</b> de la journée. Le matin, aux consignes, chacun tire un carton dans le chapeau et découvre ses postes.<div className="mt-2 pt-2 border-t border-stone-700 text-stone-300 text-[12.5px]">À choisir quand les chasseurs veulent l'équité : personne ne choisit. Livrets et lien sont anonymes (numéro seulement). Les armes ne sont pas prises en compte : placez à la main ceux qui ont un besoin particulier.</div></Bulle>
-    {arme === "manuel" && (<div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 text-[12.5px] text-amber-900">Repasser en placement manuel retire les {t.nb} numéros des postes. <button onClick={() => changerMode(false)} className="ml-1 font-semibold underline">Confirmer</button> · <button onClick={() => setArme("")} className="underline">Annuler</button></div>)}
+    {arme === "manuel" && (<div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 text-[12.5px] text-amber-900">Repasser en placement nominatif retire les {t.nb} numéros des postes. <button onClick={() => changerMode(false)} className="ml-1 font-semibold underline">Confirmer</button> · <button onClick={() => setArme("")} className="underline">Annuler</button></div>)}
 
     {!t.actif && (<div className="bg-white border border-stone-200 rounded-lg">
-      <button onClick={() => setHasardOuvert(!hasardOuvert)} className="w-full text-left px-3 py-2.5 text-sm font-medium text-stone-800 flex justify-between"><span>🎲 Placer au hasard (avec les noms)</span><span className="text-stone-400">{hasardOuvert ? "▴" : "▾"}</span></button>
+      <button onClick={() => setHasardOuvert(!hasardOuvert)} className="w-full text-left px-3 py-2.5 text-sm font-medium text-stone-800 flex justify-between"><span>🎲 Placer au hasard (nominatif)</span><span className="text-stone-400">{hasardOuvert ? "▴" : "▾"}</span></button>
       {hasardOuvert && (<div className="px-3 pb-3 space-y-2.5 border-t border-stone-100 pt-2.5">
         <div className="grid grid-cols-2 gap-2">
           <Carte on={algoManuel === "equi"} onClick={() => setAlgoManuel("equi")} titre="⚖️ Équilibré" sous="Bons postes partagés · recommandé" k="equi-m" />
@@ -6188,13 +6188,13 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     Object.keys(r.placements).forEach((tid) => { Object.assign(placements[tid], r.placements[tid]); });
     majJournee(jid, { placements, tirage: { ...t, actif: true, nb, reserves, noms: {}, manques: r.manques } });
   };
-  // Retour au placement manuel : les numeros quittent les postes.
+  // Retour au placement nominatif : les numeros quittent les postes.
   const quitterTirage = (jid) => {
     const j = journees.find((x) => x.id === jid); if (!j) return;
     const placements = {}; Object.entries(j.placements || {}).forEach(([tid, pl]) => { const cur = {}; Object.entries(pl || {}).forEach(([hid, mid]) => { if (!numDe(hid)) cur[hid] = mid; }); placements[tid] = cur; });
     majJournee(jid, { placements, tirage: { ...normTirage(j.tirage), actif: false, nb: 0, noms: {}, manques: [], publie: false } });
   };
-  // Placement manuel au hasard (avec les noms) : seuls les chasseurs pas encore places bougent.
+  // Placement nominatif au hasard : seuls les chasseurs pas encore places bougent.
   const placerAuHasard = (jid, algo, portee) => {
     const j = journees.find((x) => x.id === jid); if (!j) return "";
     const terrain = terrains.find((x) => x.id === j.terrainId); if (!terrain) return "";
