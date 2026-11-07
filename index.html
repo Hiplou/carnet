@@ -475,7 +475,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.34";
+const APP_VERSION = "v4.35";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -676,6 +676,64 @@ async function buildTrackImage(planImage, track, targetMiradorId, title, subtitl
 // ---------- Petits composants ----------
 function Toggle({ value, onChange, labelOn = "Oui", labelOff = "Non" }) {
   return (<button onClick={() => onChange(!value)} className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium border transition-colors ${value ? "bg-emerald-800 border-emerald-800 text-stone-50" : "bg-stone-100 border-stone-300 text-stone-500"}`}>{value ? <Check size={14} /> : <X size={14} />}{value ? labelOn : labelOff}</button>);
+}
+// Ligne de journee qu'on fait glisser vers la gauche (comme Mail sur iPhone) pour faire apparaitre
+// « Archiver » et « Supprimer ». Sur ordinateur, le bouton « ⋯ » fait la meme chose.
+function LigneGlissable({ ouvert, setOuvert, onArchiver, onSupprimer, children }) {
+  const LARG = 172;
+  const [dx, setDx] = useState(null);
+  const geste = useRef(null);
+  const vientDeGlisser = useRef(false);
+  const dernier = useRef(null);   // derniere position, a jour meme si React n'a pas encore redessine
+  const base = ouvert ? -LARG : 0;
+  const x = dx == null ? base : dx;
+  const debut = (e) => { const t = e.touches[0]; geste.current = { x: t.clientX, y: t.clientY, base, glisse: false }; };
+  const bouge = (e) => {
+    const g = geste.current; if (!g) return;
+    const t = e.touches[0]; const ddx = t.clientX - g.x, ddy = t.clientY - g.y;
+    if (!g.glisse) {
+      if (Math.abs(ddx) > 10 && Math.abs(ddx) > Math.abs(ddy) * 1.3) g.glisse = true;
+      else if (Math.abs(ddy) > 10) { geste.current = null; return; }
+      else return;
+    }
+    const v = Math.max(-LARG - 40, Math.min(0, g.base + ddx)); dernier.current = v; setDx(v);
+  };
+  const fin = () => {
+    const g = geste.current; geste.current = null;
+    if (g && g.glisse) { vientDeGlisser.current = true; setTimeout(() => { vientDeGlisser.current = false; }, 350); setOuvert((dernier.current == null ? base : dernier.current) < -LARG / 2); }
+    dernier.current = null; setDx(null);
+  };
+  return (<div className="relative overflow-hidden">
+    <div className="absolute inset-y-0 right-0 flex" style={{ width: LARG }}>
+      <button onClick={() => { setOuvert(false); onArchiver(); }} className="flex-1 bg-amber-600 text-white text-[12px] font-semibold flex flex-col items-center justify-center gap-0.5"><span className="text-lg leading-none">📦</span>Archiver</button>
+      <button onClick={() => { setOuvert(false); onSupprimer(); }} className="flex-1 bg-red-700 text-white text-[12px] font-semibold flex flex-col items-center justify-center gap-0.5"><Trash2 size={18} />Supprimer</button>
+    </div>
+    <div onTouchStart={debut} onTouchMove={bouge} onTouchEnd={fin} onTouchCancel={fin}
+      onClickCapture={(e) => { if (vientDeGlisser.current) { e.preventDefault(); e.stopPropagation(); return; } if (ouvert && !e.target.closest("[data-plus]")) { e.preventDefault(); e.stopPropagation(); setOuvert(false); } }}
+      className="relative bg-stone-50" style={{ transform: "translateX(" + x + "px)", transition: dx == null ? "transform .2s ease" : "none", touchAction: "pan-y" }}>
+      {children}
+    </div>
+  </div>);
+}
+// Fenetre de suppression d'une journee : on rappelle que c'est definitif et on propose d'archiver a la place.
+function FenetreSuppression({ journee, terrain, onArchiver, onSupprimer, onAnnuler, archivee }) {
+  const quand = new Date(journee.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return (<div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-3" onClick={onAnnuler}>
+    <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <p className="text-3xl mb-1">⚠️</p>
+      <h3 className="font-serif text-xl text-stone-900">Supprimer définitivement ?</h3>
+      <p className="text-sm text-stone-600 mt-1">Journée du <b>{quand}</b>{terrain ? " · " + terrain.name : ""}</p>
+      <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-3 text-[13px] text-red-900 leading-snug">
+        <b>C'est définitif : rien ne pourra être récupéré.</b> Vous perdrez toutes les données de cette journée : le tableau de chasse, les placements, les voitures, les retours des chasseurs et le chat. La page envoyée aux chasseurs sera retirée : leur lien ne fonctionnera plus.
+      </div>
+      {!archivee && <p className="text-[13px] text-stone-700 mt-3">💡 <b>Mieux vaut archiver</b> pour garder ces données : la journée disparaît de la liste, mais vous la retrouvez dans les Archives et elle continue de servir aux statistiques et aux propositions.</p>}
+      <div className="space-y-2 mt-4">
+        {!archivee && <button onClick={onArchiver} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white font-semibold rounded-lg py-3">📦 Archiver plutôt (recommandé)</button>}
+        <button onClick={onSupprimer} className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold rounded-lg py-3">🗑 Supprimer définitivement</button>
+        <button onClick={onAnnuler} className="w-full text-stone-600 text-sm py-2">Annuler</button>
+      </div>
+    </div>
+  </div>);
 }
 function SectionCard({ children, className = "", onClick }) { return <div onClick={onClick} className={`bg-stone-50 border border-stone-300 rounded-lg shadow-sm ${className}`}>{children}</div>; }
 function RoleSelector({ value, onChange }) {
@@ -5855,6 +5913,9 @@ function StepGroup({ label, children }) {
 
 function JourneesView({ journees, setJournees, terrains, setTerrains, participants, safety, github, setGithub, openSettings, userId, orgEmail }) {
   const [openJournee, setOpenJournee] = useState(null);
+  const [ligneOuverte, setLigneOuverte] = useState(null);   // journee dont les boutons Archiver/Supprimer sont visibles
+  const [aSupprimer, setASupprimer] = useState(null);       // journee dans la fenetre de suppression
+  const [msgListe, setMsgListe] = useState("");
   const [voirArchives, setVoirArchives] = useState(false);
   const majJournee = (jid, patch) => setJournees((prev) => prev.map((j) => j.id === jid ? { ...j, ...patch } : j));
   const majPoints = (jid, terrId, trackId, type, action, data) => {
@@ -6042,6 +6103,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   const addJournee = () => { const id = `j-${Date.now()}`; setJournees((prev) => [...prev, normJournee({ id, pubV: 2, date: new Date().toISOString().slice(0, 10), terrainId: terrains[0]?.id || null })]); setOpenJournee(id); };
   // Archiver ne perd rien : la journee disparait seulement de la liste. Elle continue de
   // nourrir les propositions (chauffeurs, deposes, chefs de ligne).
+  const archiverSansQuestion = (id) => { setJournees((prev) => prev.map((j) => j.id === id ? { ...j, archivee: true } : j)); setOpenJournee(null); setMsgListe("📦 Journée archivée : vous la retrouvez dans les Archives, en bas de la page."); };
   const archiverJournee = (id) => {
     if (!window.confirm("Archiver cette journée ?\n\nElle disparaît de la liste, mais rien n'est perdu : tu la retrouves dans les Archives, en bas de la page.")) return;
     setJournees((prev) => prev.map((j) => j.id === id ? { ...j, archivee: true } : j));
@@ -6051,8 +6113,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   // La suppression definitive n'est possible que depuis les archives, et retire aussi la page en ligne.
   const supprimerDefinitivement = async (j) => {
     const quand = new Date(j.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
-    const t = window.prompt("SUPPRESSION DÉFINITIVE de la journée du " + quand + ".\n\nTu perdras son tableau de chasse, les placements, les voitures et les retours des chasseurs. Le lien envoyé aux chasseurs cessera de fonctionner, et cette journée ne servira plus aux propositions.\n\nRien ne pourra être récupéré. Pour confirmer, tape SUPPRIMER :");
-    if (String(t || "").trim().toUpperCase() !== "SUPPRIMER") return;
+    // La confirmation se fait dans la fenetre FenetreSuppression (avertissement + « Archiver plutôt »).
     let avert = "";
     try {
       const fn = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
@@ -6065,8 +6126,11 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     } catch (e) {
       avert = "La journée est supprimée, mais la page en ligne n'a pas pu être retirée (" + ((e && e.message) || e) + "). Le lien envoyé aux chasseurs peut encore fonctionner.";
     }
+    // Le chat de la journee est vide aussi (au mieux : sans reseau, il reste inaccessible a tous).
+    if (j.chatAdmin && j.gpsCle) { try { await fetch(GPS_URL + "/chat/vider", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ j: j.gpsCle, k: j.chatAdmin }) }); } catch (e) {} }
     setJournees((prev) => prev.filter((x) => x.id !== j.id));
-    if (avert) window.alert(avert);
+    setOpenJournee(null);
+    setMsgListe(avert ? "⚠️ " + avert : "🗑 La journée du " + quand + " a été supprimée définitivement.");
   };
   const setJourneeDate = (id, date) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, date } : j)));
   const setJourneeTerrain = (id, terrainId) => setJournees((prev) => prev.map((j) => (j.id === id ? { ...j, terrainId, placements: {} } : j)));
@@ -6182,6 +6246,11 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
 
   return (<div className="space-y-3">
     {postesPrint && <PrintOverlay html={postesPrint} onClose={() => setPostesPrint(null)} />}
+    {aSupprimer && <FenetreSuppression journee={aSupprimer} terrain={terrains.find((t) => t.id === aSupprimer.terrainId)} archivee={!!aSupprimer.archivee}
+      onAnnuler={() => setASupprimer(null)}
+      onArchiver={() => { const id = aSupprimer.id; setASupprimer(null); archiverSansQuestion(id); }}
+      onSupprimer={() => { const j = aSupprimer; setASupprimer(null); supprimerDefinitivement(j); }} />}
+    {msgListe && <div className="bg-white border border-stone-200 rounded-lg px-3 py-2.5 text-sm text-stone-700 flex items-start gap-2"><span className="flex-1">{msgListe}</span><button onClick={() => setMsgListe("")} className="text-stone-400">✕</button></div>}
     <div className="flex items-center justify-between"><h2 className="font-serif text-xl text-stone-800">Journées de chasse</h2><button onClick={addJournee} className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-stone-50 text-sm font-medium px-3 py-1.5 rounded-md"><Plus size={16} /> Nouvelle journée</button></div>
     {[...journees].filter((j) => !j.archivee).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).map((j) => { const isOpen = openJournee === j.id; const terrain = terrains.find((t) => t.id === j.terrainId);
       const dateFr = new Date(j.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -6226,10 +6295,15 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
       const setStep = (id) => setOpenStep((o) => (o === id ? null : id));
 
       return (<SectionCard key={j.id} className="overflow-hidden p-0">
-        {!isOpen && (<button onClick={() => { setOpenJournee(j.id); setOpenStep(null); }} className="w-full flex items-center justify-between px-4 py-3 text-left gap-2">
-          <span className="flex items-center gap-2 font-medium text-stone-800 text-sm min-w-0"><ChevronRight size={16} className="shrink-0" /><CalendarDays size={16} className="text-amber-800 shrink-0" /><span className="truncate">{dateFr}</span></span>
-          <span className="text-xs text-stone-400 shrink-0">{terrain ? terrain.name : "aucun territoire"}</span>
-        </button>)}
+        {!isOpen && (<LigneGlissable ouvert={ligneOuverte === j.id} setOuvert={(v) => setLigneOuverte(v ? j.id : null)} onArchiver={() => archiverSansQuestion(j.id)} onSupprimer={() => setASupprimer(j)}>
+          <div className="flex items-center">
+            <button onClick={() => { setLigneOuverte(null); setOpenJournee(j.id); setOpenStep(null); }} className="flex-1 min-w-0 flex items-center justify-between pl-4 pr-1 py-3 text-left gap-2">
+              <span className="flex items-center gap-2 font-medium text-stone-800 text-sm min-w-0"><ChevronRight size={16} className="shrink-0" /><CalendarDays size={16} className="text-amber-800 shrink-0" /><span className="truncate">{dateFr}</span></span>
+              <span className="text-xs text-stone-400 shrink-0 truncate max-w-[45%]">{terrain ? terrain.name : "aucun territoire"}</span>
+            </button>
+            <button data-plus="1" onClick={() => setLigneOuverte(ligneOuverte === j.id ? null : j.id)} aria-label="Archiver ou supprimer" className="shrink-0 px-3 py-3 text-stone-400 hover:text-stone-700 text-lg leading-none">⋯</button>
+          </div>
+        </LigneGlissable>)}
 
         {isOpen && (<div>
           <div className="bg-stone-800 text-stone-50 px-4 py-3">
@@ -6468,7 +6542,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
             </div>
             <div className="flex gap-2 mt-2">
               <button onClick={() => desarchiverJournee(j.id)} className="flex-1 text-[12px] font-medium text-stone-700 bg-white border border-stone-300 rounded-md py-1.5">↩ Ramener dans la liste</button>
-              <button onClick={() => supprimerDefinitivement(j)} className="flex-1 text-[12px] font-medium text-red-700 bg-white border border-red-200 rounded-md py-1.5 flex items-center justify-center gap-1"><Trash2 size={12} /> Supprimer</button>
+              <button onClick={() => setASupprimer(j)} className="flex-1 text-[12px] font-medium text-red-700 bg-white border border-red-200 rounded-md py-1.5 flex items-center justify-center gap-1"><Trash2 size={12} /> Supprimer</button>
             </div>
           </div>);
         })}
