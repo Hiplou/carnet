@@ -300,6 +300,115 @@ function armeLabel(k) { const f = ARMES.find((a) => a.key === k); return f ? f.l
 function armeShort(k) { const f = ARMES.find((a) => a.key === k); return f ? f.short : ""; }
 function armesList(m) { if (Array.isArray(m && m.armes)) return m.armes; const a = m && m.arme; if (!a || a === "indifferent") return []; return [a]; }
 function armeOk(armes, hunterArme) { const list = Array.isArray(armes) ? armes : []; if (!list.length) return true; if (!hunterArme) return true; if (list.indexOf(hunterArme) >= 0) return true; if (hunterArme === "rayee" && list.indexOf("lisse") >= 0) return true; return false; }
+
+// ---------- Tirage au sort des postes ----------
+// En mode tirage, chaque chasseur tire un carton le matin. L'app prepare a l'avance un numero
+// par chasseur present (hors chasseurs places a la main) : le n°7 a un poste dans CHAQUE traque.
+// Les numeros sont des "chasseurs virtuels" (id "num-7") ranges dans journee.placements comme les autres :
+// cartes, impressions et page des chasseurs fonctionnent sans changement.
+const NUM_ID = (n) => "num-" + n;
+const numDe = (id) => (typeof id === "string" && id.indexOf("num-") === 0) ? (parseInt(id.slice(4), 10) || 0) : 0;
+function normTirage(t) {
+  t = t || {};
+  return { actif: !!t.actif, algo: t.algo === "complet" ? "complet" : "equi", reserves: Array.isArray(t.reserves) ? t.reserves : [], nb: Math.max(0, parseInt(t.nb, 10) || 0), noms: (t.noms && typeof t.noms === "object") ? t.noms : {}, note: String(t.note || ""), publie: !!t.publie, manques: Array.isArray(t.manques) ? t.manques : [] };
+}
+function tirageActif(j) { const t = j && j.tirage; return !!(t && t.actif); }
+// Liste des participants + les numeros du tirage. avecNoms : ajoute le nom note apres le tirage (impressions de l'organisateur).
+function participantsDuJour(participants, j, avecNoms) {
+  const t = normTirage(j && j.tirage);
+  if (!t.actif || !t.nb) return participants;
+  const extra = [];
+  for (let n = 1; n <= t.nb; n++) {
+    const hid = t.noms[n]; const p = (avecNoms && hid) ? participants.find((x) => x.id === hid) : null;
+    extra.push({ id: NUM_ID(n), name: "N°" + n + (p ? " · " + (p.name || "") : ""), nom: "N°" + n, prenom: p ? (p.name || "") : "", role: "chasseur", numero: n });
+  }
+  return participants.concat(extra);
+}
+// Tri : les noms d'abord (ordre alphabetique), puis les numeros dans l'ordre 1, 2, 3…
+function triAvecNumeros(a, b, triNoms) {
+  const na = a.numero || 0, nb = b.numero || 0;
+  if (na || nb) return (na ? 1 : 0) - (nb ? 1 : 0) || na - nb;
+  return triNoms(a, b);
+}
+// Repartition au hasard des postes.
+//   personnes : [{ id, arme, mobility }]
+//   traques   : [{ id, postes: [miradors], pris: { mid: true }, deja: { pid: mid } }]
+//   algo      : "equi" (les bons postes sont partages sur la journee) | "complet" (pur hasard)
+//   armes     : true = respecter l'arme du jour ; histo : { pid: [priorites deja obtenues ailleurs] }
+// Priorite 1 = meilleur poste. Les postes de priorite 1 sont utilises en premier.
+function repartirAuHasard(personnes, traques, algo, armes, histo) {
+  const melange = (arr) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
+  const prio = (m) => Number(m.priority) || 1;
+  const hist = {}; personnes.forEach((p) => { hist[p.id] = ((histo && histo[p.id]) || []).slice(); });
+  const moyenne = (pid) => { const l = hist[pid]; return l.length ? l.reduce((s, x) => s + x, 0) / l.length : null; };
+  const ok = (p, m) => {
+    if (p.mobility === "fauteuil" && !m.accFauteuil) return false;
+    if (p.mobility === "canne" && !(m.accCanne || m.accFauteuil)) return false;
+    return !armes || armeOk(armesList(m), p.arme);
+  };
+  const placements = {}, manques = [];
+  traques.forEach((t) => {
+    const res = {}; const pris = { ...(t.pris || {}) };
+    const aPlacer = personnes.filter((p) => !(t.deja || {})[p.id]);
+    // Postes libres, du meilleur au moins bon (hasard entre postes de meme priorite).
+    const libres = melange((t.postes || []).filter((m) => !pris[m.id])).sort((a, b) => prio(a) - prio(b));
+    let reserve = libres.slice(0, aPlacer.length);   // on n'utilise que les N meilleurs postes
+    // Ordre de passage : les personnes contraintes (fauteuil, canne) d'abord, puis
+    // equilibre = ceux qui ont eu les moins bons postes jusqu'ici choisissent en premier.
+    const contraintes = (p) => (p.mobility === "fauteuil" ? 0 : p.mobility === "canne" ? 1 : 2);
+    const moyNeutre = (() => { const v = aPlacer.map((p) => moyenne(p.id)).filter((x) => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0; })();
+    const ordre = melange(aPlacer).sort((a, b) => {
+      const c = contraintes(a) - contraintes(b); if (c) return c;
+      if (algo !== "equi") return 0;
+      const ma = moyenne(a.id), mb = moyenne(b.id);
+      return (mb == null ? moyNeutre : mb) - (ma == null ? moyNeutre : ma);
+    });
+    ordre.forEach((p) => {
+      let cands = reserve.filter((m) => ok(p, m));
+      if (!cands.length) cands = libres.filter((m) => !pris[m.id] && ok(p, m));   // aucun des meilleurs ne convient : un autre poste libre
+      if (!cands.length) { manques.push({ pid: p.id, trackId: t.id }); return; }
+      const choix = algo === "equi" ? cands[0] : cands[Math.floor(Math.random() * cands.length)];
+      res[p.id] = choix.id; pris[choix.id] = true; reserve = reserve.filter((m) => m.id !== choix.id);
+      hist[p.id].push(prio(choix));
+    });
+    placements[t.id] = res;
+  });
+  return { placements, manques };
+}
+// En mode equilibre, on fait plusieurs essais et on garde le plus juste
+// (le moins d'ecart entre le meilleur et le moins bon total de la journee).
+function meilleureRepartition(personnes, traques, algo, armes, histo) {
+  if (algo !== "equi") return repartirAuHasard(personnes, traques, algo, armes, histo);
+  const prioDe = {}; traques.forEach((t) => (t.postes || []).forEach((m) => { prioDe[m.id] = Number(m.priority) || 1; }));
+  let best = null, bestNote = Infinity;
+  for (let essai = 0; essai < 60; essai++) {
+    const r = repartirAuHasard(personnes, traques, algo, armes, histo);
+    const tot = personnes.map((p) => { const l = ((histo && histo[p.id]) || []).slice(); traques.forEach((t) => { const mid = (r.placements[t.id] || {})[p.id]; if (mid) l.push(prioDe[mid]); }); return l.length ? l.reduce((s, x) => s + x, 0) / l.length : 0; });
+    const note = r.manques.length * 1000 + (tot.length ? Math.max(...tot) - Math.min(...tot) : 0);
+    if (note < bestNote) { bestNote = note; best = r; }
+  }
+  // Finition : on echange deux personnes d'une meme traque si cela rend la journee plus juste.
+  const posteDe = {}; traques.forEach((t) => (t.postes || []).forEach((m) => { posteDe[m.id] = m; }));
+  const ok = (p, m) => !(p.mobility === "fauteuil" && !m.accFauteuil) && !(p.mobility === "canne" && !(m.accCanne || m.accFauteuil)) && (!armes || armeOk(armesList(m), p.arme));
+  const somme = {}, nbre = {};
+  personnes.forEach((p) => { const l = (histo && histo[p.id]) || []; somme[p.id] = l.reduce((s, x) => s + x, 0); nbre[p.id] = l.length; });
+  traques.forEach((t) => Object.entries(best.placements[t.id] || {}).forEach(([pid, mid]) => { somme[pid] += prioDe[mid]; nbre[pid]++; }));
+  const moy = (pid) => (nbre[pid] ? somme[pid] / nbre[pid] : 0);
+  const parId = {}; personnes.forEach((p) => { parId[p.id] = p; });
+  for (let it = 0; it < 400; it++) {
+    const t = traques[Math.floor(Math.random() * traques.length)];
+    const pl = best.placements[t.id] || {}; const ids = Object.keys(pl).filter((pid) => parId[pid] && !(t.deja || {})[pid]);
+    if (ids.length < 2) continue;
+    const a = ids[Math.floor(Math.random() * ids.length)], b = ids[Math.floor(Math.random() * ids.length)];
+    if (a === b || prioDe[pl[a]] === prioDe[pl[b]]) continue;
+    if (!ok(parId[a], posteDe[pl[b]]) || !ok(parId[b], posteDe[pl[a]])) continue;
+    const d = prioDe[pl[b]] - prioDe[pl[a]];
+    const avant = Math.pow(moy(a) - moy(b), 2);
+    const apres = Math.pow((somme[a] + d) / nbre[a] - (somme[b] - d) / nbre[b], 2);
+    if (apres < avant) { const x = pl[a]; pl[a] = pl[b]; pl[b] = x; somme[a] += d; somme[b] -= d; }
+  }
+  return best;
+}
 function armesLabel(armes) { const list = Array.isArray(armes) ? armes : []; if (!list.length) return "toutes armes"; return list.map(armeLabel).join(" / "); }
 function foldName(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); }
 function levDist(a, b) { a = a || ""; b = b || ""; const m = a.length, n = b.length; if (!m) return n; if (!n) return m; const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) { const c = a[i - 1] === b[j - 1] ? 0 : 1; d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c); } return d[m][n]; }
@@ -366,7 +475,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.33";
+const APP_VERSION = "v4.34";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -3398,7 +3507,7 @@ footer{text-align:center;color:var(--stone-400);font-size:12px;padding:8px 16px 
 .pickhead p{margin:2px 0 0;color:var(--stone-500);font-size:13px}
 .pickq{font-weight:600;margin:16px 0 10px}
 .names{display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow:auto}
-.namebtn{text-align:left;background:#fff;border:1px solid var(--stone-200);border-radius:10px;padding:13px 14px;font-size:16px;font-weight:600;color:var(--stone-900)}
+.tirlab{font-size:14px;font-weight:700;color:var(--stone-900);margin:4px 0 8px}.tirgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}.tirbtn{background:#fff;border:1.5px solid var(--stone-200);border-radius:12px;padding:14px 0;font-family:Georgia,serif;font-size:22px;font-weight:700;color:var(--stone-900)}.prenombox{display:flex;gap:6px;margin:6px 0 4px}.prenombox input{flex:1;min-width:0;border:1px solid #d6d3d1;border-radius:10px;padding:9px 11px;font-size:16px}.prenombox button{background:#166534;color:#fff;border:0;border-radius:10px;padding:9px 13px;font-weight:700}.namebtn{text-align:left;background:#fff;border:1px solid var(--stone-200);border-radius:10px;padding:13px 14px;font-size:16px;font-weight:600;color:var(--stone-900)}
 .namebtn:active{background:#ecfdf5;border-color:var(--emerald)}
 .empty{color:var(--stone-500);font-style:italic}
 .role{border-radius:12px;padding:14px;margin-top:14px}
@@ -3934,7 +4043,7 @@ function gpsMsg(m){var e=$("gpsMsg");if(e)e.textContent=m;}
 function gpsPartager(){
   if(Date.now()>=gpsFin()){gpsMsg("Le suivi est terminé pour aujourd'hui (après 18 h).");return;}
   if(!navigator.geolocation){gpsMsg("Ce téléphone ne donne pas sa position.");return;}
-  var nom=me?me.name:"",role=me?"c":"r";
+  var nom=me?nomPublic():"",role=me?"c":"r";
   if(!me){var s=$("gpsQui");nom=s?String(s.value||"").trim():"";if(!nom){gpsMsg("Choisis d'abord ton nom.");return;}}
   var o={q:gpsId(),nom:nom,role:role,exp:gpsFin()};gpsSauve(o);gpsDemarrer(o);gpsRendre();gpsLancerPoll();
 }
@@ -4029,7 +4138,10 @@ var CHAT_APP=null;
 function chatAleat(n){var a="abcdefghijkmnopqrstuvwxyz23456789",s="";for(var i=0;i<n;i++)s+=a.charAt(Math.floor(Math.random()*a.length));return s;}
 function chatAppareil(){if(CHAT_APP)return CHAT_APP;var v=chatLs("cdc_appareil");if(!v||v.length<12){v=chatAleat(22);chatLs("cdc_appareil",v);}CHAT_APP=v;return v;}
 function chatOrgCle(){return chatLs(chatK("org"));}
-function chatQui(){if(me&&me.name)return {n:me.name,r:"c"};var n=chatLs(chatK("nom"));if(n)return {n:n,r:"r"};if(chatOrgCle())return {n:"Organisateur",r:"c"};return null;}
+function prenomTirage(v){var k="cdc_prenom_"+(DATA.journeeId||DATA.date||"");try{if(v===undefined)return localStorage.getItem(k)||"";if(v)localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}return "";}
+function nomPublic(){if(!me)return "";if(me.num){var pr=prenomTirage();return me.name+(pr?" · "+pr:"");}return me.name||"";}
+function chatPrenom(){var i=$("chatPrenom");var v=i?String(i.value||"").trim().slice(0,24):"";prenomTirage(v);chatRendre();}
+function chatQui(){if(me&&me.name)return {n:nomPublic(),r:"c"};var n=chatLs(chatK("nom"));if(n)return {n:n,r:"r"};if(chatOrgCle())return {n:"Organisateur",r:"c"};return null;}
 function chatOuvert(){var sh=$("sheet-chat");return !!(sh&&sh.classList.contains("open"));}
 function chatErr(m){var e=$("chatErr");if(e)e.textContent=m||"";}
 function chatAuto(ta){ta.style.height="44px";ta.style.height=Math.min(120,Math.max(44,ta.scrollHeight+2))+"px";}
@@ -4116,6 +4228,7 @@ function chatRendre(){
   if(!CHAT.init&&CHAT.etat!=="reseau"){info.innerHTML="<p class='chatnote'>Chargement des messages…</p>";list.style.display="none";form.style.display="none";return;}
   var hi="";
   if(CHAT.orga)hi+="<div class='chatorga'>👑 <b>Mode organisateur</b> — touche un message pour le supprimer ou retirer la personne du chat.</div>";
+  if(me&&me.num&&!prenomTirage())hi+="<p class='chatnote'>Ajoute ton prénom pour qu'on te reconnaisse (facultatif) :</p><div class='prenombox'><input id='chatPrenom' maxlength='24' placeholder='Ton prénom'><button onclick='chatPrenom()'>OK</button></div>";
   hi+="<p class='chatnote'>Tu écris en tant que <b>"+aesc(q.n)+"</b>"+((!me&&chatLs(chatK("nom")))?"<button onclick='chatChanger()'>changer</button>":"")+"</p>";
   if(CHAT.etat==="reseau"||CHAT.etat==="reseau-ok")hi+="<p class='chatnote' style='color:#b45309'>⚠ Pas de réseau pour le moment, nouvel essai automatique…</p>";
   info.innerHTML=hi;list.style.display="";form.style.display="";
@@ -4260,7 +4373,9 @@ function maPosition(){
 }
 function selectHunter(i){me=DATA.chasseurs[i];renderHero();try{chatCharger();}catch(e){}var def=(me.posts[0]?me.posts[0].traqueIndex:0);buildTabs(def);$("pick").style.display="none";$("appview").style.display="block";window.scrollTo(0,0);}
 function backToPick(){if(!FB_SENT&&fbHasData()&&!window.confirm("Tu n'as pas envoyé ton retour (balles / mirador). Changer de nom quand même ?"))return;FB_SENT=true;$("appview").style.display="none";$("pick").style.display="flex";window.scrollTo(0,0);}
-function renderPicker(){var box=$("names");box.innerHTML="";if(!DATA.chasseurs.length){box.innerHTML="<p class='empty'>Aucun poste attribué pour le moment.</p>";}DATA.chasseurs.forEach(function(cc,i){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🦌 "+cc.name;b.onclick=function(){selectHunter(i);};box.appendChild(b);});var rb=$("rabnames");if(rb){rb.innerHTML="";(DATA.rabatteurs||[]).forEach(function(nm){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🥁 "+nm;b.onclick=function(){enterRabatteurs();};rb.appendChild(b);});}$("subpick").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var tp=$("talkiePill");if(tp&&DATA.canal){tp.textContent="📻 Canal talkie : "+DATA.canal;tp.style.display="inline-flex";}}
+function renderPicker(){var box=$("names");box.innerHTML="";if(!DATA.chasseurs.length){box.innerHTML="<p class='empty'>Aucun poste attribué pour le moment.</p>";}
+if(DATA.tirage){var sub=document.querySelector(".role-c .rolesub");if(sub)sub.textContent="Choisis le numéro de ton carton pour voir tes postes :";var tl=document.createElement("p");tl.className="tirlab";tl.textContent="Quel numéro as-tu tiré ?";box.appendChild(tl);var gr=document.createElement("div");gr.className="tirgrid";DATA.chasseurs.forEach(function(cc,i){if(!cc.num)return;var b=document.createElement("button");b.className="tirbtn";b.textContent=cc.num;b.onclick=function(){selectHunter(i);};gr.appendChild(b);});box.appendChild(gr);if(DATA.chasseurs.some(function(c){return !c.num;})){var tl2=document.createElement("p");tl2.className="tirlab";tl2.textContent="Placés à la main";box.appendChild(tl2);}}
+DATA.chasseurs.forEach(function(cc,i){if(DATA.tirage&&cc.num)return;var b=document.createElement("button");b.className="namebtn";b.innerHTML="🦌 "+cc.name;b.onclick=function(){selectHunter(i);};box.appendChild(b);});var rb=$("rabnames");if(rb){rb.innerHTML="";(DATA.rabatteurs||[]).forEach(function(nm){var b=document.createElement("button");b.className="namebtn";b.innerHTML="🥁 "+nm;b.onclick=function(){enterRabatteurs();};rb.appendChild(b);});}$("subpick").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var tp=$("talkiePill");if(tp&&DATA.canal){tp.textContent="📻 Canal talkie : "+DATA.canal;tp.style.display="inline-flex";}}
 function enterRabatteurs(){setupRabatteurs();}
 function fillLists(){var so=$("sonneries");DATA.sonneries.forEach(function(s){var li=document.createElement("li");li.innerHTML="<span class='ev'>"+s.evenement+"</span><span>"+s.signal+"</span>";so.appendChild(li);});var co=$("consignes");DATA.consignes.forEach(function(x){var li=document.createElement("li");li.className="rule";li.innerHTML="<span class='p'>•</span><span>"+x+"</span>";co.appendChild(li);});}
 if(DATA.orgName){try{document.title=DATA.orgName;}catch(e){}var pt=$("pickTitle");if(pt)pt.textContent=DATA.orgName;}
@@ -4274,7 +4389,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: (photosAnn && photosAnn[mid]) || m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "", chefId: (journee.chefLignes && journee.chefLignes[mid]) || "" }); }); });
   const chefLignesData = journee.chefLignes || {};
   const chefPostsOf = (hid) => Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid).map((mid) => { let f = null; (terrain.tracks || []).forEach((trk) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) { const pl = journee.placements[trk.id] || {}; const occHid = Object.keys(pl).find((h) => pl[h] === mid); const occ = occHid ? participants.find((x) => x.id === occHid) : null; f = { traqueName: trk.name, label: m.label, hunter: occ ? occ.name : "" }; } }); return f; }).filter(Boolean);
-  const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { id: hid, name: p ? p.name : "Chasseur", posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { id: hid, name: p ? p.name : "Chasseur", num: numDe(hid), posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => triAvecNumeros({ numero: a.num }, { numero: b.num }, () => byNom(a.name || "", b.name || "")));
   const urgenceData = (function () {
     const ids = {};
     Object.keys(chefLignesData).forEach((mid) => { if (chefLignesData[mid]) ids[chefLignesData[mid]] = true; });
@@ -4288,7 +4403,7 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   (terrain.secteurs || []).forEach((s) => { if (s && s.geo && isFinite(s.geo.x1) && (terrain.tracks || []).some((t) => t.secteurId === s.id)) geoSec[s.id] = { x1: s.geo.x1, y1: s.geo.y1, x2: s.geo.x2, y2: s.geo.y2 }; });
   const gpsInfos = (gpsActif && journee.gpsCle && Object.keys(geoSec).length) ? { gps: true, gpsJ: journee.gpsCle, gpsUrl: GPS_URL, geo: geoSec } : { gps: false };
   const chatInfos = (chatActif && journee.gpsCle) ? { chat: true, chatJ: journee.gpsCle, chatUrl: GPS_URL } : { chat: false };
-  const DATA = { ...gpsInfos, ...chatInfos, date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "",
+  const DATA = { ...gpsInfos, ...chatInfos, tirage: tirageActif(journee) && normTirage(journee.tirage).nb > 0, date: journee.date, urgence: urgenceData, canal: journee.canal || "", journeeId: journee.id, userId: userId || "", fnUrl: fnUrl || "", orgName: (orgName || "").trim(), territoire: terrain.name, image: (((terrain.secteurs || [])[0] || {}).image) || "",
     images: (function () {
       // Une carte peut servir a dix traques : on ne l'envoie qu'une fois.
       const utiles = {}; (terrain.tracks || []).forEach((t) => { if (t.secteurId) utiles[t.secteurId] = true; });
@@ -5040,9 +5155,10 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
       if (i >= 0) (poste[hid] = poste[hid] || {})[trk.id] = numeroPoste(trk.miradors[i], i);
     });
   });
-  const tri = (a, b) => (a.nom || nomKey(a.name)).localeCompare(b.nom || nomKey(b.name), "fr", { sensitivity: "base" })
-    || (a.prenom || "").localeCompare(b.prenom || "", "fr", { sensitivity: "base" });
-  const chasseurs = participants.filter((p) => p.role !== "rabatteur" && (present(p) || poste[p.id])).sort(tri);
+  const tri = (a, b) => triAvecNumeros(a, b, (x, y) => (x.nom || nomKey(x.name)).localeCompare(y.nom || nomKey(y.name), "fr", { sensitivity: "base" })
+    || (x.prenom || "").localeCompare(y.prenom || "", "fr", { sensitivity: "base" }));
+  const enTirage = tirageActif(journee) && normTirage(journee.tirage).nb > 0;
+  const chasseurs = participants.filter((p) => p.role !== "rabatteur" && (poste[p.id] || (present(p) && !enTirage))).sort(tri);
   const marcheurs = participants.filter((p) => p.role === "rabatteur" && present(p)).sort(tri);
   const nomDe = (p) => p.nom || (p.prenom ? "" : nomKey(p.name)) || p.name || "";
   const prenomDe = (p) => p.prenom || (p.nom ? "" : (p.name || "").split(/\s+/)[0]) || "";
@@ -5136,6 +5252,23 @@ const LIVRET_CSS = "@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;
   + ".pg .pnum{position:absolute;bottom:1.2cqw;font-size:1.05cqw;color:#a8a29e;white-space:nowrap;max-width:17cqw;overflow:hidden;text-overflow:ellipsis}.pg.g .pnum{right:3.2cqw}.pg.d .pnum{right:2cqw}"
   + ".pg .cdc{position:absolute;left:0;right:0;bottom:1.2cqw;text-align:center;font-size:1.2cqw;color:#a8a29e;letter-spacing:.05em}"
   + ".fin{margin:auto;text-align:center;color:#a8a29e;font-family:Georgia,serif;font-size:2.4cqw}.fin img{display:block;width:9cqw;margin:0 auto 1.4cqw;opacity:.85}";
+// Page de cartons a decouper pour le tirage au sort : juste les numeros, 20 par page.
+function buildCartonsHtml(journee, terrain) {
+  const nb = normTirage(journee.tirage).nb;
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const d = new Date(journee.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  const css = RESUME_CSS + ".grille{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:25.4cqw;border-top:.25cqw dashed #a8a29e;border-left:.25cqw dashed #a8a29e}"
+    + ".c{border-right:.25cqw dashed #a8a29e;border-bottom:.25cqw dashed #a8a29e;display:flex;flex-direction:column;align-items:center;justify-content:center}"
+    + ".c b{font-family:Georgia,serif;font-size:13cqw;line-height:1;color:#1c1917}.c small{font-size:1.5cqw;color:#a8a29e;margin-top:1.2cqw;letter-spacing:.08em;text-transform:uppercase}"
+    + ".tete{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:1.5cqw;font-size:2cqw;color:#57534e}";
+  const pages = [];
+  for (let k = 0; k < nb; k += 20) {
+    const cases = [];
+    for (let n = k + 1; n <= Math.min(nb, k + 20); n++) cases.push("<div class='c'><b>" + n + "</b><small>" + esc(terrain.name) + "</small></div>");
+    pages.push("<section class='page'><div class='tete'><b>Cartons du tirage au sort</b><span>" + esc(d) + " · à découper</span></div><div class='grille'>" + cases.join("") + "</div></section>");
+  }
+  return "<!doctype html><html lang='fr'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Cartons — " + esc(terrain.name) + "</title><style>" + css + "</style></head><body>" + pages.join("") + "<div class='cdc-fixe'>carnetdechasse.fr</div></body></html>";
+}
 function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, opts) {
   opts = opts || {};
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -5173,7 +5306,7 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
     const p1 = "<div class='pg d cv'><div class='dom' style='font-size:" + Math.max(2.4, fDom).toFixed(2) + "cqw'>" + esc(terrain.name) + "</div>"
       + "<div class='date'>" + esc(d) + "</div><div class='filet'></div>"
       + "<div class='img'>" + (imgAccueil ? "<img src='" + imgAccueil + "' alt='' />" : "") + "</div>"
-      + "<div class='qui'><small>Chasseur</small><b style='font-size:" + Math.max(2, fNom).toFixed(2) + "cqw'>" + esc(nomComplet) + "</b></div>"
+      + "<div class='qui'><small>" + (numDe(hid) ? "Carton" : "Chasseur") + "</small><b style='font-size:" + ((numDe(hid) ? 2.2 : 1) * Math.max(2, fNom)).toFixed(2) + "cqw'>" + esc(numDe(hid) ? "n°" + numDe(hid) : nomComplet) + "</b></div>"
       + "<div class='cdc'>carnetdechasse.fr</div></div>";
     // ---- page 2 : postes, plan de chasse, sonneries ----
     // Hauteur du contenu pour une taille de texte donnee (memes regles que la feuille de style),
@@ -5313,6 +5446,125 @@ function TableauSection({ j, terrain, participants, onAddKill, onUpdateKill, onR
 function SecWrap({ bare, children }) {
   if (bare) return <div className="space-y-2">{children}</div>;
   return <SectionCard className="p-3 space-y-2">{children}</SectionCard>;
+}
+
+// ---------- Ecran « Poster les fusils » : placement manuel ou tirage au sort ----------
+const PRIO_COUL = { 1: "bg-emerald-800 text-white", 2: "bg-emerald-300 text-emerald-950", 3: "bg-amber-200 text-amber-900", 4: "bg-stone-200 text-stone-700" };
+function TirageSection({ journee, terrain, participants, presentIds, onMaj, onPlacer, onGenerer, onHasard, onQuitterTirage }) {
+  const t = normTirage(journee.tirage);
+  const tracks = terrain.tracks || [];
+  const [aide, setAide] = useState("");
+  const [hasardOuvert, setHasardOuvert] = useState(false);
+  const [algoManuel, setAlgoManuel] = useState("equi");
+  const [portee, setPortee] = useState("toutes");
+  const [msgHasard, setMsgHasard] = useState("");
+  const [arme, setArme] = useState("");
+  const [nomsOuvert, setNomsOuvert] = useState(false);
+  const presents = participants.filter((p) => presentIds.indexOf(p.id) >= 0 && p.role !== "rabatteur").sort((a, b) => byNom(a.name || "", b.name || ""));
+  const reserves = t.reserves.filter((id) => presents.some((p) => p.id === id));
+  const nbCartons = Math.max(0, presents.length - reserves.length);
+  const verrou = t.actif && t.publie && t.nb > 0;
+  const majT = (patch) => onMaj({ tirage: { ...t, ...patch } });
+  const Q = ({ k }) => (<span role="button" aria-label="Explication" onClick={(e) => { e.stopPropagation(); setAide(aide === k ? "" : k); }} className={`absolute top-2 right-2 w-6 h-6 rounded-full border-2 text-xs font-bold flex items-center justify-center ${aide === k ? "border-emerald-700 text-emerald-800 bg-emerald-50" : "border-stone-400 text-stone-600 bg-white"}`}>?</span>);
+  const Bulle = ({ k, children }) => (aide === k ? (<div className="relative bg-stone-900 text-stone-100 rounded-xl p-3 pr-8 text-[13px] leading-snug"><button onClick={() => setAide("")} className="absolute top-1.5 right-2.5 text-stone-400 text-base">✕</button>{children}</div>) : null);
+  const Carte = ({ on, onClick, titre, sous, k }) => (<button onClick={onClick} className={`relative text-left rounded-xl border-2 p-3 pr-9 ${on ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white"}`}><span className="block text-sm font-semibold text-stone-800">{titre}</span><span className="block text-[11.5px] text-stone-500 mt-0.5 leading-snug">{sous}</span><Q k={k} /></button>);
+  const exEqui = (<><b className="text-emerald-300">Aléatoire équilibré</b> — le hasard décide, mais l'app partage les bons postes sur la journée. Elle se base sur la <b>priorité</b> de vos postes : priorité 1 = meilleur poste, priorité 4 = moins bon. Celui qui a un poste de priorité 1 à une traque aura plutôt un poste de priorité 3 ou 4 aux autres, et inversement.<div className="mt-2 pt-2 border-t border-stone-700 text-stone-300 text-[12.5px]">Exemple : le n°4 a un poste de priorité 1 à la première traque → il aura plutôt des postes de fin de ligne ensuite. Sur la journée, chacun a à peu près la même chance.</div></>);
+  const exComplet = (<><b className="text-emerald-300">Aléatoire complet</b> — chaque traque est tirée séparément, comme si on remettait tous les cartons dans le chapeau à chaque traque. Aucune règle.<div className="mt-2 pt-2 border-t border-stone-700 text-stone-300 text-[12.5px]">Conséquence : une même personne peut avoir trois fois un très bon poste… ou trois fois un moins bon. C'est le hasard pur, simple à expliquer, mais pas forcément juste sur la journée.</div></>);
+  const changerMode = (tirage) => {
+    if (tirage === t.actif) return;
+    if (!tirage && t.nb > 0) { if (arme !== "manuel") { setArme("manuel"); return; } setArme(""); onQuitterTirage(); return; }
+    setArme(""); majT({ actif: tirage });
+  };
+  const posteNum = (trk, n) => { const mid = ((journee.placements || {})[trk.id] || {})[NUM_ID(n)]; const i = (trk.miradors || []).findIndex((m) => m.id === mid); return i >= 0 ? { m: trk.miradors[i], i } : null; };
+  const reservePlace = (trk) => reserves.filter((id) => ((journee.placements || {})[trk.id] || {})[id]).length;
+  const nomsPris = Object.values(t.noms || {});
+  const lancerHasard = () => { const r = onHasard(algoManuel, portee); setMsgHasard(r); };
+  return (<div className="space-y-2.5">
+    <p className="text-[11px] uppercase tracking-wide text-stone-400">Comment placer les chasseurs ?</p>
+    <div className="grid grid-cols-2 gap-2">
+      <Carte on={!t.actif} onClick={() => changerMode(false)} titre="✋ Placement manuel" sous="Avec les noms : vous ou le hasard" k="manuel" />
+      <Carte on={t.actif} onClick={() => changerMode(true)} titre="🎲 Tirage au sort" sous="Cartons tirés le matin, anonyme" k="tirage" />
+    </div>
+    <Bulle k="manuel"><b className="text-emerald-300">Placement manuel</b> — chaque chasseur est placé avec son nom. Vous le placez vous-même sur la carte, traque par traque, ou vous demandez à l'app de les placer au hasard puis vous corrigez. Les livrets et le lien affichent le nom de chacun.<div className="mt-2 pt-2 border-t border-stone-700 text-stone-300 text-[12.5px]">À choisir si vous voulez décider qui va où, ou faire un hasard nominatif que vous pouvez retoucher. Les armes et les besoins (fauteuil, canne) sont respectés.</div></Bulle>
+    <Bulle k="tirage"><b className="text-emerald-300">Tirage au sort</b> — l'app prépare à l'avance un numéro par chasseur présent. Chaque numéro a un poste dans <b>chaque traque</b> de la journée. Le matin, aux consignes, chacun tire un carton dans le chapeau et découvre ses postes.<div className="mt-2 pt-2 border-t border-stone-700 text-stone-300 text-[12.5px]">À choisir quand les chasseurs veulent l'équité : personne ne choisit. Livrets et lien sont anonymes (numéro seulement). Les armes ne sont pas prises en compte : placez à la main ceux qui ont un besoin particulier.</div></Bulle>
+    {arme === "manuel" && (<div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 text-[12.5px] text-amber-900">Repasser en placement manuel retire les {t.nb} numéros des postes. <button onClick={() => changerMode(false)} className="ml-1 font-semibold underline">Confirmer</button> · <button onClick={() => setArme("")} className="underline">Annuler</button></div>)}
+
+    {!t.actif && (<div className="bg-white border border-stone-200 rounded-lg">
+      <button onClick={() => setHasardOuvert(!hasardOuvert)} className="w-full text-left px-3 py-2.5 text-sm font-medium text-stone-800 flex justify-between"><span>🎲 Placer au hasard (avec les noms)</span><span className="text-stone-400">{hasardOuvert ? "▴" : "▾"}</span></button>
+      {hasardOuvert && (<div className="px-3 pb-3 space-y-2.5 border-t border-stone-100 pt-2.5">
+        <div className="grid grid-cols-2 gap-2">
+          <Carte on={algoManuel === "equi"} onClick={() => setAlgoManuel("equi")} titre="⚖️ Équilibré" sous="Bons postes partagés · recommandé" k="equi-m" />
+          <Carte on={algoManuel === "complet"} onClick={() => setAlgoManuel("complet")} titre="🎲 Complet" sous="Pur hasard à chaque traque" k="complet-m" />
+        </div>
+        <Bulle k="equi-m">{exEqui}</Bulle>
+        <Bulle k="complet-m">{exComplet}</Bulle>
+        <label className="block text-[11px] uppercase tracking-wide text-stone-400">Sur quelles traques ?</label>
+        <select value={portee} onChange={(e) => setPortee(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="toutes">Toutes les traques</option>
+          {tracks.map((trk) => <option key={trk.id} value={trk.id}>{trk.name}</option>)}
+        </select>
+        <p className="text-[11.5px] text-stone-500">Les chasseurs déjà placés ne bougent pas : seuls les autres sont placés. Les armes du jour et les besoins (fauteuil, canne) sont respectés. Vous pouvez tout corriger ensuite sur la carte.</p>
+        <button onClick={lancerHasard} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white text-sm font-semibold rounded-lg py-2.5">🎲 Placer les chasseurs restants</button>
+        {msgHasard && <p className="text-[12.5px] text-stone-700 bg-stone-50 border border-stone-200 rounded-lg p-2">{msgHasard}</p>}
+      </div>)}
+    </div>)}
+
+    {t.actif && (<div className="space-y-2.5">
+      <div className="bg-white border border-stone-200 rounded-lg p-3">
+        <p className="text-sm font-semibold text-stone-800">1 · Des chasseurs à placer à la main ?</p>
+        <p className="text-[11.5px] text-stone-500 mb-1.5">Handicap, chef de ligne, personne âgée… Cochez ceux qui ne tirent pas de carton : vous choisirez leurs postes vous-même.</p>
+        {presents.length === 0 && <p className="text-sm text-stone-400 italic">Aucun chasseur noté présent dans « Qui vient ? ».</p>}
+        {presents.map((p) => { const on = reserves.indexOf(p.id) >= 0; return (<label key={p.id} className="flex items-center gap-2.5 py-1.5 text-sm text-stone-800 border-b border-stone-50 last:border-0">
+          <input type="checkbox" checked={on} disabled={verrou} onChange={() => majT({ reserves: on ? t.reserves.filter((x) => x !== p.id) : [...t.reserves, p.id] })} className="w-4 h-4 accent-emerald-700" />
+          <span className="flex-1">{p.name}</span>
+          {p.mobility === "fauteuil" && <span className="text-[11px] bg-sky-100 text-sky-800 rounded px-1.5">♿ fauteuil</span>}
+          {p.mobility === "canne" && <span className="text-[11px] bg-sky-100 text-sky-800 rounded px-1.5">🦯 canne</span>}
+          {on && <span className="text-[11px] font-semibold bg-stone-100 text-stone-600 rounded px-1.5">✋ à la main</span>}
+        </label>); })}
+        {presents.some((p) => (p.mobility === "fauteuil" || p.mobility === "canne") && reserves.indexOf(p.id) < 0) && <p className="text-[12px] text-amber-800 bg-amber-50 rounded p-2 mt-1.5">♿ Un chasseur a un besoin particulier : pensez à le cocher pour le placer sur un poste adapté.</p>}
+        <p className="text-[12.5px] text-stone-700 mt-2"><b>{nbCartons}</b> carton{nbCartons > 1 ? "s" : ""} à tirer{reserves.length ? " · " + reserves.length + " placé" + (reserves.length > 1 ? "s" : "") + " à la main" : ""}</p>
+        {reserves.length > 0 && (<div className="mt-2 space-y-1.5">{tracks.map((trk) => { const n = reservePlace(trk); return (<div key={trk.id} className="flex items-center justify-between gap-2 text-[12.5px]"><span className="text-stone-700">{trk.name} : <b className={n < reserves.length ? "text-amber-700" : "text-emerald-700"}>{n}/{reserves.length}</b> placé{reserves.length > 1 ? "s" : ""}</span><button onClick={() => onPlacer(trk.id)} className="shrink-0 text-xs font-medium bg-emerald-800 text-white px-2.5 py-1 rounded-md">Placer</button></div>); })}</div>)}
+      </div>
+
+      <div className="bg-white border border-stone-200 rounded-lg p-3 space-y-2">
+        <p className="text-sm font-semibold text-stone-800">2 · Règle du tirage</p>
+        <div className="grid grid-cols-2 gap-2">
+          <Carte on={t.algo === "equi"} onClick={() => !verrou && majT({ algo: "equi" })} titre="⚖️ Équilibré" sous="Bons postes partagés · recommandé" k="equi" />
+          <Carte on={t.algo === "complet"} onClick={() => !verrou && majT({ algo: "complet" })} titre="🎲 Complet" sous="Pur hasard à chaque traque" k="complet" />
+        </div>
+        <Bulle k="equi">{exEqui}</Bulle>
+        <Bulle k="complet">{exComplet}</Bulle>
+      </div>
+
+      <div className="bg-white border border-stone-200 rounded-lg p-3 space-y-2">
+        <p className="text-sm font-semibold text-stone-800">3 · Répartition des numéros</p>
+        {reserves.length > 0 && tracks.some((trk) => reservePlace(trk) < reserves.length) && !verrou && <p className="text-[12px] text-amber-800 bg-amber-50 rounded p-2">Placez d'abord les chasseurs « à la main » sur toutes les traques, sinon le tirage peut prendre leurs postes.</p>}
+        {!verrou && <button onClick={onGenerer} disabled={!nbCartons} className="w-full bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-white text-sm font-semibold rounded-lg py-2.5">{t.nb ? "🔄 Relancer la répartition" : "🎲 Préparer la répartition"} ({nbCartons} carton{nbCartons > 1 ? "s" : ""})</button>}
+        {t.nb > 0 && t.nb !== nbCartons && !verrou && <p className="text-[12px] text-amber-800">La liste des présents a changé ({t.nb} numéros préparés, {nbCartons} attendus) : relancez la répartition.</p>}
+        {t.nb > 0 && (<div className="overflow-x-auto"><table className="w-full text-[12.5px]"><thead><tr className="text-[11px] text-stone-400"><th className="text-left py-1 pr-1"></th>{tracks.map((trk) => <th key={trk.id} className="text-left py-1 px-1 font-medium">{trk.name}</th>)}<th className="text-right py-1 pl-1 font-medium">Total</th></tr></thead>
+          <tbody>{Array.from({ length: t.nb }, (_, k) => k + 1).map((n) => { let tot = 0; return (<tr key={n} className="border-t border-stone-100"><td className="py-1 pr-1 font-serif font-bold text-[15px]">n°{n}</td>{tracks.map((trk) => { const x = posteNum(trk, n); if (x) tot += Number(x.m.priority) || 1; return (<td key={trk.id} className="py-1 px-1">{x ? <span className={`inline-block min-w-[40px] text-center rounded px-1.5 py-0.5 font-semibold ${PRIO_COUL[Number(x.m.priority) || 1] || PRIO_COUL[4]}`}>{x.m.label || numeroPoste(x.m, x.i)}</span> : <span className="text-red-600">—</span>}</td>); })}<td className="py-1 pl-1 text-right text-stone-400">{tot}</td></tr>); })}</tbody></table>
+          <p className="text-[11px] text-stone-500 mt-1.5">Couleur = priorité du poste (vert foncé = 1). Total = somme des priorités sur la journée : plus les totaux sont proches, plus c'est équitable.</p></div>)}
+        {t.manques.length > 0 && <p className="text-[12px] text-red-700 bg-red-50 rounded p-2">⚠ Pas assez de postes libres : {t.manques.length} place{t.manques.length > 1 ? "s" : ""} manquante{t.manques.length > 1 ? "s" : ""} ({Array.from(new Set(t.manques.map((x) => (tracks.find((trk) => trk.id === x.trackId) || {}).name))).join(", ")}).</p>}
+        {verrou ? (<div className="text-[12.5px] text-stone-700 bg-stone-50 border border-stone-200 rounded-lg p-2.5">🔒 <b>Répartition bloquée</b> : le lien a été envoyé aux chasseurs. Les livrets imprimés et le lien restent justes.
+          <div className="mt-1.5">{arme === "deverrou" ? <><button onClick={() => { setArme(""); majT({ publie: false }); }} className="font-semibold text-red-700 underline">Confirmer le déblocage</button> <span className="text-stone-500">— il faudra réimprimer les livrets et mettre à jour le lien.</span></> : <button onClick={() => setArme("deverrou")} className="underline text-stone-600">Débloquer…</button>}</div></div>)
+          : (t.nb > 0 && <p className="text-[11.5px] text-stone-500">🔓 Vous pouvez relancer autant que vous voulez. La répartition se bloquera dès que le lien sera envoyé aux chasseurs.</p>)}
+      </div>
+
+      {t.nb > 0 && (<div className="bg-white border border-stone-200 rounded-lg">
+        <button onClick={() => setNomsOuvert(!nomsOuvert)} className="w-full text-left px-3 py-2.5 text-sm font-medium text-stone-800 flex justify-between"><span>4 · Après le tirage : qui a tiré quel numéro ? <span className="text-stone-400 font-normal">(facultatif)</span></span><span className="text-stone-400">{nomsOuvert ? "▴" : "▾"}</span></button>
+        {nomsOuvert && (<div className="px-3 pb-3 border-t border-stone-100 pt-2 space-y-1.5">
+          <p className="text-[11.5px] text-stone-500">Si vous le notez, la feuille des postes et le résumé affichent aussi les noms. Les livrets et le lien restent anonymes.</p>
+          {Array.from({ length: t.nb }, (_, k) => k + 1).map((n) => (<div key={n} className="flex items-center gap-2"><span className="w-11 font-serif font-bold">n°{n}</span>
+            <select value={t.noms[n] || ""} onChange={(e) => { const noms = { ...t.noms }; if (e.target.value) noms[n] = e.target.value; else delete noms[n]; majT({ noms }); }} className="flex-1 border border-stone-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+              <option value="">— pas noté —</option>
+              {presents.filter((p) => reserves.indexOf(p.id) < 0 && (t.noms[n] === p.id || nomsPris.indexOf(p.id) < 0)).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select></div>))}
+          <label className="block text-[11px] uppercase tracking-wide text-stone-400 pt-1.5">Précisions (texte libre)</label>
+          <textarea value={t.note} onChange={(e) => majT({ note: e.target.value })} rows={3} placeholder="Échanges de cartons, remarques sur le tirage…" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+        </div>)}
+      </div>)}
+    </div>)}
+  </div>);
 }
 function ChefsSection({ journee, terrain, participants, journees, onSet, onToggleChef, onSetChefLigne, onAssignPosts, bare }) {
   const [open, setOpen] = useState(false);
@@ -5709,7 +5961,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
           if (!chatOk) chatErr = (dc && dc.reason === "pris") ? "Le chat de cette journée est déjà lié à une autre clé." : "Le Worker n'a pas pu ouvrir le chat.";
         } catch (e) { chatErr = "Worker GPS introuvable : le chat n'apparaîtra pas sur la page."; }
       }
-      const html = generateSharedHtml(journee, terrain, participants, safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId, photosAnn, !!github.gpsActif, chatOk);
+      const html = generateSharedHtml(journee, terrain, participantsDuJour(participants, journee, false), safety, github.fnUrl || DEFAULT_FACTEUR, github.orgName, userId, photosAnn, !!github.gpsActif, chatOk);
       const token = "PUBTS-" + Date.now();
       const stamped = html + "\n<!--" + token + "-->";
       const fn = (github.fnUrl || DEFAULT_FACTEUR).replace(/\/+$/, "");
@@ -5723,6 +5975,8 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
       let rep = null; try { rep = await rp.json(); } catch (e) {}
       const slugReel = (rep && rep.slug) ? String(rep.slug) : slugJournee(journee);
       if (slugReel !== journee.pubSlug) majJournee(journee.id, { pubSlug: slugReel });
+      // Tirage au sort : une fois le lien envoye, la repartition ne bouge plus (livrets et lien restent justes).
+      if (tirageActif(journee) && normTirage(journee.tirage).nb > 0 && !normTirage(journee.tirage).publie) majJournee(journee.id, { tirage: { ...normTirage(journee.tirage), publie: true } });
       setPub({ status: "live", url: "https://poste.carnetdechasse.fr/b/" + slugReel + "/", chatErr });
     } catch (e) { setPub({ status: "error", msg: (e && e.message) || String(e) }); }
   };
@@ -5736,7 +5990,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     if (!terr) return [];
     const ids = {};
     (terr.tracks || []).forEach((trk) => Object.keys((j.placements || {})[trk.id] || {}).forEach((hid) => { ids[hid] = true; }));
-    return participants.filter((p) => ids[p.id]).sort((a, b) => (a.nom || nomKey(a.name)).localeCompare(b.nom || nomKey(b.name), "fr", { sensitivity: "base" }) || (a.prenom || "").localeCompare(b.prenom || "", "fr", { sensitivity: "base" }));
+    return participantsDuJour(participants, j, false).filter((p) => ids[p.id]).sort((a, b) => triAvecNumeros(a, b, (x, y) => (x.nom || nomKey(x.name)).localeCompare(y.nom || nomKey(y.name), "fr", { sensitivity: "base" }) || (x.prenom || "").localeCompare(y.prenom || "", "fr", { sensitivity: "base" })));
   };
   const ouvrirLivrets = (j) => {
     const terr = terrains.find((t) => t.id === j.terrainId);
@@ -5761,7 +6015,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     }
     const logo = await logoDataUrl();
     setLivret(null);
-    setPostesPrint(buildLivretsHtml(j, terr, participants, safety, ids, cartes, { image: terr.imageCouverture || "", logo, retourner: !!livret.retourner, format: livret.format || "a4" }));
+    setPostesPrint(buildLivretsHtml(j, terr, participantsDuJour(participants, j, false), safety, ids, cartes, { image: terr.imageCouverture || "", logo, retourner: !!livret.retourner, format: livret.format || "a4" }));
   };
   // Resume de la journee : un tableau general puis toutes les cartes sur une page.
   const printResume = async (journee) => {
@@ -5772,7 +6026,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
       const im = imageDe(terrain, trk);
       if (im) { try { cartes[trk.id] = await carteResumeImpression(im, trk); } catch (e) {} }
     }
-    setPostesPrint(buildResumeHtml(journee, terrain, participants, cartes));
+    setPostesPrint(buildResumeHtml(journee, terrain, participantsDuJour(participants, journee, true), cartes));
   };
   const printPostes = async (journee) => {
     const terrain = terrains.find((t) => t.id === journee.terrainId);
@@ -5783,7 +6037,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
       const im = imageDe(terrain, trk);
       if (im) { try { cartes[trk.id] = await carteTraqueImpression(im, trk); } catch (e) {} }
     }
-    setPostesPrint(buildPrintHtml(journee, terrain, participants, safety, cartes));
+    setPostesPrint(buildPrintHtml(journee, terrain, participantsDuJour(participants, journee, true), safety, cartes));
   };
   const addJournee = () => { const id = `j-${Date.now()}`; setJournees((prev) => [...prev, normJournee({ id, pubV: 2, date: new Date().toISOString().slice(0, 10), terrainId: terrains[0]?.id || null })]); setOpenJournee(id); };
   // Archiver ne perd rien : la journee disparait seulement de la liste. Elle continue de
@@ -5849,6 +6103,52 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     place(pending.filter((h) => h.mobility !== "fauteuil" && h.mobility !== "canne"), () => true);
     setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...(j.placements || {}), [track.id]: cur } })));
   };
+  // Tirage au sort : prepare la repartition des numeros sur toutes les traques.
+  const presentsDe = (j) => participants.filter((p) => ((j.presence || {})[p.id] || {}).statut === "present" && p.role !== "rabatteur").map((p) => p.id);
+  const genererTirage = (jid) => {
+    const j = journees.find((x) => x.id === jid); if (!j) return;
+    const terrain = terrains.find((x) => x.id === j.terrainId); if (!terrain) return;
+    const t = normTirage(j.tirage); if (t.publie) return;
+    const presents = presentsDe(j);
+    const reserves = t.reserves.filter((id) => presents.indexOf(id) >= 0);
+    const nb = Math.max(0, presents.length - reserves.length);
+    const placements = {};
+    const trs = (terrain.tracks || []).map((trk) => {
+      const cur = {}; Object.entries((j.placements || {})[trk.id] || {}).forEach(([hid, mid]) => { if (reserves.indexOf(hid) >= 0) cur[hid] = mid; });
+      placements[trk.id] = cur;
+      const pris = {}; Object.values(cur).forEach((mid) => { pris[mid] = true; });
+      return { id: trk.id, postes: trk.miradors || [], pris, deja: {} };
+    });
+    const personnes = Array.from({ length: nb }, (_, k) => ({ id: NUM_ID(k + 1) }));
+    const r = meilleureRepartition(personnes, trs, t.algo, false, {});
+    Object.keys(r.placements).forEach((tid) => { Object.assign(placements[tid], r.placements[tid]); });
+    majJournee(jid, { placements, tirage: { ...t, actif: true, nb, reserves, noms: {}, manques: r.manques } });
+  };
+  // Retour au placement manuel : les numeros quittent les postes.
+  const quitterTirage = (jid) => {
+    const j = journees.find((x) => x.id === jid); if (!j) return;
+    const placements = {}; Object.entries(j.placements || {}).forEach(([tid, pl]) => { const cur = {}; Object.entries(pl || {}).forEach(([hid, mid]) => { if (!numDe(hid)) cur[hid] = mid; }); placements[tid] = cur; });
+    majJournee(jid, { placements, tirage: { ...normTirage(j.tirage), actif: false, nb: 0, noms: {}, manques: [], publie: false } });
+  };
+  // Placement manuel au hasard (avec les noms) : seuls les chasseurs pas encore places bougent.
+  const placerAuHasard = (jid, algo, portee) => {
+    const j = journees.find((x) => x.id === jid); if (!j) return "";
+    const terrain = terrains.find((x) => x.id === j.terrainId); if (!terrain) return "";
+    const ids = presentsDe(j);
+    if (!ids.length) return "Aucun chasseur noté présent dans « Qui vient ? ».";
+    const personnes = ids.map((id) => { const p = participants.find((x) => x.id === id); return { id, arme: ((j.armes || {})[id]) || p.arme || null, mobility: p.mobility || "" }; });
+    const tracks = terrain.tracks || [];
+    const cibles = portee === "toutes" ? tracks : tracks.filter((trk) => trk.id === portee);
+    const histo = {};
+    if (portee !== "toutes") tracks.filter((trk) => trk.id !== portee).forEach((trk) => Object.entries((j.placements || {})[trk.id] || {}).forEach(([hid, mid]) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) (histo[hid] = histo[hid] || []).push(Number(m.priority) || 1); }));
+    const trs = cibles.map((trk) => { const cur = { ...((j.placements || {})[trk.id] || {}) }; const pris = {}; Object.values(cur).forEach((mid) => { pris[mid] = true; }); return { id: trk.id, postes: trk.miradors || [], pris, deja: cur }; });
+    const r = meilleureRepartition(personnes, trs, algo, true, histo);
+    const placements = { ...(j.placements || {}) }; let n = 0;
+    trs.forEach((tr) => { const ajout = r.placements[tr.id] || {}; n += Object.keys(ajout).length; placements[tr.id] = { ...tr.deja, ...ajout }; });
+    majJournee(jid, { placements });
+    if (!n && !r.manques.length) return "Tous les chasseurs présents sont déjà placés.";
+    return "✓ " + n + " placement" + (n > 1 ? "s" : "") + " au hasard." + (r.manques.length ? " ⚠ " + r.manques.length + " placement" + (r.manques.length > 1 ? "s" : "") + " impossible" + (r.manques.length > 1 ? "s" : "") + " (pas de poste libre compatible avec l'arme ou le besoin)." : " Vous pouvez corriger sur la carte.");
+  };
   const clearAll = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...j.placements, [trackId]: {} } })));
   const addArrow = (jid, trackId, a) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [...((j.arrows || {})[trackId] || []), a] } })));
   const clearArrows = (jid, trackId) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, arrows: { ...(j.arrows || {}), [trackId]: [] } })));
@@ -5860,7 +6160,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   const setShot = (jid, trackId, mid, val) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, shots: { ...(j.shots || {}), [trackId]: { ...((j.shots || {})[trackId] || {}), [mid]: val } } })));
   const setMiradorState = (jid, trackId, mid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, miradorStates: { ...(j.miradorStates || {}), [trackId]: { ...((j.miradorStates || {})[trackId] || {}), [mid]: { ...(((j.miradorStates || {})[trackId] || {})[mid] || {}), ...patch } } } })));
 
-  if (chefView) { const journee = journees.find((j) => j.id === chefView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const chef = participants.find((p) => p.id === chefView.chefId); if (!journee || !terrain || !chef) { setChefView(null); return null; } return <ChefAssign terrain={terrain} journee={journee} chefId={chefView.chefId} chefName={chef.name} participants={participants} onToggle={(mid, chefId) => setChefLigne(journee.id, mid, chefId)} onBack={() => setChefView(null)} />; }
+  if (chefView) { const journee = journees.find((j) => j.id === chefView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const chef = participants.find((p) => p.id === chefView.chefId); if (!journee || !terrain || !chef) { setChefView(null); return null; } return <ChefAssign terrain={terrain} journee={journee} chefId={chefView.chefId} chefName={chef.name} participants={participantsDuJour(participants, journee, true)} onToggle={(mid, chefId) => setChefLigne(journee.id, mid, chefId)} onBack={() => setChefView(null)} />; }
   if (pointsView) {
     const journee = journees.find((j) => j.id === pointsView.journeeId);
     const terrain = terrains.find((t) => t.id === journee?.terrainId);
@@ -5874,7 +6174,9 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   }
 
   if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
-    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participants} presentIds={Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present")} journeeArmes={journee.armes || {}} onSetArme={(hid, arme) => setArmeJour(journee.id, hid, arme)} chefs={journee.chefs || []} chefLignes={journee.chefLignes || {}} rdv={(journee.rdv || {})[track.id] || {}} onSetRdv={(cid, pos) => setRdv(journee.id, track.id, cid, pos)} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
+    const tirP = normTirage(journee.tirage);
+    const presentsP = Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present");
+    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participantsDuJour(participants, journee, true)} presentIds={tirP.actif ? tirP.reserves.filter((id) => presentsP.indexOf(id) >= 0).concat(Array.from({ length: tirP.nb }, (_, k) => NUM_ID(k + 1))) : presentsP} journeeArmes={journee.armes || {}} onSetArme={(hid, arme) => setArmeJour(journee.id, hid, arme)} chefs={journee.chefs || []} chefLignes={journee.chefLignes || {}} rdv={(journee.rdv || {})[track.id] || {}} onSetRdv={(cid, pos) => setRdv(journee.id, track.id, cid, pos)} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
   if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
     return <EnvoiChasseurs journee={journee} terrain={terrain} participants={participants} safety={safety} onBack={() => setShareView(null)} />; }
 
@@ -5978,6 +6280,8 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
 
                 <StepTile id="postes" num={4} icon={<MiradorIcon size={27} />} title="Poster les fusils" sub={terrain ? (totalPostes ? totalPlaces + "/" + totalPostes + " postes attribués" : "aucun poste sur ce territoire") : "choisis un territoire"} state={stPostes} open={step} onToggle={setStep} />
                 <StepPanel id="postes" open={step}>
+                  {terrain && tracks.length > 0 && <div className="mb-3"><TirageSection journee={j} terrain={terrain} participants={participants} presentIds={presentsIds} onMaj={(patch) => majJournee(j.id, patch)} onPlacer={(tid) => setPosterView({ journeeId: j.id, trackId: tid })} onGenerer={() => genererTirage(j.id)} onHasard={(algo, portee) => placerAuHasard(j.id, algo, portee)} onQuitterTirage={() => quitterTirage(j.id)} /></div>}
+                  {terrain && tracks.length > 0 && <p className="text-[11px] uppercase tracking-wide text-stone-400 mb-1.5">{tirageActif(j) ? "Les traques (vérifier, placer les « à la main »)" : "Les traques"}</p>}
                   {terrain ? (tracks.length ? (<div className="space-y-2">
                     {tracks.map((trk) => { const placed = Object.keys(j.placements[trk.id] || {}).length; const tot = (trk.miradors || []).length; const vide = placed === 0;
                       return (<div key={trk.id} className={`flex items-center justify-between gap-2 bg-white border rounded-lg px-3 py-2.5 ${vide ? "border-amber-300" : "border-stone-200"}`}>
@@ -6019,8 +6323,12 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                       <span className="block text-sm font-semibold text-stone-800">Résumé de la journée</span>
                       <span className="block text-xs text-stone-500 mt-0.5">Tableau de tout le monde, puis toutes les cartes</span>
                     </button>
+                    {tirageActif(j) && normTirage(j.tirage).nb > 0 && <button onClick={() => { setChoixPrint(null); const terr = terrains.find((t) => t.id === j.terrainId); if (terr) setPostesPrint(buildCartonsHtml(j, terr)); }} className="col-span-2 text-left bg-white border-2 border-amber-600 rounded-lg px-3 py-2">
+                      <span className="block text-sm font-semibold text-stone-800">🎟 Cartons du tirage au sort</span>
+                      <span className="block text-xs text-stone-500 mt-0.5">{normTirage(j.tirage).nb} numéros à découper pour le chapeau</span>
+                    </button>}
                     <button onClick={() => { setChoixPrint(null); ouvrirLivrets(j); }} className="col-span-2 text-left bg-white border-2 border-emerald-700 rounded-lg px-3 py-2">
-                      <span className="block text-sm font-semibold text-stone-800">📖 Livret par chasseur</span>
+                      <span className="block text-sm font-semibold text-stone-800">📖 Livret par {tirageActif(j) ? "numéro" : "chasseur"}</span>
                       <span className="block text-xs text-stone-500 mt-0.5">A4 paysage recto-verso, plié en deux : accueil, ses postes, plan de chasse, annonces et ses cartes</span>
                     </button>
                   </div>}
