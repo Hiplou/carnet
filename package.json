@@ -1,0 +1,12 @@
+{
+  "name": "carnet-de-chasse",
+  "private": true,
+  "type": "module",
+  "description": "Assemblage de l'app Carnet de Chasse (carnetdechasse.fr)",
+  "scripts": {
+    "assembler": "node outils/assembler.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
