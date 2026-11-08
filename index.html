@@ -197,7 +197,7 @@ function Grip({ size = 16, className = "" }) {
     React.createElement("circle", { cx: 9, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 9, cy: 19, r: 1.4 }),
     React.createElement("circle", { cx: 15, cy: 5, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 12, r: 1.4 }), React.createElement("circle", { cx: 15, cy: 19, r: 1.4 }));
 }
-function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, armes: j.armes || {}, rdv: j.rdv || {}, canal: j.canal || "", deposesJourParTraque: (j.deposesJourParTraque && typeof j.deposesJourParTraque === "object") ? j.deposesJourParTraque : {}, voitures: (j.voitures && !Array.isArray(j.voitures) && typeof j.voitures === "object") ? j.voitures : {}, transport: (j.transport && typeof j.transport === "object") ? j.transport : {} }; }
+function normJournee(j) { return { ...j, placements: j.placements || {}, presence: j.presence || {}, invites: Array.isArray(j.invites) ? j.invites : [], shots: j.shots || {}, miradorStates: j.miradorStates || {}, arrows: j.arrows || {}, tableau: Array.isArray(j.tableau) ? j.tableau : [], attributions: j.attributions || {}, chefs: Array.isArray(j.chefs) ? j.chefs : [], chefLignes: j.chefLignes || {}, armes: j.armes || {}, rdv: j.rdv || {}, canal: j.canal || "", deposesJourParTraque: (j.deposesJourParTraque && typeof j.deposesJourParTraque === "object") ? j.deposesJourParTraque : {}, voitures: (j.voitures && !Array.isArray(j.voitures) && typeof j.voitures === "object") ? j.voitures : {}, transport: (j.transport && typeof j.transport === "object") ? j.transport : {}, rabat: normRabat(j.rabat), rabatRegle: normRabatRegle(j.rabatRegle) }; }
 function normTirZone(z) { z = z || {}; return { dir: ((Number(z.dir) || 0) % 360 + 360) % 360, width: Math.max(10, Math.min(360, Number(z.width) || 60)) }; }
 function normMirador(m) { const tz = (m.tir && Array.isArray(m.tir.zones)) ? m.tir.zones.map(normTirZone) : ((m.tir && m.tir.no && m.tir.no.on) ? [normTirZone(m.tir.no)] : []); return { id: m.id, label: m.label || "Poste", gx: m.gx ?? m.x ?? 50, gy: m.gy ?? m.y ?? 50, photos: m.photos || [], photoNotes: normPhotoNotes(m.photoNotes), consignes: m.consignes || "", priority: Number(m.priority) || 1, accFauteuil: !!m.accFauteuil, accCanne: !!m.accCanne, useCommon: !!m.useCommon, deposeHab: m.deposeHab || "", armes: (Array.isArray(m.armes) ? m.armes : (m.arme && m.arme !== "indifferent" ? [m.arme] : [])).filter((k) => ARMES.some((x) => x.key === k)), tir: { zones: tz } }; }
 const nettoiePts = (l) => Array.isArray(l) ? l.filter((d) => d && isFinite(d.gx) && isFinite(d.gy)).slice(0, 40).map((d) => ({ id: String(d.id || ""), nom: String(d.nom || "").slice(0, 40), gx: Number(d.gx), gy: Number(d.gy) })) : [];
@@ -313,6 +313,36 @@ function normTirage(t) {
   return { actif: !!t.actif, algo: t.algo === "complet" ? "complet" : "equi", reserves: Array.isArray(t.reserves) ? t.reserves : [], nb: Math.max(0, parseInt(t.nb, 10) || 0), noms: (t.noms && typeof t.noms === "object") ? t.noms : {}, note: String(t.note || ""), publie: !!t.publie, manques: Array.isArray(t.manques) ? t.manques : [] };
 }
 function tirageActif(j) { const t = j && j.tirage; return !!(t && t.actif); }
+
+// ---------- Fusils au rabat ----------
+// Dans certaines chasses, des fusils rabattent dans certaines traques au lieu d'etre postes.
+// journee.rabat = { trackId: { chasseurId: true } } ; un fusil au rabat n'a pas de poste dans cette traque.
+// journee.rabatRegle = { regle: "nombre" | "alterne", nb: { trackId: n }, jamais: [ids], arme: "" | "avec" | "sans" }
+function normRabat(r) {
+  const o = {};
+  if (r && typeof r === "object") Object.keys(r).forEach((tid) => { const t = r[tid]; if (!t || typeof t !== "object") return; const m = {}; Object.keys(t).forEach((hid) => { if (t[hid]) m[hid] = true; }); o[tid] = m; });
+  return o;
+}
+function normRabatRegle(r) {
+  r = r || {};
+  const nb = {}; if (r.nb && typeof r.nb === "object") Object.keys(r.nb).forEach((tid) => { nb[tid] = Math.max(0, parseInt(r.nb[tid], 10) || 0); });
+  return { regle: r.regle === "alterne" ? "alterne" : "nombre", nb, jamais: Array.isArray(r.jamais) ? r.jamais.filter((x) => typeof x === "string") : [], arme: r.arme === "avec" || r.arme === "sans" ? r.arme : "" };
+}
+// Repartition au rabat, a tour de role : personne ne rabat deux fois avant que tous aient rabattu une fois.
+function calculerRabat(ids, trackIds, regle, nb) {
+  const melange = (arr) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
+  const res = {}; trackIds.forEach((tid) => { res[tid] = {}; });
+  if (regle === "alterne") {
+    melange(ids).forEach((id, i) => trackIds.forEach((tid, k) => { if (i % 2 === k % 2) res[tid][id] = true; }));
+    return res;
+  }
+  const cpt = {}; ids.forEach((id) => { cpt[id] = 0; });
+  trackIds.forEach((tid) => {
+    const n = Math.min(Math.max(0, parseInt((nb || {})[tid], 10) || 0), ids.length);
+    melange(ids).sort((a, b) => cpt[a] - cpt[b]).slice(0, n).forEach((id) => { res[tid][id] = true; cpt[id]++; });
+  });
+  return res;
+}
 // Liste des participants + les numeros du tirage. avecNoms : ajoute le nom note apres le tirage (impressions de l'organisateur).
 function participantsDuJour(participants, j, avecNoms) {
   const t = normTirage(j && j.tirage);
@@ -349,7 +379,7 @@ function repartirAuHasard(personnes, traques, algo, armes, histo) {
   const placements = {}, manques = [];
   traques.forEach((t) => {
     const res = {}; const pris = { ...(t.pris || {}) };
-    const aPlacer = personnes.filter((p) => !(t.deja || {})[p.id]);
+    const aPlacer = personnes.filter((p) => !(t.deja || {})[p.id] && !(t.exclus || {})[p.id]);
     // Postes libres, du meilleur au moins bon (hasard entre postes de meme priorite).
     const libres = melange((t.postes || []).filter((m) => !pris[m.id])).sort((a, b) => prio(a) - prio(b));
     let reserve = libres.slice(0, aPlacer.length);   // on n'utilise que les N meilleurs postes
@@ -475,7 +505,7 @@ const FAMILLES = [
   { groupe: "Gibier d'eau", key: "f_oie", label: "Oie cendrée", emoji: "🦆", sous: ["oie"] }
 ];
 function especeOf(k) { return ESPECES.find((e) => e.key === k) || { key: k, label: k, emoji: "🐾" }; }
-const APP_VERSION = "v4.36";
+const APP_VERSION = "v4.37";
 const PLAN_KEYS = ESPECES.filter((e) => e.key !== "autre").map((e) => e.key);
 function normPlan(pc) { pc = pc || {}; const out = {}; PLAN_KEYS.forEach((k) => { const d = pc[k] || {}; const defEnabled = (k === "chevreuil" || k === "sanglier" || k === "renard"); out[k] = { enabled: pc[k] ? !!d.enabled : defEnabled, mode: d.mode || (k === "chevreuil" ? "bracelets" : "proportionnel"), target: Number(d.target) || 0 }; }); return out; }
 function especeLabel(e) { if (e.espece === "autre") return e.especeLabel || "Autre"; const f = ESPECES.find((x) => x.key === e.espece); return f ? f.label : e.espece; }
@@ -2926,7 +2956,7 @@ function SafetyGate({ safety, onAccept }) {
 }
 
 // ---------- Poster les fusils ----------
-function HunterList({ pending, selectedHunter, setSelectedHunter, armeOf, onSetArme }) {
+function HunterList({ pending, selectedHunter, setSelectedHunter, armeOf, onSetArme, onRabat, onPoste, rabatList, verrouNums }) {
   const [armeEdit, setArmeEdit] = useState(null);
   return (<SectionCard className="p-3 sm:col-span-1"><p className="text-xs uppercase tracking-wide text-stone-400 mb-2">Fusils à placer</p>
     <div className="space-y-1.5">{pending.length === 0 && <p className="text-sm text-stone-400 italic">Tous les fusils sont placés 🎯</p>}
@@ -2934,13 +2964,20 @@ function HunterList({ pending, selectedHunter, setSelectedHunter, armeOf, onSetA
         return (<div key={p.id}>
           <div className={`w-full rounded border flex items-center gap-1 ${selectedHunter === p.id ? "bg-amber-800 border-amber-800" : "bg-white border-stone-300"}`}>
             <button onClick={() => setSelectedHunter(p.id)} className={`flex-1 text-left px-2.5 py-1.5 text-sm ${selectedHunter === p.id ? "text-stone-50" : "text-stone-700"}`}>🦌 {p.name}</button>
+            {onRabat && !(verrouNums && numDe(p.id)) && <button onClick={() => onRabat(p.id)} title="Ce fusil rabat dans cette traque" aria-label="Mettre au rabat" className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold border ${selectedHunter === p.id ? "bg-white/20 text-stone-50 border-white/40" : "bg-orange-50 text-orange-700 border-orange-300"}`}>Rabat</button>}
             <button onClick={() => setArmeEdit(isEdit ? null : p.id)} title="Arme du jour" className={`shrink-0 mr-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${a ? (selectedHunter === p.id ? "bg-white/20 text-stone-50 border-white/40" : "bg-stone-100 text-stone-600 border-stone-300") : (selectedHunter === p.id ? "bg-white/10 text-stone-200 border-white/30" : "bg-white text-stone-400 border-stone-200")}`}>{a ? armeShort(a) : "—"}</button>
           </div>
           {isEdit && onSetArme && (<div className="flex gap-1 mt-1 mb-1.5 flex-wrap">
             {[{ v: null, l: "—" }].concat(ARMES.map((x) => ({ v: x.key, l: x.label }))).map((o) => (<button key={o.l} onClick={() => { onSetArme(p.id, o.v); setArmeEdit(null); }} className={`px-2 py-1 rounded text-[11px] font-medium border flex items-center gap-1 ${a === o.v ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-stone-600 border-stone-300"}`}>{o.v && <ArmeIcon k={o.v} size={12} color={a === o.v ? "#fff" : "#166534"} />}{o.l}</button>))}
           </div>)}
         </div>); })}</div>
-    {selectedHunter && <p className="text-xs text-amber-800 mt-2">Clique un poste pour l'y placer.</p>}</SectionCard>);
+    {selectedHunter && <p className="text-xs text-amber-800 mt-2">Clique un poste pour l'y placer.</p>}
+    {rabatList && rabatList.length > 0 && (<div className="mt-3"><p className="text-xs uppercase tracking-wide text-orange-700 mb-1.5">🟠 Au rabat dans cette traque</p>
+      <div className="space-y-1.5">{rabatList.map((p) => (<div key={p.id} className="rounded border border-orange-300 bg-orange-50 flex items-center gap-1">
+        <span className="flex-1 px-2.5 py-1.5 text-sm text-orange-900">{p.name}</span>
+        {onPoste && !(verrouNums && numDe(p.id)) && <button onClick={() => onPoste(p.id)} className="shrink-0 mr-1 px-2 py-1 rounded text-[11px] font-semibold border border-stone-300 bg-white text-stone-700">Remettre au poste</button>}
+      </div>))}</div></div>)}
+    </SectionCard>);
 }
 const ARROW_COLORS = ["#2563eb", "#dc2626", "#ea580c", "#7c3aed", "#059669", "#111827", "#f59e0b"];
 function ChefAssign({ terrain, journee, chefId, chefName, participants, onToggle, onBack }) {
@@ -3358,7 +3395,7 @@ function PointsView({ terrain, journee, onAjouter, onRenommer, onSupprimer, onDe
   </div>);
 }
 
-function PosterFusils({ terrain, track, placements, participants, presentIds, journeeArmes, onSetArme, chefs, chefLignes, rdv, onSetRdv, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
+function PosterFusils({ rabatIds, onRabat, onPoste, verrouNums, terrain, track, placements, participants, presentIds, journeeArmes, onSetArme, chefs, chefLignes, rdv, onSetRdv, onBack, onAssign, onUnassign, onAutoFill, onClearAll, arrows, onAddArrow, onClearArrows, onUpdateArrow, onDeleteArrow }) {
   const [selectedHunter, setSelectedHunter] = useState(null);
   const [flagChef, setFlagChef] = useState(null);
   const chefList = (chefs || []).map((cid) => participants.find((p) => p.id === cid)).filter(Boolean);
@@ -3366,7 +3403,9 @@ function PosterFusils({ terrain, track, placements, participants, presentIds, jo
   const armeOfHunter = (h) => ((journeeArmes && journeeArmes[h.id]) || h.arme || null);
   const assignWithCheck = (hid, mid) => { const h = participants.find((x) => x.id === hid); const m = track.miradors.find((x) => x.id === mid); if (h && m && !armeOk(armesList(m), armeOfHunter(h))) { if (!window.confirm("⚠️ " + (h.name || "Ce chasseur") + " est en " + (armeLabel(armeOfHunter(h)) || "arme non renseignée") + " et le poste " + m.label + " accepte : " + armesLabel(armesList(m)) + ".\n\nPlacer quand même ?")) return; } onAssign(hid, mid); };
   const assignedIds = Object.keys(placements);
-  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id)).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const auRabat = rabatIds || [];
+  const pending = participants.filter((p) => (presentIds || []).includes(p.id) && p.role !== "rabatteur" && !assignedIds.includes(p.id) && auRabat.indexOf(p.id) < 0).sort((a, b) => byNom(a.name || "", b.name || ""));
+  const rabatList = participants.filter((p) => (presentIds || []).includes(p.id) && auRabat.indexOf(p.id) >= 0).sort((a, b) => byNom(a.name || "", b.name || ""));
   const freeMiradors = track.miradors.filter((m) => !Object.values(placements).includes(m.id));
   const sortedFree = [...freeMiradors].sort((a, b) => (a.priority || 1) - (b.priority || 1) || a.label.localeCompare(b.label));
   // Surbrillance par PALIER de priorité : toute la priorité 1, puis 2, etc. jusqu'à couvrir le nb de chasseurs
@@ -3377,7 +3416,7 @@ function PosterFusils({ terrain, track, placements, participants, presentIds, jo
   const hasPlacements = Object.keys(placements).length > 0;
   return (<div className="space-y-3"><button onClick={onBack} className="flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={14} /> Retour à la journée</button>
     <h3 className="font-serif text-lg text-stone-800">Poster les fusils — {track.name}</h3>
-    <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} armeOf={armeOfHunter} onSetArme={onSetArme} />
+    <div className="grid sm:grid-cols-3 gap-3"><HunterList pending={pending} selectedHunter={selectedHunter} setSelectedHunter={setSelectedHunter} armeOf={armeOfHunter} onSetArme={onSetArme} onRabat={onRabat ? (hid) => { if (selectedHunter === hid) setSelectedHunter(null); onRabat(hid); } : null} onPoste={onPoste} rabatList={rabatList} verrouNums={verrouNums} />
       <SectionCard className="p-3 sm:col-span-2">
         <div className="flex items-center justify-between mb-2 gap-2 flex-wrap"><p className="text-xs uppercase tracking-wide text-stone-400">Le chiffre = priorité · liseré vert = à utiliser</p><div className="flex gap-1.5">{pending.length > 0 && freeMiradors.length > 0 && <button onClick={() => onAutoFill(track, pending, sortedFree)} className="text-xs font-medium bg-emerald-700 text-stone-50 px-2.5 py-1 rounded">Remplir par priorité</button>}{hasPlacements && <button onClick={() => onClearAll(track)} className="text-xs font-medium bg-stone-200 hover:bg-stone-300 text-stone-700 px-2.5 py-1 rounded">Décocher tous</button>}</div></div>
         {chefList.length > 0 && (<div className="mb-2 bg-amber-50 border border-amber-200 rounded-md p-2">
@@ -3661,11 +3700,12 @@ function $(id){return document.getElementById(id);}
 function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s;}
 function fmtDate(d){try{return cap(new Date(d).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}));}catch(e){return d;}}
 function myMir(ti){if(!me)return null;for(var k=0;k<me.posts.length;k++){if(me.posts[k].traqueIndex===ti)return me.posts[k].miradorId;}return null;}
+function monRabat(ti){return !!(me&&me.rabats&&me.rabats.indexOf(ti)>=0);}
 var MAP_I=0;
 function renderMap(index){MAP_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("map");map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+imgDe(t)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);function coneDiv(lx,ly,cc,color){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:conic-gradient(from '+(cc.dir-cc.width/2)+'deg, '+color+' 0deg '+cc.width+'deg, transparent '+cc.width+'deg 360deg)';return d;}function bandDiv(lx,ly,start,w){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:repeating-linear-gradient(45deg, rgba(248,113,113,.5) 0 6px, rgba(255,255,255,.9) 6px 12px);-webkit-mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg);mask-image:conic-gradient(from '+start+'deg, #000 0deg '+w+'deg, transparent '+w+'deg 360deg)';return d;}function greenDisk(lx,ly){var d=document.createElement('div');d.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;width:2400px;height:2400px;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;z-index:1;background:rgba(134,239,172,0.28)';return d;}/*__TIRRENDER__*/var myId=myMir(index);if(SHOW_RDV)(function(){var mine=null;for(var q=0;q<(me.posts||[]).length;q++){if(me.posts[q].traqueIndex===index){mine=me.posts[q];break;}}var wanted=(mine&&mine.chefId)||"";if(!wanted&&(me.chefMids||[]).length){var lst0=t.rdv||[];for(var z=0;z<lst0.length;z++){if(me.name&&lst0[z].chefName===me.name){wanted=lst0[z].chefId;break;}}}if(!wanted)return;var list=t.rdv||[];for(var w=0;w<list.length;w++){if(list[w].chefId!==wanted)continue;var r=list[w];var flx=(r.gx-c.x)/c.w*100,fly=(r.gy-c.y)/c.h*100;if(flx<-4||flx>104||fly<-4||fly>104)return;var fd=document.createElement("div");fd.style.cssText="position:absolute;left:"+flx+"%;top:"+fly+"%;transform:translate(-50%,-100%);z-index:5;display:flex;flex-direction:column;align-items:center;pointer-events:none";fd.innerHTML="<span style='background:#b45309;color:#fff;font-size:11px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)'>\uD83D\uDEA9 RDV apr\u00e8s la traque</span><span style='width:2px;height:11px;background:#b45309'></span>";map.appendChild(fd);return;}})();(function(){var dep=t.deposes||[],dpt=t.departs||[],tr=t.transport||{};var utilises={};for(var q in tr){if(tr[q]&&tr[q].departId)utilises[tr[q].departId]=1;}function poser(d,couleur,icone){if(!isFinite(d.gx)||!isFinite(d.gy))return;var lx=(d.gx-c.x)/c.w*100,ly=(d.gy-c.y)/c.h*100;if(lx<-5||lx>105||ly<-5||ly>105)return;var el=document.createElement('div');el.style.cssText='position:absolute;left:'+lx+'%;top:'+ly+'%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;z-index:2';el.innerHTML="<span style='width:13px;height:13px;border-radius:50%;background:"+couleur+";border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)'></span>"+"<span style='font-size:9px;line-height:1.1;background:rgba(255,255,255,.85);color:#1c1917;padding:1px 4px;border-radius:4px;white-space:nowrap'>"+icone+" "+d.nom+"</span>";map.appendChild(el);}if(SHOW_DEPOSE&&typeof me!=='undefined'&&me&&me.id){var moi=me.id,maV=null,vv=t.voitures||[];for(var w=0;w<vv.length;w++){if(vv[w].conducteurId===moi){maV=vv[w];break;}var pz=vv[w].passagers||[];for(var y=0;y<pz.length;y++){if(pz[y].id===moi){maV=vv[w];break;}}if(maV)break;}var ptDe=function(id){if(!id)return null;for(var i=0;i<dep.length;i++){if(dep[i].id===id)return dep[i];}return null;};var trouve=ptDe((tr[moi]||{}).deposeId)||ptDe(maV&&maV.deposeId);if(trouve)poser(trouve,'#1c1917','\u{1F17F}\u{FE0F}');}if(SHOW_DEPART)for(var j2=0;j2<dpt.length;j2++)poser(dpt[j2],'#166534','\u{1F6A9}');})();(function(){if(!SHOW_ZONE)return;var z=t.zone||[];if(z.length<2)return;var pts=z.map(function(q){return ((q.gx-c.x)/c.w*100)+' '+((q.gy-c.y)/c.h*100);});var d='M '+pts.join(' L ')+((t.zoneFermee&&z.length>=3)?' Z':'');var NSZ='http://www.w3.org/2000/svg';var sv=document.createElementNS(NSZ,'svg');sv.setAttribute('viewBox','0 0 100 100');sv.setAttribute('preserveAspectRatio','none');sv.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1';var col=t.color||'#dc2626';function trait(couleur,ep,op){var pa=document.createElementNS(NSZ,'path');pa.setAttribute('d',d);pa.setAttribute('fill','none');pa.setAttribute('stroke',couleur);pa.setAttribute('stroke-width',ep);pa.setAttribute('stroke-linejoin','round');pa.setAttribute('stroke-linecap','round');pa.setAttribute('opacity',op);pa.setAttribute('vector-effect','non-scaling-stroke');return pa;}sv.appendChild(trait('#ffffff','5','.55'));sv.appendChild(trait(col,'3.5','.85'));map.appendChild(sv);})();if(SHOW_CONES){t.miradors.forEach(function(m){if(m.id!==myId||!m.tir||!m.tir.zones||!m.tir.zones.length)return;var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;map.appendChild(greenDisk(lx,ly));var tr=tirRenderJS(m.tir.zones);tr.bands.forEach(function(b){map.appendChild(bandDiv(lx,ly,b.start,b.width));});tr.reds.forEach(function(r){map.appendChild(coneDiv(lx,ly,{dir:r.start+r.width/2,width:r.width},'rgba(252,165,165,0.55)'));});});}t.miradors.forEach(function(m){var lx=(m.gx-c.x)/c.w*100,ly=(m.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var mine=(m.id===myId);var el=document.createElement("div");el.className="marker"+(mine?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(mine?"★ ":"")+m.label+"</span>";map.appendChild(el);});if(t.arrows&&t.arrows.length){var W=map.offsetWidth||map.clientWidth,H=map.offsetHeight||map.clientHeight;var NS="http://www.w3.org/2000/svg";var svg=document.createElementNS(NS,"svg");svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.style.position="absolute";svg.style.left="0";svg.style.top="0";svg.style.width="100%";svg.style.height="100%";svg.style.pointerEvents="none";var defs=document.createElementNS(NS,"defs");svg.appendChild(defs);t.arrows.forEach(function(a,ai){var col=a.color||"#2563eb";var mkid="ah"+ai;defs.innerHTML+="<marker id='"+mkid+"' markerUnits='userSpaceOnUse' markerWidth='18' markerHeight='18' refX='13' refY='9' orient='auto'><path d='M1,1 L17,9 L1,17 Z' fill='"+col+"' stroke='#fff' stroke-width='1.5' stroke-linejoin='round'/></marker>";var x1=(a.x1-c.x)/c.w*W,y1=(a.y1-c.y)/c.h*H,x2=(a.x2-c.x)/c.w*W,y2=(a.y2-c.y)/c.h*H;function ln(color,w,mk){var l=document.createElementNS(NS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",color);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");if(mk)l.setAttribute("marker-end","url(#"+mkid+")");svg.appendChild(l);}ln("#fff",9,false);ln(col,5,true);});map.appendChild(svg);}(function(){var tr2=t.transport||{},moi=(me&&me.id)||"",dep2=t.deposes||[],maV2=null,vv2=t.voitures||[];for(var w1=0;w1<vv2.length;w1++){if(vv2[w1].conducteurId===moi){maV2=vv2[w1];break;}var pz2=vv2[w1].passagers||[];for(var y1=0;y1<pz2.length;y1++){if(pz2[y1].id===moi){maV2=vv2[w1];break;}}if(maV2)break;}var idDep=((tr2[moi]||{}).deposeId)||(maV2&&maV2.deposeId)||"",okDep=false;for(var i2=0;i2<dep2.length;i2++){if(dep2[i2].id===idDep)okDep=true;}var okDepart=(t.departs||[]).length>0;var mid2=myMir(index),okCone=false;(t.miradors||[]).forEach(function(m){if(m.id===mid2&&m.tir&&m.tir.zones&&m.tir.zones.length)okCone=true;});var okZone=((t.zone||[]).length>=2),okRdv=false;(function(){var mine=null,ps=(me&&me.posts)||[];for(var q2=0;q2<ps.length;q2++){if(ps[q2].traqueIndex===index){mine=ps[q2];break;}}var wanted=(mine&&mine.chefId)||"",lst=t.rdv||[];if(!wanted&&((me&&me.chefMids)||[]).length){for(var z2=0;z2<lst.length;z2++){if(me&&me.name&&lst[z2].chefName===me.name){wanted=lst[z2].chefId;break;}}}if(!wanted)return;for(var w2=0;w2<lst.length;w2++){if(lst[w2].chefId===wanted)okRdv=true;}})();function majCase(id,ok,val){var el=$(id);if(!el)return;el.disabled=!ok;el.checked=!!(ok&&val);var lb=el.parentElement;if(lb)lb.className="conetoggle"+(ok?"":" off");}majCase("deposeToggle",okDep,SHOW_DEPOSE);majCase("departToggle",okDepart,SHOW_DEPART);majCase("coneToggle",okCone,SHOW_CONES);majCase("rdvToggle",okRdv,SHOW_RDV);majCase("zoneToggle",okZone,SHOW_ZONE);})();activerZoom(map);}
 function selectTraque(i){["tabs","mapTabs","postTabs"].forEach(function(id){var c=$(id);if(!c)return;var ks=c.children;for(var k=0;k<ks.length;k++)ks[k].classList.toggle("active",k===i);});renderMap(i);renderPostInfo(i);setHeroFor(i);}
-function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":"");b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
-function setHeroFor(index){if(!me||!me.posts)return;var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:"— pas de poste sur cette traque";}
+function buildTabs(def){["tabs","mapTabs","postTabs"].forEach(function(id){var tabs=$(id);if(!tabs)return;tabs.innerHTML="";DATA.traques.forEach(function(t,i){var b=document.createElement("button");b.className="tab"+(i===def?" active":"");b.textContent=t.name+(myMir(i)?" ★":(monRabat(i)?" 🟠":""));b.onclick=function(){selectTraque(i);};tabs.appendChild(b);});});renderMap(def);renderPostInfo(def);setHeroFor(def);}
+function setHeroFor(index){if(!me||!me.posts)return;var pp=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){pp=me.posts[i];break;}}var mt=$("myTraque"),mp=$("myPost");if(mt)mt.textContent=DATA.traques[index]?DATA.traques[index].name:"—";if(mp)mp.textContent=pp?pp.label:(monRabat(index)?"🟠 Tu rabats":"— pas de poste sur cette traque");}
 function aesc(x){return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 
 
@@ -4367,8 +4407,8 @@ var SHOW_RDV=false;
 function toggleCones(v){SHOW_CONES=v;renderMap(MAP_I);}
 function toggleRdv(v){SHOW_RDV=v;renderMap(MAP_I);}\nfunction toggleZone(v){SHOW_ZONE=v;renderMap(MAP_I);}\nfunction toggleDepart(v){SHOW_DEPART=v;renderMap(MAP_I);}\nfunction toggleDepose(v){SHOW_DEPOSE=v;renderMap(MAP_I);}
 function renderAttribs(){var card=$("attribsCard");var box=$("attribs");if(!card||!box)return;var list=DATA.attributions||[];box.innerHTML="";if(!list.length){card.style.display="none";return;}card.style.display="block";list.forEach(function(a){var txt,bg,col;if(a.mode==="bracelets"){txt=a.count+" bracelet"+(a.count>1?"s":"");bg="#f0fdf4";col="#166534";}else if(a.mode==="interdit"){txt="Interdit";bg="#fef2f2";col="#b91c1c";}else{txt="Libre";bg="#f5f5f4";col="#57534e";}var note=a.note?(" — "+aesc(a.note)):"";var d=document.createElement("div");d.style.cssText="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 11px;border-radius:9px;margin-bottom:6px;font-size:14px;background:"+bg;d.innerHTML="<span style='font-weight:600;color:#1c1917'>"+aesc(a.emoji)+" "+aesc(a.label)+"</span><span style='font-weight:700;color:"+col+";text-align:right'>"+txt+note+"</span>";box.appendChild(d);});}
-function renderPostInfo(index){var card=$("postInfoCard");if(!card)return;if(!me||!me.posts){card.style.display="none";return;}var post=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){post=me.posts[i];break;}}var title=$("postInfoTitle");var cons=$("myConsigne");var ph=$("myPhotos");if(!post){if(title)title.textContent="📍 Tu n'as pas de poste sur cette traque";if(cons)cons.style.display="none";if(ph)ph.innerHTML="";card.style.display="block";return;}if(title)title.textContent="📍 Ton poste : "+post.label;var mc=$("myChef");if(mc){if(post.chef){mc.style.display="block";mc.textContent="👨‍✈️ Chef de ligne : "+post.chef;}else{mc.style.display="none";}}if(cons){if(post.consignes){cons.style.display="flex";var cs=cons.querySelector("span");cs.textContent=post.consignes;cs.style.whiteSpace="pre-line";}else{cons.style.display="none";}}if(ph){ph.innerHTML="";(post.photos||[]).forEach(function(src){var im=document.createElement("img");im.className="postphoto";im.src=src;im.style.display="block";im.style.marginTop="8px";ph.appendChild(im);});}card.style.display="block";}
-function renderHero(){var hc=document.querySelector("#appview .hero");try{remplirVoiture(me&&me.id);}catch(e){}if(hc)hc.style.display="";var mh=document.querySelector(".maphint");if(mh)mh.textContent="Ton poste est surligné en orange · lecture seule";var p=me.posts[0];$("myTraque").textContent=p?p.traqueName:"—";$("myPost").textContent=p?p.label:"—";$("myName").textContent="🦌 "+me.name;var hchef=$("myHeroChef");if(hchef)hchef.style.display="none";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var ex=$("extra");ex.innerHTML="";me.posts.forEach(function(pp){var d=document.createElement("div");d.style.cssText="margin-top:7px;font-size:15px;line-height:1.35";d.innerHTML="• <b>"+aesc(pp.traqueName)+"</b> → "+aesc(pp.label)+(pp.chef?" <span style='color:#166534;font-weight:600'>· 👨‍✈️ "+aesc(pp.chef)+"</span>":"")+(typeof monTrajet==="function"?monTrajet(pp):"");ex.appendChild(d);});setupFeedback();renderAttribs();renderChef();}
+function renderPostInfo(index){var card=$("postInfoCard");if(!card)return;if(!me||!me.posts){card.style.display="none";return;}var post=null;for(var i=0;i<me.posts.length;i++){if(me.posts[i].traqueIndex===index){post=me.posts[i];break;}}var title=$("postInfoTitle");var cons=$("myConsigne");var ph=$("myPhotos");if(!post){if(title)title.textContent=monRabat(index)?"🟠 Tu rabats sur cette traque":"📍 Tu n'as pas de poste sur cette traque";var mc0=$("myChef");if(mc0)mc0.style.display="none";if(cons)cons.style.display="none";if(ph)ph.innerHTML="";card.style.display="block";return;}if(title)title.textContent="📍 Ton poste : "+post.label;var mc=$("myChef");if(mc){if(post.chef){mc.style.display="block";mc.textContent="👨‍✈️ Chef de ligne : "+post.chef;}else{mc.style.display="none";}}if(cons){if(post.consignes){cons.style.display="flex";var cs=cons.querySelector("span");cs.textContent=post.consignes;cs.style.whiteSpace="pre-line";}else{cons.style.display="none";}}if(ph){ph.innerHTML="";(post.photos||[]).forEach(function(src){var im=document.createElement("img");im.className="postphoto";im.src=src;im.style.display="block";im.style.marginTop="8px";ph.appendChild(im);});}card.style.display="block";}
+function renderHero(){var hc=document.querySelector("#appview .hero");try{remplirVoiture(me&&me.id);}catch(e){}if(hc)hc.style.display="";var mh=document.querySelector(".maphint");if(mh)mh.textContent="Ton poste est surligné en orange · lecture seule";var p=me.posts[0];var r0=(!p&&me.rabats&&me.rabats.length)?DATA.traques[me.rabats[0]]:null;$("myTraque").textContent=p?p.traqueName:(r0?r0.name:"—");$("myPost").textContent=p?p.label:(r0?"🟠 Tu rabats":"—");$("myName").textContent="🦌 "+me.name;var hchef=$("myHeroChef");if(hchef)hchef.style.display="none";$("subapp").textContent=fmtDate(DATA.date)+" — "+DATA.territoire;var ex=$("extra");ex.innerHTML="";var lig=me.posts.map(function(pp){return {i:pp.traqueIndex,pp:pp};});(me.rabats||[]).forEach(function(ri){lig.push({i:ri,pp:null});});lig.sort(function(a,b){return a.i-b.i;});lig.forEach(function(o){var pp=o.pp;var d=document.createElement("div");d.style.cssText="margin-top:7px;font-size:15px;line-height:1.35";if(!pp){var tq=DATA.traques[o.i]||{};d.innerHTML="• <b>"+aesc(tq.name)+"</b> → <b style='color:#c2410c'>🟠 Tu rabats</b>";ex.appendChild(d);return;}d.innerHTML="• <b>"+aesc(pp.traqueName)+"</b> → "+aesc(pp.label)+(pp.chef?" <span style='color:#166534;font-weight:600'>· 👨‍✈️ "+aesc(pp.chef)+"</span>":"")+(typeof monTrajet==="function"?monTrajet(pp):"");ex.appendChild(d);});setupFeedback();renderAttribs();renderChef();}
 function renderChef(){var card=$("chefCard");var box=$("chefPosts");if(!card||!box)return;var list=(me&&me.chefPosts)||[];if(!list.length){card.style.display="none";return;}card.style.display="block";box.innerHTML="";var grp={};var ord=[];list.forEach(function(pp){if(!grp[pp.traqueName]){grp[pp.traqueName]=[];ord.push(pp.traqueName);}grp[pp.traqueName].push(pp);});ord.forEach(function(tn){var h=document.createElement("div");h.textContent=tn;h.style.cssText="font-weight:700;color:#166534;margin:10px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.03em";box.appendChild(h);grp[tn].forEach(function(pp){var d=document.createElement("div");d.style.cssText="display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:8px;margin-bottom:4px;background:#f5f5f4;font-size:14px";d.innerHTML="<span style='font-weight:600;color:#1c1917'>"+aesc(pp.label)+"</span><span style='color:#57534e'>"+aesc(pp.hunter||"libre")+"</span>";box.appendChild(d);});});var mids=(me&&me.chefMids)||[];var tabsEl=$("chefTabs");var mapEl=$("chefMap");if(!tabsEl||!mapEl)return;tabsEl.innerHTML="";var rel=[];DATA.traques.forEach(function(t,i){if((t.placed||[]).some(function(pp){return mids.indexOf(pp.mid)>=0;}))rel.push(i);});if(!rel.length){mapEl.style.display="none";return;}mapEl.style.display="block";rel.forEach(function(idx,k){var b=document.createElement("button");b.className="tab"+(k===0?" active":"");b.textContent=DATA.traques[idx].name;b.onclick=function(){var ch=tabsEl.children;for(var j=0;j<ch.length;j++)ch[j].className="tab";b.className="tab active";renderChefMap(idx);};tabsEl.appendChild(b);});renderChefMap(rel[0]);}
 var CHEF_I=0;
 function renderChefMap(index){CHEF_I=index;var t=DATA.traques[index];var c=t.crop;var map=$("chefMap");if(!map)return;map.style.paddingBottom=((c.h/c.w)/arDe(t)*100)+"%";map.innerHTML="";var bg=document.createElement("div");bg.className="map-bg";var fw=c.w/100,fh=c.h/100,fx=c.x/100,fy=c.y/100;bg.style.backgroundImage="url('"+imgDe(t)+"')";bg.style.backgroundSize=(100/fw)+"% "+(100/fh)+"%";bg.style.backgroundPosition=(fw<1?fx/(1-fw)*100:0)+"% "+(fh<1?fy/(1-fh)*100:0)+"%";map.appendChild(bg);var mids=(me&&me.chefMids)||[];(t.placed||[]).forEach(function(pp){var lx=(pp.gx-c.x)/c.w*100,ly=(pp.gy-c.y)/c.h*100;if(lx<-4||lx>104||ly<-4||ly>104)return;var isChef=mids.indexOf(pp.mid)>=0;var el=document.createElement("div");el.className="marker"+(isChef?" mine":"");el.style.left=lx+"%";el.style.top=ly+"%";el.style.setProperty("--c",t.color);el.innerHTML="<span class='dot'></span><span class='lbl'>"+(isChef?"★ ":"")+aesc(pp.hunter||"")+"</span>";map.appendChild(el);});activerZoom(map);}
@@ -4429,7 +4469,7 @@ function maPosition(){
     h.textContent="Position refusee ou introuvable. Autorise la localisation dans ton navigateur.";
   },{enableHighAccuracy:true,timeout:15000,maximumAge:0});
 }
-function selectHunter(i){me=DATA.chasseurs[i];renderHero();try{chatCharger();}catch(e){}var def=(me.posts[0]?me.posts[0].traqueIndex:0);buildTabs(def);$("pick").style.display="none";$("appview").style.display="block";window.scrollTo(0,0);}
+function selectHunter(i){me=DATA.chasseurs[i];renderHero();try{chatCharger();}catch(e){}var def=(me.posts[0]?me.posts[0].traqueIndex:((me.rabats&&me.rabats.length)?me.rabats[0]:0));buildTabs(def);$("pick").style.display="none";$("appview").style.display="block";window.scrollTo(0,0);}
 function backToPick(){if(!FB_SENT&&fbHasData()&&!window.confirm("Tu n'as pas envoyé ton retour (balles / mirador). Changer de nom quand même ?"))return;FB_SENT=true;$("appview").style.display="none";$("pick").style.display="flex";window.scrollTo(0,0);}
 function renderPicker(){var box=$("names");box.innerHTML="";if(!DATA.chasseurs.length){box.innerHTML="<p class='empty'>Aucun poste attribué pour le moment.</p>";}
 if(DATA.tirage){var sub=document.querySelector(".role-c .rolesub");if(sub)sub.textContent="Choisis le numéro de ton carton pour voir tes postes :";var tl=document.createElement("p");tl.className="tirlab";tl.textContent="Quel numéro as-tu tiré ?";box.appendChild(tl);var gr=document.createElement("div");gr.className="tirgrid";DATA.chasseurs.forEach(function(cc,i){if(!cc.num)return;var b=document.createElement("button");b.className="tirbtn";b.textContent=cc.num;b.onclick=function(){selectHunter(i);};gr.appendChild(b);});box.appendChild(gr);if(DATA.chasseurs.some(function(c){return !c.num;})){var tl2=document.createElement("p");tl2.className="tirlab";tl2.textContent="Placés à la main";box.appendChild(tl2);}}
@@ -4447,7 +4487,12 @@ function generateSharedHtml(journee, terrain, participants, safety, fnUrl, orgNa
   (terrain.tracks || []).forEach((trk, ti) => { const pl = journee.placements[trk.id] || {}; Object.entries(pl).forEach(([hid, mid]) => { const m = trk.miradors.find((x) => x.id === mid); if (!m) return; (posted[hid] = posted[hid] || []).push({ traqueIndex: ti, trackId: trk.id, miradorId: mid, label: m.label, traqueName: trk.name, color: trk.color, consignes: [m.consignes || "", ...((terrain.consignesCommunes || []).filter((c) => (c.miradorIds || []).indexOf(mid) >= 0 && (c.text || "").trim()).map((c) => c.text))].filter(Boolean).join("\n\n"), photos: (photosAnn && photosAnn[mid]) || m.photos || [], chef: (journee.chefLignes && journee.chefLignes[mid]) ? ((participants.find((x) => x.id === journee.chefLignes[mid]) || {}).name || "") : "", chefId: (journee.chefLignes && journee.chefLignes[mid]) || "" }); }); });
   const chefLignesData = journee.chefLignes || {};
   const chefPostsOf = (hid) => Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid).map((mid) => { let f = null; (terrain.tracks || []).forEach((trk) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) { const pl = journee.placements[trk.id] || {}; const occHid = Object.keys(pl).find((h) => pl[h] === mid); const occ = occHid ? participants.find((x) => x.id === occHid) : null; f = { traqueName: trk.name, label: m.label, hunter: occ ? occ.name : "" }; } }); return f; }).filter(Boolean);
-  const chasseurs = Object.keys(posted).map((hid) => { const p = participants.find((x) => x.id === hid); return { id: hid, name: p ? p.name : "Chasseur", num: numDe(hid), posts: posted[hid], chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => triAvecNumeros({ numero: a.num }, { numero: b.num }, () => byNom(a.name || "", b.name || "")));
+  // Fusils au rabat : les traques ou ils rabattent (sans poste). Ceux qui ne font que rabattre apparaissent aussi.
+  const rabatJ = normRabat(journee.rabat); const presJ = journee.presence || {};
+  const rabatsDe = (hid) => (terrain.tracks || []).map((trk, ti) => (((rabatJ[trk.id] || {})[hid] && !((journee.placements[trk.id] || {})[hid])) ? ti : -1)).filter((i) => i >= 0);
+  const idsCh = Object.keys(posted);
+  Object.keys(rabatJ).forEach((tid) => Object.keys(rabatJ[tid] || {}).forEach((hid) => { if (idsCh.indexOf(hid) < 0 && participants.some((x) => x.id === hid) && (numDe(hid) || (presJ[hid] || {}).statut === "present") && rabatsDe(hid).length) idsCh.push(hid); }));
+  const chasseurs = idsCh.map((hid) => { const p = participants.find((x) => x.id === hid); return { id: hid, name: p ? p.name : "Chasseur", num: numDe(hid), posts: posted[hid] || [], rabats: rabatsDe(hid), chefPosts: chefPostsOf(hid), chefMids: Object.keys(chefLignesData).filter((mid) => chefLignesData[mid] === hid) }; }).sort((a, b) => triAvecNumeros({ numero: a.num }, { numero: b.num }, () => byNom(a.name || "", b.name || "")));
   const urgenceData = (function () {
     const ids = {};
     Object.keys(chefLignesData).forEach((mid) => { if (chefLignesData[mid]) ids[chefLignesData[mid]] = true; });
@@ -5127,13 +5172,20 @@ function buildPrintHtml(journee, terrain, participants, safety, cartes) {
       ? "<div class='tabs'>" + table(mirs.slice(0, lignes), 0) + table(mirs.slice(lignes), lignes) + "</div>"
       : "<div class='tabs'>" + table(mirs, 0) + "</div>";
     // La place restante revient a la carte, calculee ici plutot que laissee au navigateur.
-    const hCarte = Math.max(25, HAUT - TETE - ECARTS - ENTETE - lignes * rh - MARGE);
+    const rgP = normRabatRegle(journee.rabatRegle);
+    const rabN = Object.keys(normRabat(journee.rabat)[trk.id] || {}).filter((hid) => !pl[hid] && participants.some((x) => x.id === hid)).map(nameOf);
+    const rabLib = rabN.length ? "Au rabat" + (rgP.arme === "avec" ? " (avec leur arme)" : rgP.arme === "sans" ? " (sans arme)" : "") + " :" : "";
+    const fsR = fs * 0.8;
+    const lgR = rabN.length ? Math.max(1, Math.ceil(mesureTexte(rabLib + " " + rabN.join(", "), false) * fsR * 1.1 / 98)) : 0;
+    const hRab = rabN.length ? lgR * fsR * 1.3 + 1.2 : 0;
+    const rabHtml = rabN.length ? "<div style='font-size:" + fsR.toFixed(2) + "cqw;line-height:1.3;margin-top:1.2cqw;color:#9a3412'><b>" + esc(rabLib) + "</b> " + esc(rabN.join(", ")) + "</div>" : "";
+    const hCarte = Math.max(25, HAUT - TETE - ECARTS - ENTETE - lignes * rh - MARGE - hRab);
     const carte = (cartes || {})[trk.id];
     const col = trk.color || "#166534";
     pages += "<section class='page' style='--fs:" + fs + "cqw;--rh:" + rh + "cqw'>"
       + "<div class='tete'><div class='l1'><h1 style='border-color:" + col + "'>" + esc(trk.name) + "</h1><span class='date'>" + esc(d) + "</span></div>"
       + "<div class='terr'>" + esc(terrain.name) + "</div></div>"
-      + tables
+      + tables + rabHtml
       + "<div class='zone' style='height:" + hCarte.toFixed(1) + "cqw'>" + (carte ? "<img src='" + carte + "' alt='Carte de la traque' />" : "<span class='vide'>Pas de carte pour cette traque.</span>") + "</div>"
       + "<div class='cdc'>carnetdechasse.fr</div></section>";
   });
@@ -5213,6 +5265,9 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
       if (i >= 0) (poste[hid] = poste[hid] || {})[trk.id] = numeroPoste(trk.miradors[i], i);
     });
   });
+  const rabR = normRabat(journee.rabat); let aRabat = false;
+  tracks.forEach((trk) => Object.keys(rabR[trk.id] || {}).forEach((hid) => { if ((poste[hid] || {})[trk.id] || !participants.some((x) => x.id === hid)) return; (poste[hid] = poste[hid] || {})[trk.id] = "R"; aRabat = true; }));
+  const rgR = normRabatRegle(journee.rabatRegle);
   const tri = (a, b) => triAvecNumeros(a, b, (x, y) => (x.nom || nomKey(x.name)).localeCompare(y.nom || nomKey(y.name), "fr", { sensitivity: "base" })
     || (x.prenom || "").localeCompare(y.prenom || "", "fr", { sensitivity: "base" }));
   const enTirage = tirageActif(journee) && normTirage(journee.tirage).nb > 0;
@@ -5249,10 +5304,10 @@ function buildResumeHtml(journee, terrain, participants, cartes) {
   const fNom = fs * echelle(tous.map((p) => nomDe(p).toUpperCase()), true, nomW);
   const fPre = fs * echelle(tous.map(prenomDe), false, preW);
   const ligne = (p, marche, sep) => "<tr" + (sep ? " class='sep'" : "") + "><td class='nom' style='font-size:" + fNom.toFixed(2) + "cqw'>" + esc(nomDe(p)) + "</td><td style='font-size:" + fPre.toFixed(2) + "cqw'>" + esc(prenomDe(p)) + "</td>"
-    + tracks.map((trk) => marche ? "<td class='m'>M</td>" : "<td class='num'>" + esc((poste[p.id] || {})[trk.id] || "") + "</td>").join("") + "</tr>";
+    + tracks.map((trk) => marche ? "<td class='m'>M</td>" : ((poste[p.id] || {})[trk.id] === "R" ? "<td class='num' style='color:#c2410c'>R</td>" : "<td class='num'>" + esc((poste[p.id] || {})[trk.id] || "") + "</td>")).join("") + "</tr>";
   const corps = chasseurs.map((p) => ligne(p, false, false)).join("") + marcheurs.map((p, k) => ligne(p, true, k === 0 && chasseurs.length > 0)).join("");
   const page1 = "<section class='page' style='--fs:" + fs.toFixed(2) + "cqw;--rh:" + rh.toFixed(2) + "cqw'>"
-    + "<div class='tete'><h1>" + esc(terrain.name) + "</h1><span class='date'>" + esc(d) + "</span></div>"
+    + "<div class='tete'><h1>" + esc(terrain.name) + "</h1><span class='date'>" + esc(d) + (aRabat ? " · R = au rabat" + (rgR.arme === "avec" ? " (avec arme)" : rgR.arme === "sans" ? " (sans arme)" : "") : "") + "</span></div>"
     + "<table><colgroup><col style='width:" + (nomW / 99.4 * 100).toFixed(2) + "%'><col style='width:" + (preW / 99.4 * 100).toFixed(2) + "%'>" + tracks.map(() => "<col style='width:" + (tqW / 99.4 * 100).toFixed(2) + "%'>").join("") + "</colgroup>"
     + "<thead><tr><th rowspan='2'>NOM</th><th rowspan='2'>Prénom</th><th class='grp' colspan='" + nT + "' style='text-align:center'>Poste</th></tr>"
     + "<tr>" + tracks.map((trk) => "<th class='tq' style='--c:" + (trk.color || "#166534") + ";height:" + hTq.toFixed(2) + "cqw;font-size:" + fT.toFixed(2) + "cqw'>" + esc(trk.name) + "</th>").join("") + "</tr></thead>"
@@ -5356,6 +5411,9 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
       const i = (trk.miradors || []).findIndex((m) => m.id === mid); if (i < 0) return;
       postes.push({ trk, m: trk.miradors[i], num: numeroPoste(trk.miradors[i], i), chef: chefs[mid] ? nameOf(chefs[mid]) : "" });
     });
+    const rabLv = normRabat(journee.rabat);
+    tracks.forEach((trk, ti) => { if (!(rabLv[trk.id] || {})[hid] || (journee.placements[trk.id] || {})[hid]) return; postes.push({ trk, rabat: true, ordre: ti, m: { label: "Tu rabats" }, num: "", chef: "" }); });
+    postes.sort((a, b) => tracks.indexOf(a.trk) - tracks.indexOf(b.trk));
     const nomComplet = ((p.prenom || "") + " " + (p.nom || "")).trim() || p.name || "(nom à compléter)";
     // ---- page 1 : accueil ----
     const fDom = Math.min(4.6, (W - 2) / Math.max(1, mesureTexte(terrain.name || "", true) * 1.05));
@@ -5386,7 +5444,7 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
     const fs = fsN.toFixed(2);
     const secPostes = "<div class='sec'><h2 style='font-size:" + (fsN * 1.37).toFixed(2) + "cqw'>Mes postes</h2>"
       + (postes.length ? "<table class='tp'><colgroup><col style='width:40%'><col style='width:15%'><col></colgroup>"
-        + postes.map((x) => "<tr><td class='tq' style='--c:" + (x.trk.color || "#166534") + "'>" + esc(x.trk.name) + "</td><td class='n'>" + esc(x.num) + "</td><td class='lb'>" + esc(x.m.label) + (x.chef ? "<span class='chef'>Chef de ligne : " + esc(x.chef) + "</span>" : "") + "</td></tr>").join("")
+        + postes.map((x) => x.rabat ? "<tr><td class='tq' style='--c:" + (x.trk.color || "#166534") + "'>" + esc(x.trk.name) + "</td><td class='n'></td><td class='lb' style='color:#c2410c;font-weight:700'>🟠 Tu rabats</td></tr>" : "<tr><td class='tq' style='--c:" + (x.trk.color || "#166534") + "'>" + esc(x.trk.name) + "</td><td class='n'>" + esc(x.num) + "</td><td class='lb'>" + esc(x.m.label) + (x.chef ? "<span class='chef'>Chef de ligne : " + esc(x.chef) + "</span>" : "") + "</td></tr>").join("")
         + "</table>" : "<p style='color:#a8a29e;font-style:italic'>Pas de poste attribué.</p>") + "</div>";
     const secPlan = attribs.length ? "<div class='sec'><h2 style='font-size:" + (fsN * 1.37).toFixed(2) + "cqw'>Plan de chasse</h2>"
       + attribs.map((a) => "<div class='at' style='" + a.st + "'><b style='color:#1c1917'>" + esc(a.label) + "</b><b style='text-align:right'>" + esc(a.txt) + "</b></div>").join("") + "</div>" : "";
@@ -5394,7 +5452,7 @@ function buildLivretsHtml(journee, terrain, participants, safety, ids, cartes, o
       + sonneries.map((x) => "<div class='so'><span class='ev'>" + esc(x.evenement) + "</span><span>" + esc(x.signal) + "</span></div>").join("") + "</div>" : "";
     const p2 = "<div class='pg g' style='font-size:" + fs + "cqw;line-height:" + lh + "'>" + secPostes + secPlan + secSon + "</div>";
     // ---- pages 3 et 4 : les cartes, poste du chasseur en jaune ----
-    const avecCarte = postes.filter((x) => cartes[x.trk.id]);
+    const avecCarte = postes.filter((x) => !x.rabat && cartes[x.trk.id]);
     const moitie = Math.ceil(avecCarte.length / 2);
     const lot3 = avecCarte.length <= 1 ? avecCarte : avecCarte.slice(0, moitie);
     const lot4 = avecCarte.length <= 1 ? [] : avecCarte.slice(moitie);
@@ -5508,6 +5566,80 @@ function SecWrap({ bare, children }) {
 
 // ---------- Ecran « Poster les fusils » : placement nominatif ou tirage au sort ----------
 const PRIO_COUL = { 1: "bg-emerald-800 text-white", 2: "bg-emerald-300 text-emerald-950", 3: "bg-amber-200 text-amber-900", 4: "bg-stone-200 text-stone-700" };
+function RabatSection({ journee, terrain, rows, verrouNums, onToggle, onToggleJamais, onMajRegle, onRepartir }) {
+  const tracks = terrain.tracks || [];
+  const rab = normRabat(journee.rabat);
+  const rg = normRabatRegle(journee.rabatRegle);
+  const t = normTirage(journee.tirage);
+  const [ouvert, setOuvert] = useState(false);
+  const [msg, setMsg] = useState("");
+  const estR = (tid, hid) => !!(rab[tid] || {})[hid];
+  const bloque = (hid) => !!(verrouNums && numDe(hid));
+  const nbTot = rows.reduce((s, r) => s + tracks.filter((trk) => estR(trk.id, r.id)).length, 0);
+  const manque = t.actif && t.nb > 0 && rows.some((r) => numDe(r.id) && tracks.some((trk) => !estR(trk.id, r.id) && !((journee.placements || {})[trk.id] || {})[r.id]));
+  const Carte = ({ on, onClick, titre, sous }) => (<button onClick={onClick} className={`text-left rounded-xl border-2 p-2.5 ${on ? "border-emerald-600 bg-emerald-50" : "border-stone-200 bg-white"}`}><span className="block text-sm font-semibold text-stone-800">{titre}</span><span className="block text-[11.5px] text-stone-500 mt-0.5 leading-snug">{sous}</span></button>);
+  const setNb = (tid, v) => onMajRegle({ nb: { ...rg.nb, [tid]: Math.max(0, Math.min(rows.length, v)) } });
+  return (<div className="bg-white border border-stone-200 rounded-lg mb-3">
+    <button onClick={() => setOuvert(!ouvert)} className="w-full text-left px-3 py-2.5 flex justify-between items-center gap-2">
+      <span><span className="block text-sm font-medium text-stone-800">🟠 Fusils au rabat</span><span className="block text-[11.5px] text-stone-500">{nbTot ? nbTot + " place" + (nbTot > 1 ? "s" : "") + " au rabat sur la journée" : "Des fusils rabattent dans certaines traques ?"}</span></span>
+      <span className="text-stone-400">{ouvert ? "▴" : "▾"}</span></button>
+    {ouvert && (<div className="px-3 pb-3 pt-2.5 border-t border-stone-100 space-y-3">
+      <p className="text-[12px] text-stone-500 leading-snug">Dans certaines traques, des fusils rabattent au lieu d'être postés. Un fusil au rabat n'a pas de poste dans cette traque : son poste reste libre pour un autre. Sur son lien, son livret ou son carton, il lit « 🟠 Tu rabats ».</p>
+      {rows.length === 0 ? <p className="text-sm text-stone-400 italic">Aucun chasseur noté présent dans « Qui vient ? ».</p> : (<>
+        <div className="border border-stone-200 rounded-lg p-2.5 space-y-2">
+          <p className="text-sm font-semibold text-stone-800">1 · Répartition automatique</p>
+          <p className="text-[11.5px] text-stone-500 leading-snug">L'app choisit qui rabat, à tour de rôle : personne ne rabat deux fois avant que tous aient rabattu une fois. Vous corrigez ensuite dans le tableau.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Carte on={rg.regle === "nombre"} onClick={() => { setMsg(""); onMajRegle({ regle: "nombre" }); }} titre="Nombre par traque" sous="Ex. Traque 2 : 3 fusils" />
+            <Carte on={rg.regle === "alterne"} onClick={() => { setMsg(""); onMajRegle({ regle: "alterne" }); }} titre="Moitié / moitié" sous="Groupe A puis groupe B" />
+          </div>
+          {rg.regle === "nombre" ? (<div>
+            <p className="text-[11px] uppercase tracking-wide text-stone-400 mb-1">Fusils au rabat par traque (0 = tout le monde posté)</p>
+            {tracks.map((trk) => (<div key={trk.id} className="flex items-center justify-between gap-2 py-1 border-b border-stone-50 last:border-0">
+              <span className="text-sm text-stone-800 truncate">{trk.name}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => setNb(trk.id, (rg.nb[trk.id] || 0) - 1)} aria-label="Un de moins" className="w-10 h-9 rounded-md border border-stone-300 bg-stone-50 text-lg text-stone-700">−</button>
+                <span className="w-7 text-center font-semibold">{rg.nb[trk.id] || 0}</span>
+                <button onClick={() => setNb(trk.id, (rg.nb[trk.id] || 0) + 1)} aria-label="Un de plus" className="w-10 h-9 rounded-md border border-stone-300 bg-stone-50 text-lg text-stone-700">+</button>
+              </div></div>))}
+          </div>) : (<p className="text-[12px] text-stone-600 bg-stone-50 border border-stone-200 rounded-md p-2 leading-snug">Les fusils sont coupés en deux groupes au hasard. Le groupe A rabat aux traques 1, 3, 5…, le groupe B aux traques 2, 4, 6… Chacun est posté une traque sur deux.</p>)}
+          <button onClick={() => setMsg(onRepartir())} className="w-full bg-emerald-800 hover:bg-emerald-900 text-white text-sm font-semibold rounded-lg py-2.5">Répartir au rabat</button>
+          {msg && <p className="text-[12.5px] text-stone-700 bg-stone-50 border border-stone-200 rounded-lg p-2">{msg}</p>}
+        </div>
+
+        <div className="border border-stone-200 rounded-lg p-2.5 space-y-2">
+          <p className="text-sm font-semibold text-stone-800">2 · Tableau de la journée</p>
+          <p className="text-[11.5px] text-stone-500 leading-snug">Touchez une case pour passer de Poste à Rabat. 🔒 = jamais mis au rabat par la répartition automatique (vous pouvez toujours le faire à la main).</p>
+          <div className="overflow-x-auto -mx-1"><table className="text-[12.5px]" style={{ borderCollapse: "separate", borderSpacing: "3px" }}>
+            <thead><tr className="text-[11px] text-stone-400">
+              <th></th><th className="text-left font-medium px-1">Fusil</th>
+              {tracks.map((trk) => <th key={trk.id} className="font-medium px-0.5"><span className="block max-w-[64px] truncate mx-auto">{trk.name}</span></th>)}
+            </tr></thead>
+            <tbody>{rows.map((r) => { const nR = tracks.filter((trk) => estR(trk.id, r.id)).length; const jam = rg.jamais.indexOf(r.id) >= 0; return (<tr key={r.id}>
+              <td><button onClick={() => onToggleJamais(r.id)} aria-label={jam ? "Autoriser au rabat" : "Ne jamais mettre au rabat"} title={jam ? "Jamais au rabat" : "Peut rabattre"} className={`w-9 h-10 rounded-md border text-sm ${jam ? "bg-stone-200 border-stone-400" : "bg-white border-stone-200 opacity-40"}`}>🔒</button></td>
+              <td className="px-1 min-w-[96px]"><span className="block font-medium text-stone-800 leading-tight">{r.name}</span><span className="block text-[10.5px] text-stone-400">{jam ? "jamais au rabat" : nR ? "rabat " + nR + " fois" : "toujours posté"}</span></td>
+              {tracks.map((trk) => { const on = estR(trk.id, r.id); const lock = bloque(r.id); return (<td key={trk.id}>
+                <button onClick={() => { if (!lock) onToggle(trk.id, r.id); }} className={`w-[56px] h-10 rounded-md text-[11.5px] ${on ? "border-2 border-orange-400 bg-orange-100 text-orange-900 font-bold" : "border border-stone-300 bg-white text-stone-600"} ${lock ? "opacity-50" : ""}`}>{on ? "Rabat" : "Poste"}</button></td>); })}
+            </tr>); })}</tbody>
+            <tfoot><tr className="text-[11px] text-stone-500"><td></td><td className="px-1 pt-1">Postés / rabat</td>
+              {tracks.map((trk) => { const nr = rows.filter((r) => estR(trk.id, r.id)).length; return <td key={trk.id} className="text-center pt-1 leading-tight"><b className="text-emerald-800">{rows.length - nr}</b><br /><b className="text-orange-700">{nr}</b></td>; })}</tr></tfoot>
+          </table></div>
+          {verrouNums && <p className="text-[12px] text-stone-600 bg-stone-50 border border-stone-200 rounded p-2">🔒 Le lien a été envoyé : les numéros du tirage ne bougent plus. Débloquez la répartition du tirage pour les changer.</p>}
+          {manque && !verrouNums && <p className="text-[12px] text-amber-800 bg-amber-50 rounded p-2">Des numéros n'ont ni poste ni rabat dans une traque : relancez la répartition des numéros (étape 3 du tirage).</p>}
+        </div>
+
+        <div className="border border-stone-200 rounded-lg p-2.5 space-y-2">
+          <p className="text-sm font-semibold text-stone-800">3 · Au rabat, les fusils sont…</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Carte on={rg.arme === "avec"} onClick={() => onMajRegle({ arme: rg.arme === "avec" ? "" : "avec" })} titre="Avec leur arme" sous="Traqueurs armés" />
+            <Carte on={rg.arme === "sans"} onClick={() => onMajRegle({ arme: rg.arme === "sans" ? "" : "sans" })} titre="Sans arme" sous="Ils laissent leur fusil" />
+          </div>
+          <p className="text-[11.5px] text-stone-500">Réglage de la journée. Il s'imprime seulement sur votre feuille des postes, pas chez les chasseurs.</p>
+        </div>
+      </>)}
+    </div>)}
+  </div>);
+}
 function TirageSection({ journee, terrain, participants, presentIds, onMaj, onPlacer, onGenerer, onHasard, onQuitterTirage }) {
   const t = normTirage(journee.tirage);
   const tracks = terrain.tracks || [];
@@ -5600,7 +5732,7 @@ function TirageSection({ journee, terrain, participants, presentIds, onMaj, onPl
         {!verrou && <button onClick={onGenerer} disabled={!nbCartons} className="w-full bg-emerald-800 hover:bg-emerald-900 disabled:bg-stone-300 text-white text-sm font-semibold rounded-lg py-2.5">{t.nb ? "🔄 Relancer la répartition" : "🎲 Préparer la répartition"} ({nbCartons} carton{nbCartons > 1 ? "s" : ""})</button>}
         {t.nb > 0 && t.nb !== nbCartons && !verrou && <p className="text-[12px] text-amber-800">La liste des présents a changé ({t.nb} numéros préparés, {nbCartons} attendus) : relancez la répartition.</p>}
         {t.nb > 0 && (<div className="overflow-x-auto"><table className="w-full text-[12.5px]"><thead><tr className="text-[11px] text-stone-400"><th className="text-left py-1 pr-1"></th>{tracks.map((trk) => <th key={trk.id} className="text-left py-1 px-1 font-medium">{trk.name}</th>)}<th className="text-right py-1 pl-1 font-medium">Total</th></tr></thead>
-          <tbody>{Array.from({ length: t.nb }, (_, k) => k + 1).map((n) => { let tot = 0; return (<tr key={n} className="border-t border-stone-100"><td className="py-1 pr-1 font-serif font-bold text-[15px]">n°{n}</td>{tracks.map((trk) => { const x = posteNum(trk, n); if (x) tot += Number(x.m.priority) || 1; return (<td key={trk.id} className="py-1 px-1">{x ? <span className={`inline-block min-w-[40px] text-center rounded px-1.5 py-0.5 font-semibold ${PRIO_COUL[Number(x.m.priority) || 1] || PRIO_COUL[4]}`}>{x.m.label || numeroPoste(x.m, x.i)}</span> : <span className="text-red-600">—</span>}</td>); })}<td className="py-1 pl-1 text-right text-stone-400">{tot}</td></tr>); })}</tbody></table>
+          <tbody>{Array.from({ length: t.nb }, (_, k) => k + 1).map((n) => { let tot = 0; return (<tr key={n} className="border-t border-stone-100"><td className="py-1 pr-1 font-serif font-bold text-[15px]">n°{n}</td>{tracks.map((trk) => { const x = posteNum(trk, n); if (x) tot += Number(x.m.priority) || 1; return (<td key={trk.id} className="py-1 px-1">{x ? <span className={`inline-block min-w-[40px] text-center rounded px-1.5 py-0.5 font-semibold ${PRIO_COUL[Number(x.m.priority) || 1] || PRIO_COUL[4]}`}>{x.m.label || numeroPoste(x.m, x.i)}</span> : (((journee.rabat || {})[trk.id] || {})[NUM_ID(n)] ? <span className="inline-block min-w-[40px] text-center rounded px-1.5 py-0.5 font-semibold bg-orange-100 text-orange-800">Rabat</span> : <span className="text-red-600">—</span>)}</td>); })}<td className="py-1 pl-1 text-right text-stone-400">{tot}</td></tr>); })}</tbody></table>
           <p className="text-[11px] text-stone-500 mt-1.5">Couleur = priorité du poste (vert foncé = 1). Total = somme des priorités sur la journée : plus les totaux sont proches, plus c'est équitable.</p></div>)}
         {t.manques.length > 0 && <p className="text-[12px] text-red-700 bg-red-50 rounded p-2">⚠ Pas assez de postes libres : {t.manques.length} place{t.manques.length > 1 ? "s" : ""} manquante{t.manques.length > 1 ? "s" : ""} ({Array.from(new Set(t.manques.map((x) => (tracks.find((trk) => trk.id === x.trackId) || {}).name))).join(", ")}).</p>}
         {verrou ? (<div className="text-[12.5px] text-stone-700 bg-stone-50 border border-stone-200 rounded-lg p-2.5">🔒 <b>Répartition bloquée</b> : le lien a été envoyé aux chasseurs. Les livrets imprimés et le lien restent justes.
@@ -6051,6 +6183,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     if (!terr) return [];
     const ids = {};
     (terr.tracks || []).forEach((trk) => Object.keys((j.placements || {})[trk.id] || {}).forEach((hid) => { ids[hid] = true; }));
+    const rabL = normRabat(j.rabat); (terr.tracks || []).forEach((trk) => Object.keys(rabL[trk.id] || {}).forEach((hid) => { ids[hid] = true; }));
     return participantsDuJour(participants, j, false).filter((p) => ids[p.id]).sort((a, b) => triAvecNumeros(a, b, (x, y) => (x.nom || nomKey(x.name)).localeCompare(y.nom || nomKey(y.name), "fr", { sensitivity: "base" }) || (x.prenom || "").localeCompare(y.prenom || "", "fr", { sensitivity: "base" })));
   };
   const ouvrirLivrets = (j) => {
@@ -6142,7 +6275,18 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   const setChefLigne = (jid, mid, chefId) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const cl = { ...(j.chefLignes || {}) }; if (!chefId) delete cl[mid]; else cl[mid] = chefId; return { ...j, chefLignes: cl }; }));
   const setArmeJour = (jid, hid, arme) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const am = { ...(j.armes || {}) }; if (!arme) delete am[hid]; else am[hid] = arme; return { ...j, armes: am }; }));
   const setRdv = (jid, trackId, chefId, pos) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const all = { ...(j.rdv || {}) }; const t = { ...(all[trackId] || {}) }; if (!pos) delete t[chefId]; else t[chefId] = pos; all[trackId] = t; return { ...j, rdv: all }; }));
-  const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, placements: { ...(j.placements || {}), [trackId]: { ...((j.placements || {})[trackId] || {}), [hid]: mid } } })));
+  // Placer un fusil sur un poste le retire du rabat de cette traque.
+  const assign = (jid, trackId, hid, mid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const rab = normRabat(j.rabat); const rt = { ...(rab[trackId] || {}) }; delete rt[hid]; return { ...j, rabat: { ...rab, [trackId]: rt }, placements: { ...(j.placements || {}), [trackId]: { ...((j.placements || {})[trackId] || {}), [hid]: mid } } }; }));
+  // Fusils au rabat : une case du tableau (ou le bouton de Poster les fusils). Au rabat = plus de poste dans cette traque.
+  const toggleRabat = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => {
+    if (j.id !== jid) return j;
+    const rab = normRabat(j.rabat); const rt = { ...(rab[trackId] || {}) }; let pl = j.placements || {};
+    if (rt[hid]) delete rt[hid];
+    else { rt[hid] = true; const pt = { ...(pl[trackId] || {}) }; delete pt[hid]; pl = { ...pl, [trackId]: pt }; }
+    return { ...j, rabat: { ...rab, [trackId]: rt }, placements: pl };
+  }));
+  const majRabatRegle = (jid, patch) => setJournees((prev) => prev.map((j) => (j.id !== jid ? j : { ...j, rabatRegle: { ...normRabatRegle(j.rabatRegle), ...patch } })));
+  const toggleJamaisRabat = (jid, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const rg = normRabatRegle(j.rabatRegle); const on = rg.jamais.indexOf(hid) >= 0; return { ...j, rabatRegle: { ...rg, jamais: on ? rg.jamais.filter((x) => x !== hid) : [...rg.jamais, hid] } }; }));
   const unassign = (jid, trackId, hid) => setJournees((prev) => prev.map((j) => { if (j.id !== jid) return j; const t = { ...((j.placements || {})[trackId] || {}) }; delete t[hid]; return { ...j, placements: { ...(j.placements || {}), [trackId]: t } }; }));
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[k]; a[k] = t; } return a; };
   const autoFill = (jid, track, pending, sortedFree) => {
@@ -6169,8 +6313,9 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   };
   // Tirage au sort : prepare la repartition des numeros sur toutes les traques.
   const presentsDe = (j) => participants.filter((p) => ((j.presence || {})[p.id] || {}).statut === "present" && p.role !== "rabatteur").map((p) => p.id);
-  const genererTirage = (jid) => {
+  const genererTirage = (jid, rabatOv, placementsOv) => {
     const j = journees.find((x) => x.id === jid); if (!j) return;
+    const rabat = rabatOv || normRabat(j.rabat);
     const terrain = terrains.find((x) => x.id === j.terrainId); if (!terrain) return;
     const t = normTirage(j.tirage); if (t.publie) return;
     const presents = presentsDe(j);
@@ -6178,15 +6323,41 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     const nb = Math.max(0, presents.length - reserves.length);
     const placements = {};
     const trs = (terrain.tracks || []).map((trk) => {
-      const cur = {}; Object.entries((j.placements || {})[trk.id] || {}).forEach(([hid, mid]) => { if (reserves.indexOf(hid) >= 0) cur[hid] = mid; });
+      const cur = {}; Object.entries(((placementsOv || j.placements) || {})[trk.id] || {}).forEach(([hid, mid]) => { if (reserves.indexOf(hid) >= 0 && !(rabat[trk.id] || {})[hid]) cur[hid] = mid; });
       placements[trk.id] = cur;
       const pris = {}; Object.values(cur).forEach((mid) => { pris[mid] = true; });
-      return { id: trk.id, postes: trk.miradors || [], pris, deja: {} };
+      return { id: trk.id, postes: trk.miradors || [], pris, deja: {}, exclus: rabat[trk.id] || {} };
     });
     const personnes = Array.from({ length: nb }, (_, k) => ({ id: NUM_ID(k + 1) }));
     const r = meilleureRepartition(personnes, trs, t.algo, false, {});
     Object.keys(r.placements).forEach((tid) => { Object.assign(placements[tid], r.placements[tid]); });
-    majJournee(jid, { placements, tirage: { ...t, actif: true, nb, reserves, noms: {}, manques: r.manques } });
+    majJournee(jid, { placements, tirage: { ...t, actif: true, nb, reserves, noms: {}, manques: r.manques }, ...(rabatOv ? { rabat: rabatOv } : {}) });
+  };
+  // Les lignes du tableau des fusils au rabat : les presents (nominatif) ou les places a la main + les numeros (tirage).
+  const lignesRabat = (j) => {
+    const pres = presentsDe(j); const t = normTirage(j.tirage);
+    const nomDe = (id) => (participants.find((p) => p.id === id) || {}).name || "(sans nom)";
+    if (!t.actif) return pres.map((id) => ({ id, name: nomDe(id) })).sort((a, b) => byNom(a.name, b.name));
+    const res = t.reserves.filter((id) => pres.indexOf(id) >= 0);
+    const nb = t.nb > 0 ? t.nb : Math.max(0, pres.length - res.length);
+    return res.map((id) => ({ id, name: nomDe(id) })).sort((a, b) => byNom(a.name, b.name)).concat(Array.from({ length: nb }, (_, k) => ({ id: NUM_ID(k + 1), name: "N°" + (k + 1) })));
+  };
+  const repartirRabat = (jid) => {
+    const j = journees.find((x) => x.id === jid); if (!j) return "";
+    const terrain = terrains.find((x) => x.id === j.terrainId); if (!terrain) return "";
+    const tracks = terrain.tracks || [];
+    const rg = normRabatRegle(j.rabatRegle); const t = normTirage(j.tirage); const ancien = normRabat(j.rabat);
+    const verrou = t.actif && t.publie && t.nb > 0;
+    const ids = lignesRabat(j).map((r) => r.id).filter((id) => rg.jamais.indexOf(id) < 0 && !(verrou && numDe(id)));
+    const rabat = calculerRabat(ids, tracks.map((trk) => trk.id), rg.regle, rg.nb);
+    if (verrou) tracks.forEach((trk) => Object.keys(ancien[trk.id] || {}).forEach((hid) => { if (numDe(hid)) rabat[trk.id][hid] = true; }));
+    let total = 0, liberes = 0;
+    const placements = { ...(j.placements || {}) };
+    tracks.forEach((trk) => { const pt = { ...(placements[trk.id] || {}) }; Object.keys(rabat[trk.id]).forEach((hid) => { total++; if (pt[hid]) { liberes++; delete pt[hid]; } }); placements[trk.id] = pt; });
+    if (!total) { majJournee(jid, { rabat, placements }); return rg.regle === "nombre" ? "Personne au rabat : mettez un nombre au-dessus de 0 sur les traques où des fusils rabattent." : "Pas assez de fusils pour former deux groupes."; }
+    const refaire = t.actif && t.nb > 0 && !t.publie;
+    if (refaire) genererTirage(jid, rabat, placements); else majJournee(jid, { rabat, placements });
+    return "✓ " + total + " place" + (total > 1 ? "s" : "") + " au rabat, à tour de rôle." + (refaire ? " La répartition des numéros a été refaite." : liberes ? " " + liberes + " poste" + (liberes > 1 ? "s" : "") + " libéré" + (liberes > 1 ? "s" : "") + " sur les cartes : pensez à les compléter." : "") + (rg.jamais.length ? " Les fusils au cadenas n'ont pas été mis au rabat." : "");
   };
   // Retour au placement nominatif : les numeros quittent les postes.
   const quitterTirage = (jid) => {
@@ -6205,7 +6376,8 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
     const cibles = portee === "toutes" ? tracks : tracks.filter((trk) => trk.id === portee);
     const histo = {};
     if (portee !== "toutes") tracks.filter((trk) => trk.id !== portee).forEach((trk) => Object.entries((j.placements || {})[trk.id] || {}).forEach(([hid, mid]) => { const m = (trk.miradors || []).find((x) => x.id === mid); if (m) (histo[hid] = histo[hid] || []).push(Number(m.priority) || 1); }));
-    const trs = cibles.map((trk) => { const cur = { ...((j.placements || {})[trk.id] || {}) }; const pris = {}; Object.values(cur).forEach((mid) => { pris[mid] = true; }); return { id: trk.id, postes: trk.miradors || [], pris, deja: cur }; });
+    const rabJ = normRabat(j.rabat);
+    const trs = cibles.map((trk) => { const cur = { ...((j.placements || {})[trk.id] || {}) }; const pris = {}; Object.values(cur).forEach((mid) => { pris[mid] = true; }); return { id: trk.id, postes: trk.miradors || [], pris, deja: cur, exclus: rabJ[trk.id] || {} }; });
     const r = meilleureRepartition(personnes, trs, algo, true, histo);
     const placements = { ...(j.placements || {}) }; let n = 0;
     trs.forEach((tr) => { const ajout = r.placements[tr.id] || {}; n += Object.keys(ajout).length; placements[tr.id] = { ...tr.deja, ...ajout }; });
@@ -6240,7 +6412,8 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
   if (posterView) { const journee = journees.find((j) => j.id === posterView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); const track = terrain?.tracks.find((t) => t.id === posterView.trackId); if (!journee || !terrain || !track) { setPosterView(null); return null; }
     const tirP = normTirage(journee.tirage);
     const presentsP = Object.keys(journee.presence || {}).filter((id) => (journee.presence[id] || {}).statut === "present");
-    return <PosterFusils terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participantsDuJour(participants, journee, true)} presentIds={tirP.actif ? tirP.reserves.filter((id) => presentsP.indexOf(id) >= 0).concat(Array.from({ length: tirP.nb }, (_, k) => NUM_ID(k + 1))) : presentsP} journeeArmes={journee.armes || {}} onSetArme={(hid, arme) => setArmeJour(journee.id, hid, arme)} chefs={journee.chefs || []} chefLignes={journee.chefLignes || {}} rdv={(journee.rdv || {})[track.id] || {}} onSetRdv={(cid, pos) => setRdv(journee.id, track.id, cid, pos)} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
+    const presIdsP = tirP.actif ? tirP.reserves.filter((id) => presentsP.indexOf(id) >= 0).concat(Array.from({ length: tirP.nb }, (_, k) => NUM_ID(k + 1))) : presentsP;
+    return <PosterFusils rabatIds={Object.keys(normRabat(journee.rabat)[track.id] || {}).filter((id) => presIdsP.indexOf(id) >= 0)} onRabat={(hid) => toggleRabat(journee.id, track.id, hid)} onPoste={(hid) => toggleRabat(journee.id, track.id, hid)} verrouNums={tirP.actif && tirP.publie && tirP.nb > 0} terrain={terrain} track={track} placements={journee.placements[track.id] || {}} participants={participantsDuJour(participants, journee, true)} presentIds={tirP.actif ? tirP.reserves.filter((id) => presentsP.indexOf(id) >= 0).concat(Array.from({ length: tirP.nb }, (_, k) => NUM_ID(k + 1))) : presentsP} journeeArmes={journee.armes || {}} onSetArme={(hid, arme) => setArmeJour(journee.id, hid, arme)} chefs={journee.chefs || []} chefLignes={journee.chefLignes || {}} rdv={(journee.rdv || {})[track.id] || {}} onSetRdv={(cid, pos) => setRdv(journee.id, track.id, cid, pos)} onBack={() => setPosterView(null)} onAssign={(hid, mid) => assign(journee.id, track.id, hid, mid)} onUnassign={(hid) => unassign(journee.id, track.id, hid)} onAutoFill={(trk, pending, sortedFree) => autoFill(journee.id, trk, pending, sortedFree)} onClearAll={(trk) => clearAll(journee.id, trk.id)} arrows={(journee.arrows || {})[track.id] || []} onAddArrow={(a) => addArrow(journee.id, track.id, a)} onClearArrows={() => clearArrows(journee.id, track.id)} onUpdateArrow={(idx, patch) => updateArrow(journee.id, track.id, idx, patch)} onDeleteArrow={(idx) => deleteArrow(journee.id, track.id, idx)} />; }
   if (shareView) { const journee = journees.find((j) => j.id === shareView.journeeId); const terrain = terrains.find((t) => t.id === journee?.terrainId); if (!journee || !terrain) { setShareView(null); return null; }
     return <EnvoiChasseurs journee={journee} terrain={terrain} participants={participants} safety={safety} onBack={() => setShareView(null)} />; }
 
@@ -6355,6 +6528,7 @@ function JourneesView({ journees, setJournees, terrains, setTerrains, participan
                 <StepTile id="postes" num={4} icon={<MiradorIcon size={27} />} title="Poster les fusils" sub={terrain ? (totalPostes ? totalPlaces + "/" + totalPostes + " postes attribués" : "aucun poste sur ce territoire") : "choisis un territoire"} state={stPostes} open={step} onToggle={setStep} />
                 <StepPanel id="postes" open={step}>
                   {terrain && tracks.length > 0 && <div className="mb-3"><TirageSection journee={j} terrain={terrain} participants={participants} presentIds={presentsIds} onMaj={(patch) => majJournee(j.id, patch)} onPlacer={(tid) => setPosterView({ journeeId: j.id, trackId: tid })} onGenerer={() => genererTirage(j.id)} onHasard={(algo, portee) => placerAuHasard(j.id, algo, portee)} onQuitterTirage={() => quitterTirage(j.id)} /></div>}
+                  {terrain && tracks.length > 0 && <RabatSection journee={j} terrain={terrain} rows={lignesRabat(j)} verrouNums={tirageActif(j) && normTirage(j.tirage).publie && normTirage(j.tirage).nb > 0} onToggle={(tid, hid) => toggleRabat(j.id, tid, hid)} onToggleJamais={(hid) => toggleJamaisRabat(j.id, hid)} onMajRegle={(patch) => majRabatRegle(j.id, patch)} onRepartir={() => repartirRabat(j.id)} />}
                   {terrain && tracks.length > 0 && <p className="text-[11px] uppercase tracking-wide text-stone-400 mb-1.5">{tirageActif(j) ? "Les traques (vérifier, placer les « à la main »)" : "Les traques"}</p>}
                   {terrain ? (tracks.length ? (<div className="space-y-2">
                     {tracks.map((trk) => { const placed = Object.keys(j.placements[trk.id] || {}).length; const tot = (trk.miradors || []).length; const vide = placed === 0;
