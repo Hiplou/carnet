@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Carnet de Chasse — organiser une battue et envoyer les postes aux chasseurs</title>
+<meta name="description" content="Application web pour organiser une battue : placer les chasseurs sur les postes, former les voitures, et envoyer à chacun un lien avec son poste, sa carte et ses consignes de sécurité." />
+<link rel="canonical" href="https://carnetdechasse.fr/" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Carnet de Chasse — organiser une battue et envoyer les postes" />
+<meta property="og:description" content="Placer les chasseurs, former les voitures, envoyer à chacun son poste par un simple lien." />
+<meta property="og:url" content="https://carnetdechasse.fr/" />
+<meta property="og:locale" content="fr_FR" />
+<meta property="og:site_name" content="Carnet de Chasse" />
+<meta property="og:image" content="https://carnetdechasse.fr/icon.png" />
+<meta property="og:image:alt" content="Logo Carnet de Chasse" />
+<meta name="twitter:card" content="summary" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Carnet de Chasse" />
+<meta name="theme-color" content="#1c1917" />
+<link rel="apple-touch-icon" sizes="180x180" href="icon.png" />
+<link rel="icon" type="image/png" href="icon.png" />
+<script>
+(function(){var w=console.warn;console.warn=function(){try{if(arguments[0]&&String(arguments[0]).indexOf("cdn.tailwindcss.com")>=0)return;}catch(e){}return w.apply(console,arguments);};})();
+</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<!--@BABEL@-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>body{margin:0;background:#f5f5f4}.boot{padding:48px 16px;text-align:center;font-family:-apple-system,sans-serif;color:#78716c}.err{padding:16px;font:13px/1.5 ui-monospace,monospace;color:#b91c1c;white-space:pre-wrap;word-break:break-word}</style>
+<script>
+window.__appReady = false;
+window.__err = function(msg){ if(window.__appReady) { try{console.error(msg);}catch(e){} return; } var r=document.getElementById("root"); if(r) r.innerHTML='<div class="err">\u26a0 Erreur au chargement :\n\n'+String(msg)+'</div>'; };
+window.addEventListener("error", function(ev){ if(window.__appReady){ try{console.error(ev.message||ev);}catch(e){} return; } window.__err((ev.message||ev.error||ev)+(ev.filename?("\n\n("+ev.filename+":"+ev.lineno+")"):"")); });
+window.addEventListener("unhandledrejection", function(ev){ if(window.__appReady){ try{console.error(ev.reason);}catch(e){} return; } window.__err("(promesse) "+String((ev.reason&&ev.reason.message)||ev.reason||ev)); });
+</script>
+</head>
+<body>
+<div id="root"><div class="boot">Chargement du carnet…</div></div>
+<noscript>
+  <h1>Carnet de Chasse</h1>
+  <p>Application web pour organiser une battue : placer les chasseurs sur les postes de votre territoire,
+  former les voitures et les points de dépose, puis envoyer à chacun un lien vers son poste, sa carte,
+  ses consignes de sécurité et son chef de ligne.</p>
+  <p>Cette page a besoin de JavaScript pour fonctionner.
+  <a href="presentation.html">Voir la présentation de l'application</a>.</p>
+</noscript>
+<!--@APP@-->
+</body>
+</html>
