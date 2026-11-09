@@ -1,0 +1,41 @@
+name: Assembler l'app
+
+# A chaque validation sur main qui touche au code, GitHub refabrique index.html et secours.html
+# a partir de src/, puis les publie. Sur une proposition de modification (pull request),
+# il verifie seulement que l'assemblage reussit (croix rouge sinon).
+on:
+  push:
+    branches: [main]
+    paths: ["src/**", "outils/**", "package.json", ".github/workflows/assembler.yml"]
+  pull_request:
+    paths: ["src/**", "outils/**", "package.json", ".github/workflows/assembler.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: assemblage-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  assembler:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Installer l'outil d'assemblage
+        run: npm install --no-audit --no-fund
+      - name: Assembler
+        run: node outils/assembler.mjs
+      - name: Publier index.html et secours.html
+        if: github.event_name != 'pull_request'
+        run: |
+          if git diff --quiet -- index.html secours.html; then echo "Déjà à jour : rien à publier."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html secours.html
+          git commit -m "Assemblage automatique de l'app"
+          git push
